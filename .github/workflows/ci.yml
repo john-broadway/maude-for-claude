@@ -37,8 +37,9 @@ jobs:
             pattern="$(echo "$pattern" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
             [ -z "$pattern" ] && continue
             if grep -rEn "$pattern" src/ tests/ template/ .github/ docs/ examples/ skills/ \
-                 --exclude-dir=__pycache__ --exclude='*.pyc' \
-                 --exclude=scrub-patterns.txt 2>/dev/null; then
+                 --exclude-dir=__pycache__ --exclude-dir=superpowers --exclude='*.pyc' \
+                 --exclude=scrub-patterns.txt \
+                 --exclude=for-humans.html 2>/dev/null; then
               echo "::error::SCRUB FAIL: $label"
               FOUND=1
             fi

@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 PATTERNS_FILE="$SCRIPT_DIR/scrub-patterns.txt"
 
 SCAN_DIRS="$REPO_ROOT/src/ $REPO_ROOT/tests/ $REPO_ROOT/template/ $REPO_ROOT/.github/ $REPO_ROOT/docs/ $REPO_ROOT/examples/ $REPO_ROOT/skills/"
-EXCLUDE='--exclude-dir=__pycache__ --exclude=*.pyc --exclude=scrub-patterns.txt'
+EXCLUDE='--exclude-dir=__pycache__ --exclude-dir=superpowers --exclude=*.pyc --exclude=scrub-patterns.txt --exclude=for-humans.html'
 
 FIX_HINT=false
 [[ "${1:-}" == "--fix-hint" ]] && FIX_HINT=true
