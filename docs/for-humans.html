@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maude for Claude — For Humans</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a0a;
+    color: #ccc;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 60px 24px 80px;
+  }
+
+  /* Typography */
+  h1, h2 {
+    font-family: 'Playfair Display', Georgia, serif;
+    color: #c9a96e;
+    font-weight: 700;
+  }
+  h1 { font-size: 2.4rem; margin-bottom: 12px; }
+  h2 { font-size: 1.6rem; margin-bottom: 24px; }
+
+  .subtitle {
+    color: #888;
+    font-size: 1.1rem;
+    font-style: italic;
+    margin-bottom: 48px;
+  }
+
+  /* Gold rule divider */
+  .divider {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #c9a96e, transparent);
+    margin: 80px 0;
+  }
+
+  /* Act headings */
+  .act-label {
+    color: #555;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 8px;
+  }
+
+  /* Scene cards */
+  .scene {
+    background: #111;
+    border-left: 3px solid #c9a96e;
+    padding: 28px 28px 24px;
+    margin: 28px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  .scene-label {
+    color: #c9a96e;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+  }
+  .scene p {
+    margin-bottom: 12px;
+    color: #aaa;
+  }
+  .scene p:last-child { margin-bottom: 0; }
+
+  /* Quotes */
+  .quote {
+    font-family: 'Playfair Display', Georgia, serif;
+    font-style: italic;
+    color: #e8d5b0;
+    font-size: 1.3rem;
+    text-align: center;
+    padding: 32px 20px;
+    line-height: 1.5;
+  }
+  .quote-attr {
+    color: #666;
+    font-size: 0.85rem;
+    text-align: center;
+    margin-top: 8px;
+    font-family: 'Inter', sans-serif;
+    font-style: normal;
+  }
+
+  /* Opening */
+  .opening {
+    font-family: 'Playfair Display', Georgia, serif;
+    color: #e8d5b0;
+    font-size: 1.5rem;
+    text-align: center;
+    padding: 40px 0;
+    line-height: 1.6;
+  }
+  .opening .dim { color: #777; font-size: 1.1rem; }
+
+  /* Closing */
+  .closing {
+    text-align: center;
+    padding: 40px 0;
+  }
+  .closing p { color: #aaa; margin-bottom: 12px; }
+  .closing .bold { color: #e8d5b0; font-weight: 500; }
+
+  /* Cast grid */
+  .cast-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .cast-card {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .cast-card .name {
+    font-family: 'Playfair Display', Georgia, serif;
+    color: #c9a96e;
+    font-size: 1.1rem;
+  }
+  .cast-card .role {
+    color: #777;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 2px;
+  }
+  .cast-card .mapping {
+    color: #555;
+    font-size: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    margin-top: 12px;
+  }
+  .cast-card .line {
+    color: #aaa;
+    font-size: 14px;
+    font-style: italic;
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+
+  /* Currency cards */
+  .currency-card {
+    background: #1a1510;
+    border: 1px solid #c9a96e;
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .currency-card .name { color: #c9a96e; }
+
+  /* Cautionary cards */
+  .caution-card {
+    background: #1a0a0a;
+    border-left: 3px solid #8b2500;
+    border-radius: 0 8px 8px 0;
+    padding: 20px;
+  }
+  .caution-card .name { color: #cc3300; }
+
+  /* Act 3 — steps */
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .step-card {
+    background: #111;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 20px;
+  }
+  .step-num {
+    color: #c9a96e;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 1.4rem;
+    margin-bottom: 8px;
+  }
+  .step-card code {
+    display: block;
+    background: #0a0a0a;
+    color: #c9a96e;
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    margin: 10px 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .step-card p { color: #888; font-size: 14px; }
+
+  /* Footer */
+  .footer-links {
+    text-align: center;
+    padding: 20px 0;
+    color: #555;
+    font-size: 14px;
+  }
+  .footer-links a {
+    color: #c9a96e;
+    text-decoration: none;
+    margin: 0 8px;
+  }
+  .footer-links a:hover { text-decoration: underline; }
+
+  /* Install badge */
+  .install-cmd {
+    background: #111;
+    border: 1px solid #c9a96e;
+    border-radius: 6px;
+    padding: 14px 24px;
+    text-align: center;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #c9a96e;
+    font-size: 1.1rem;
+    margin-bottom: 32px;
+  }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    .container { padding: 32px 16px 60px; }
+    h1 { font-size: 1.8rem; }
+    h2 { font-size: 1.3rem; }
+    .opening { font-size: 1.2rem; padding: 24px 0; }
+    .quote { font-size: 1.1rem; }
+    .scene { padding: 20px; }
+    .cast-grid { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <h1>Maude for Claude</h1>
+  <p class="subtitle">She hugs your infrastructure so it can run on its own.</p>
+
+  <!-- ═══════════════════ ACT 1 ═══════════════════ -->
+
+  <div class="act-label">Act I</div>
+  <h2>A Night at the Continental</h2>
+
+  <p style="color:#aaa; margin-bottom:32px; line-height:1.8;">If you've seen <em>John Wick</em>, you know the Continental. A hotel for professionals, run by a man named Winston. Every guest gets a Room. Every Room is sovereign &mdash; what happens inside is the guest's business. But the hotel has rules. Break them, and all services are revoked. The concierge, Charon, routes everything. The staff handles the rest.</p>
+
+  <p style="color:#aaa; margin-bottom:32px; line-height:1.8;">That's exactly how Maude works.</p>
+
+  <p style="color:#aaa; margin-bottom:48px; line-height:1.8;">Maude is an autonomous agent framework. Every service in your infrastructure &mdash; your database, your monitoring, your security scanner &mdash; gets a Room at the Continental. Each Room runs its own background process, its own memory, its own health loop, its own kill switch. The Rooms don't need you. They manage themselves, heal themselves, and learn from every outcome. When they can't handle something alone, they escalate &mdash; through the same chain of command that keeps the Continental running.</p>
+
+  <p style="color:#888; margin-bottom:48px; font-style:italic;">Here's what that looks like at 3 AM.</p>
+
+  <div class="opening">
+    It's 3 AM. Your PostgreSQL just ran out of connections.
+    <br><br>
+    <span class="dim">You're asleep. The Continental is not.</span>
+  </div>
+
+  <div class="scene">
+    <div class="scene-label">The Health Loop</div>
+    <p>Deep inside the PostgreSQL Room, the health loop is running. It runs every 60 seconds, in every Room, around the clock. No AI. Just pattern matching &mdash; checking vitals the way a night nurse checks monitors.</p>
+    <p>Tonight it catches the connection exhaustion. It searches its memory: <em>"connection pool exhaustion"</em> &mdash; and finds a fix that worked six weeks ago. Kill idle connections. Restart the pooler.</p>
+    <p>It applies the fix. 47 seconds. You're still asleep.</p>
+    <p style="color:#666; margin-top:16px;">Most nights, this is the whole story. The health loop catches it, the health loop fixes it, and nobody ever knows. But tonight, let's say the old fix doesn't work.</p>
+  </div>
+
+  <div class="scene">
+    <div class="scene-label">The Room Agent</div>
+    <p>The pattern has changed. The known fix failed. The health loop has done everything it knows how to do.</p>
+    <p>So the Room Agent wakes up.</p>
+    <p>This is the AI. Every Room has one &mdash; an autonomous agent that can read logs, reason through available tools, and try approaches it's never tried before. It's not following a script. It's thinking.</p>
+    <p>It pulls the last 200 lines of PostgreSQL error logs. It sees a new pattern &mdash; a connection leak from a recently deployed service. It identifies the culprit, terminates the leaking connections, and restarts the pool with adjusted limits.</p>
+    <p>Then it stores everything. What it tried. What worked. What the root cause was. So the next time this happens, the health loop &mdash; the one that doesn't need AI &mdash; already has the fix.</p>
+    <p style="color:#666; margin-top:16px;">The system gets smarter every night. But what if the Room Agent can't figure it out either?</p>
+  </div>
+
+  <div class="scene">
+    <div class="scene-label">Charon &mdash; The Concierge</div>
+    <p>In the movie, Charon stands behind the front desk. He knows every guest, every Room, every favor owed. Nothing moves through the Continental without Charon knowing about it.</p>
+    <p>In Maude, Charon is the framework &mdash; the code that every Room runs. When the Room Agent resolves an issue, Charon records it across the fleet. If a different Room hits the same problem tomorrow, the fix is already waiting.</p>
+    <p>But when the Room Agent fails &mdash; when it outputs <em>"escalated"</em> &mdash; Charon routes that escalation upward. He gathers cross-room context: what else is broken right now, what depends on PostgreSQL, which other Rooms are affected. And he passes all of that to the one person who can see the whole hotel.</p>
+  </div>
+
+  <div class="scene">
+    <div class="scene-label">Winston &mdash; The Management</div>
+    <p>Winston doesn't run special code. He runs the same model as every Room Agent. He's not smarter. He sees more.</p>
+    <p>When an escalation arrives, Winston has fleet-wide visibility. Every recent incident across every Room. The dependency graph &mdash; PostgreSQL feeds the monitoring stack, the data pipeline, the dashboard. He sees that three other Rooms are showing degraded health, all downstream of the database.</p>
+    <p>This isn't a PostgreSQL problem. It's a cascade. Winston investigates across boundaries that individual Room Agents can't cross, correlates the symptoms, and traces it to a network configuration change made during yesterday's maintenance window.</p>
+    <p>He rolls it back. All four Rooms recover.</p>
+    <p style="color:#666; margin-top:16px;">Not higher authority. Wider context. That's the difference.</p>
+  </div>
+
+  <div class="scene">
+    <div class="scene-label">John Wick &mdash; Room 911</div>
+    <p>Most nights, you never hear from John Wick. The Continental handles it.</p>
+    <p>But some problems need a human. Winston identified the root cause but the fix requires a decision you haven't authorized in advance &mdash; maybe it's a production schema change, maybe it's revoking a credential, maybe it's something that affects a customer.</p>
+    <p>You get the call. But not a raw alert at 3 AM with no context. A full incident report. What happened. What was tried. What worked and what didn't. What the system thinks the fix is. What it needs from you.</p>
+    <p>You make one call. Go back to sleep.</p>
+  </div>
+
+  <div class="closing">
+    <p class="bold">You wake up in the morning. Four services recovered. One incident report waiting in your inbox. Everything else &mdash; the detection, the diagnosis, the fix, the escalation, the learning &mdash; happened while you slept.</p>
+    <br>
+    <p class="bold">The Continental handled it.</p>
+    <br>
+    <p>That's what Maude does. Not a chatbot framework. Not a wrapper around an API. A system of autonomous agents that detect, heal, and learn &mdash; 24 hours a day, 7 days a week &mdash; with the governance to keep them honest and the escalation chain to keep you in control.</p>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════ ACT 2 ═══════════════════ -->
+
+  <div class="act-label">Act II</div>
+  <h2>Meet the Staff</h2>
+
+  <div class="cast-grid">
+    <div class="cast-card">
+      <div class="name">Winston</div>
+      <div class="role">Continental Manager</div>
+      <div class="mapping">Human Authority</div>
+      <div class="line">"Runs the hotel. Final say."</div>
+    </div>
+    <div class="cast-card">
+      <div class="name">John Wick</div>
+      <div class="role">The Protagonist</div>
+      <div class="mapping">Control Plane + Claude Code</div>
+      <div class="line">"The one they call when everything fails."</div>
+    </div>
+    <div class="cast-card">
+      <div class="name">Charon</div>
+      <div class="role">The Concierge</div>
+      <div class="mapping">maude.daemon &mdash; the framework</div>
+      <div class="line">"Routes guests, manages Rooms. Every service runs his code."</div>
+    </div>
+    <div class="cast-card">
+      <div class="name">Marcus</div>
+      <div class="role">Old friend on the rooftop</div>
+      <div class="mapping">Backup</div>
+      <div class="line">"Silent guardian. You don't notice him until you need him."</div>
+    </div>
+    <div class="cast-card">
+      <div class="name">Aurelio</div>
+      <div class="role">The Mechanic</div>
+      <div class="mapping">Build / Deploy Pipeline</div>
+      <div class="line">"Honest mechanic. Clean builds."</div>
+    </div>
+    <div class="cast-card">
+      <div class="name">Jimmy</div>
+      <div class="role">The Cop</div>
+      <div class="mapping">Firewall / Network Policy</div>
+      <div class="line">"Sees everything. Doesn't ask too many questions."</div>
+    </div>
+    <div class="cast-card">
+      <div class="name">Harry</div>
+      <div class="role">The Doorman</div>
+      <div class="mapping">Authentication / Identity</div>
+      <div class="line">"You're on the list or you're not."</div>
+    </div>
+    <div class="cast-card">
+      <div class="name">Francis</div>
+      <div class="role">The Bouncer</div>
+      <div class="mapping">Rate Limiting / Throttling</div>
+      <div class="line">"Controls the flow."</div>
+    </div>
+  </div>
+
+  <div class="cast-grid">
+    <div class="cast-card currency-card">
+      <div class="name">Gold Coins</div>
+      <div class="role">Currency of Trust</div>
+      <div class="mapping">4-Tier Memory</div>
+      <div class="line">"Every incident stored, every pattern learned, every fix remembered."</div>
+    </div>
+    <div class="cast-card currency-card">
+      <div class="name">The Rules</div>
+      <div class="role">No business on hotel grounds</div>
+      <div class="mapping">Constitution</div>
+      <div class="line">"11 articles. 14 standards. A Bill of Rights. An amendment process."</div>
+    </div>
+    <div class="cast-card currency-card">
+      <div class="name">Excommunicado</div>
+      <div class="role">All doors close</div>
+      <div class="mapping">Kill Switch</div>
+      <div class="line">"One command. All writes blocked. Fleet-wide."</div>
+    </div>
+  </div>
+
+  <div class="cast-grid">
+    <div class="cast-card caution-card">
+      <div class="name">Ms. Perkins</div>
+      <div class="role">Broke the rules</div>
+      <div class="line">"Bypass the hooks, end up like Perkins."</div>
+    </div>
+    <div class="cast-card caution-card">
+      <div class="name">Iosef Tarasov</div>
+      <div class="role">Touched what wasn't his</div>
+      <div class="line">"Don't touch production without authorization."</div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- ═══════════════════ ACT 3 ═══════════════════ -->
+
+  <div class="act-label">Act III</div>
+  <h2>Build Your Own Continental</h2>
+
+  <div class="install-cmd">pip install maude-claude</div>
+
+  <div class="steps">
+    <div class="step-card">
+      <div class="step-num">1</div>
+      <strong style="color:#ccc;">Copy the template</strong>
+      <code>cp -r template/ my-room/</code>
+      <p>One Room. One service. Everything wired &mdash; background service, health loop, memory, guards.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-num">2</div>
+      <strong style="color:#ccc;">Add your tools</strong>
+      <code>@mcp.tool()
+async def my_health_check():
+    """Your service, your checks."""
+    ...</code>
+      <p>Health checks. Domain logic. Whatever your service needs.</p>
+    </div>
+    <div class="step-card">
+      <div class="step-num">3</div>
+      <strong style="color:#ccc;">Run it</strong>
+      <code>python -m my_room</code>
+      <p>Charon takes over. Health loop starts. Memory connects. Guards arm. Your Room is open for business.</p>
+    </div>
+  </div>
+
+  <div class="footer-links">
+    <a href="../README.md">README</a> &middot;
+    <a href="quickstart.md">Quickstart</a> &middot;
+    <a href="../examples/">Examples</a> &middot;
+    <a href="https://github.com/john-broadway/maude-for-claude">GitHub</a>
+  </div>
+
+  <br>
+  <div class="quote">"Rules. Without them, we live with the animals."</div>
+  <div class="quote-attr">&mdash; Winston</div>
+
+</div>
+</body>
+</html>
