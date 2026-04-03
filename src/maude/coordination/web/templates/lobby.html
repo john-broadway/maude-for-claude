@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "macros/summary.html" import summary_stat %}
+{% set active_page = 'lobby' %}
+
+{% block title %}Lobby — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="lobby-header">
+    <div class="lobby-title">
+        <h1>Maude</h1>
+        <span class="lobby-subtitle">Command Center</span>
+    </div>
+</div>
+
+<div class="lobby-main">
+    {# Zone A — Fleet Summary Bar #}
+    <div class="summary-bar">
+        {{ summary_stat(total_rooms, 'Total Rooms') }}
+        {{ summary_stat(autonomous_count, 'Autonomous', 'ok') }}
+        {{ summary_stat(degraded_count, 'Degraded', 'warn') }}
+        {{ summary_stat(manual_count, 'Manual', 'quiet') }}
+    </div>
+
+    {# Zone B — Room Grid #}
+    <div class="rooms-panel">
+        <div id="room-cards-wrap">
+            <div class="loading-bar"></div>
+            <div id="room-cards"
+                 hx-get="/htmx/room-cards"
+                 hx-trigger="every 30s"
+                 hx-swap="innerHTML"
+                 hx-indicator="#room-cards-wrap">
+                {% include "fragments/room_cards.html" %}
+            </div>
+        </div>
+    </div>
+
+    {# Zone C — Chat #}
+    <div class="chat-panel">
+        {% include "fragments/chat.html" %}
+    </div>
+</div>
+{% endblock %}

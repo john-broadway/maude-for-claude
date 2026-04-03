@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set active_page = 'home' %}
+
+{% block title %}Maude — Coordinator{% endblock %}
+
+{% block content %}
+<div class="landing">
+    <div class="landing-bg"></div>
+    <div class="landing-grain"></div>
+
+    <div class="landing-center">
+        <div class="landing-brand fd-animate-hero">
+            <div class="brand-ornament">
+                <span class="ornament-line"></span>
+                <span class="ornament-diamond"></span>
+                <span class="ornament-line"></span>
+            </div>
+            <p class="brand-prefix">Welcome to</p>
+            <h1 class="brand-title">Maude</h1>
+            <div class="brand-flourish">
+                <span class="flourish-wing-l"></span>
+                <span class="flourish-gem"></span>
+                <span class="flourish-wing-r"></span>
+            </div>
+        </div>
+
+        <div class="landing-search fd-animate-2">
+            <form hx-post="/api/search"
+                  hx-target="#landing-results"
+                  hx-swap="innerHTML"
+                  hx-indicator="#landing-indicator"
+                  class="search-form">
+                <div class="search-pill">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                    </svg>
+                    <input type="text"
+                           name="question"
+                           class="search-input"
+                           placeholder="How may I help you?"
+                           autocomplete="off"
+                           required>
+                    <button type="submit" class="search-submit">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+            <div id="landing-indicator" class="htmx-indicator landing-loading">
+                <div class="typing-indicator">
+                    <div class="typing-sweep-bar"></div>
+                    <span></span><span></span><span></span>
+                </div>
+                <span class="landing-loading-text">Searching departments and documents...</span>
+            </div>
+        </div>
+
+        <div class="landing-chips fd-animate-3">
+            <a href="/chat?context=Give me a full hotel briefing" class="chip">Briefing</a>
+            <a href="/chat?context=What is the current status of all rooms?" class="chip">Room Status</a>
+            <a href="/chat?context=What ITAR compliance requirements apply?" class="chip">Compliance</a>
+            <a href="/chat?context=What HR policies should I know about?" class="chip">HR Policies</a>
+        </div>
+    </div>
+
+    <div id="landing-results" class="landing-results fd-animate-3"></div>
+</div>
+{% endblock %}

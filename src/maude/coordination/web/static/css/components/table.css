@@ -1,0 +1,31 @@
+/* ── Tables ─────────────────────────────────────────────────────── */
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+thead th {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    border-bottom: 2px solid var(--gold-dim);
+    white-space: nowrap;
+}
+
+td {
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.85rem;
+    border-bottom: 1px solid rgba(138, 112, 52, 0.15);
+    color: var(--cream);
+}
+
+tbody tr:hover {
+    background: rgba(201, 168, 76, 0.04);
+}

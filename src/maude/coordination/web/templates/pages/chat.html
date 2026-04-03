@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% set active_page = 'chat' %}
+
+{% block title %}Chat — Maude{% endblock %}
+
+{% block content %}
+<div class="coordinator">
+    <div class="coordinator-hero">
+        <div class="coordinator-flourish"></div>
+    </div>
+
+    <div class="coordinator-chat">
+        <div class="chat-container" id="chat-box">
+            <div class="chat-header">
+                <h3>Maude</h3>
+                <span class="chat-status" id="chat-status">ready</span>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="chat-msg chat-msg-maude">
+                    <div class="msg-sender">Maude</div>
+                    <div class="msg-content">
+                        {%- if dept -%}
+                            I've been routed to the {{ dept }} department. How can I help you?
+                            {%- if context %} You were asking about: "{{ context }}"{% endif -%}
+                        {%- else -%}
+                            Good evening. Welcome to Maude. I can answer questions about Maude operations across all departments — quality, safety, engineering, compliance, and more. I also monitor the hotel's infrastructure. Ask me anything.
+                        {%- endif -%}
+                    </div>
+                </div>
+            </div>
+            <div class="chat-prompts" id="chat-quick-actions">
+                <nav class="prompt-tabs">
+                    <button class="prompt-tab active" data-tab="hotel">Hotel</button>
+                    <button class="prompt-tab" data-tab="agency">Agency</button>
+                </nav>
+                <div class="prompt-panel active" id="prompts-hotel">
+                    <button class="quick-action-btn" data-prompt="Give me a full hotel briefing">Briefing</button>
+                    <button class="quick-action-btn" data-prompt="What is the current status of all rooms?">Status</button>
+                    <button class="quick-action-btn" data-prompt="Are there any recent incidents or failures?">Incidents</button>
+                    <button class="quick-action-btn" data-prompt="Are there any unresolved escalations?">Escalations</button>
+                </div>
+                <div class="prompt-panel" id="prompts-agency">
+                    <button class="quick-action-btn" data-prompt="What quality standards apply to our processes?">Quality</button>
+                    <button class="quick-action-btn" data-prompt="What are our current safety protocols and requirements?">Safety</button>
+                    <button class="quick-action-btn" data-prompt="What engineering capabilities do we have across sites?">Engineering</button>
+                    <button class="quick-action-btn" data-prompt="What ITAR compliance requirements apply to our operations?">ITAR</button>
+                    <button class="quick-action-btn" data-prompt="What HR policies should I know about?">HR</button>
+                </div>
+            </div>
+            <div class="chat-input-row">
+                <input type="text" class="chat-input" id="chat-input"
+                       placeholder="Ask Maude anything..."
+                       autocomplete="off"
+                       {% if context %}value="{{ context }}"{% endif %}>
+                <button class="chat-send-btn" id="chat-send" onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if context %}
+<script>
+    // Auto-send context query on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const input = document.getElementById('chat-input');
+        if (input && input.value.trim()) {
+            setTimeout(function() { sendMessage(); }, 500);
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}

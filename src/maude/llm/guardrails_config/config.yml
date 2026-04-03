@@ -1,0 +1,31 @@
+# NeMo Guardrails — Default Maude Configuration
+#
+# Version: 1.0.0
+# Created: 2026-03-28 (MST)
+# Authors: John Broadway
+#          Claude (Anthropic) <noreply@anthropic.com>
+#
+# This config is used when a room enables guardrails without specifying
+# a custom config_dir. Points at vLLM as the guardrails LLM engine.
+#
+# The openai_api_base is overridden at runtime by GuardrailsBackend
+# based on the room's vLLM host configuration.
+
+models:
+  - type: main
+    engine: openai
+    model: nvidia/Nemotron-3-Nano-30B-A3B
+    parameters:
+      openai_api_base: "http://localhost:8000/v1"
+      temperature: 0.0
+      max_tokens: 128
+
+rails:
+  input:
+    flows:
+      - check jailbreak
+      - check system prompt extraction
+  output:
+    flows:
+      - check harmful content
+      - check credential leakage

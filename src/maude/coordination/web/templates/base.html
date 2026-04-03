@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Maude Coordinator{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/art-deco.css">
+</head>
+<body>
+    {% set user = request.state.user if request.state.user is defined else none %}
+    <nav class="nav">
+        <div class="nav-inner">
+            <div class="nav-brand">
+                <span>Maude</span>
+                <span class="brand-sub">Maude</span>
+            </div>
+            <div class="nav-sep"></div>
+            <div class="nav-links">
+                <a href="/" {% if active_page == 'home' %}class="active"{% endif %}>Home</a>
+                <a href="/chat" {% if active_page == 'chat' %}class="active"{% endif %}>Chat</a>
+                <a href="/operations" {% if active_page == 'operations' %}class="active"{% endif %}>Operations</a>
+                <a href="/governance" {% if active_page == 'governance' %}class="active"{% endif %}>Governance</a>
+            </div>
+            {% if user and request.app.state.entra.enabled %}
+            <div class="nav-identity">
+                <span class="nav-user-name">{{ user.name }}</span>
+                <span class="badge badge-{{ 'ok' if user.is_admin else ('warn' if user.is_operator else 'quiet') }}">{{ user.role.name | capitalize }}</span>
+                <a href="/logout" class="nav-logout" title="Sign out">&#x2715;</a>
+            </div>
+            {% endif %}
+        </div>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+    <script src="/static/js/vendor/htmx.min.js"></script>
+    <script src="/static/js/vendor/marked.min.js"></script>
+    <script src="/static/js/vendor/purify.min.js"></script>
+    <script src="/static/js/chat.js" defer></script>
+    <script src="/static/js/scroll-reveal.js" defer></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

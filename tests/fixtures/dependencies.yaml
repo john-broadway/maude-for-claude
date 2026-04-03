@@ -1,0 +1,581 @@
+# Version: 1.0
+# Created: 2026-03-29 MST
+# Authors: John Broadway, Claude (Anthropic)
+# Test fixture — sample dependency graph for unit tests.
+# NOT production data. Created for test_dependencies.py and
+# tests/coordination (fleet deploy tests).
+#
+# Sites: site-a (28 rooms), site-b (11 rooms), site-c (19 rooms) = 58 total
+
+rooms:
+  site-a:
+    postgresql:
+      ctid: 130
+      ip: "localhost"
+      mcp_port: 9201
+      service_port: 5432
+      layer: data
+      project: "infrastructure/postgresql"
+      description: "TimescaleDB + agent memory"
+      depends_on: []
+    influxdb:
+      ctid: 131
+      ip: "localhost"
+      mcp_port: 9202
+      service_port: 8086
+      layer: data
+      project: "infrastructure/influxdb"
+      description: "Time-series sensor data"
+      depends_on: []
+    qdrant:
+      ctid: 132
+      ip: "localhost"
+      mcp_port: 9203
+      layer: data
+      project: "infrastructure/qdrant"
+      description: "Vector embeddings"
+      depends_on: []
+    redis:
+      ctid: 133
+      ip: "localhost"
+      mcp_port: 9204
+      layer: data
+      project: "infrastructure/redis"
+      description: "Cache + message broker"
+      depends_on: []
+    my-service:
+      ctid: 150
+      ip: "localhost"
+      mcp_port: 9210
+      service_port: 8050
+      layer: example-scada
+      project: "industrial/example-scada/my-service"
+      description: "PLC data collection pipeline"
+      depends_on:
+        - postgresql
+        - influxdb
+      model:
+        name: "my-service-agent"
+        base: "maude-agent"
+        parameters:
+          temperature: 0.2
+          num_predict: 4096
+    panel:
+      ctid: 151
+      ip: "localhost"
+      mcp_port: 9211
+      service_port: 8051
+      layer: example-scada
+      project: "industrial/example-scada/panel"
+      description: "Operator HMI"
+      depends_on:
+        - postgresql
+    lab-service:
+      ctid: 152
+      ip: "localhost"
+      mcp_port: 9212
+      layer: industrial
+      project: "industrial/lab-service"
+      description: "Lab MES"
+      depends_on:
+        - postgresql
+    dns:
+      ctid: 153
+      ip: "localhost"
+      mcp_port: 9213
+      layer: infrastructure
+      project: "infrastructure/dns"
+      description: "DNS"
+      depends_on: []
+    workbench:
+      ctid: 154
+      ip: "localhost"
+      mcp_port: 9214
+      service_port: 8054
+      layer: example-scada
+      project: "industrial/workbench"
+      description: "Engineering workbench"
+      depends_on:
+        - postgresql
+        - my-service
+    ehs-service:
+      ctid: 155
+      ip: "localhost"
+      mcp_port: 9215
+      layer: industrial
+      project: "infrastructure/ehs-service"
+      description: "EHS — incidents, inspections, OSHA"
+      depends_on:
+        - postgresql
+    gitea:
+      ctid: 160
+      ip: "localhost"
+      mcp_port: 9216
+      layer: infrastructure
+      project: "infrastructure/gitea"
+      description: "Internal git server"
+      depends_on: []
+    monitoring:
+      ctid: 140
+      ip: "localhost"
+      mcp_port: 9220
+      service_port: 3000
+      layer: observability
+      project: "infrastructure/grafana"
+      description: "Dashboards + alerting"
+      depends_on:
+        - postgresql
+        - prometheus
+        - loki
+    prometheus:
+      ctid: 141
+      ip: "localhost"
+      mcp_port: 9221
+      service_port: 9090
+      layer: observability
+      project: "infrastructure/prometheus"
+      description: "Metrics collection"
+      depends_on: []
+    loki:
+      ctid: 142
+      ip: "localhost"
+      mcp_port: 9222
+      service_port: 3100
+      layer: observability
+      project: "infrastructure/loki"
+      description: "Log aggregation"
+      depends_on: []
+    uptime-kuma:
+      ctid: 143
+      ip: "localhost"
+      mcp_port: 9223
+      layer: observability
+      project: "infrastructure/uptime-kuma"
+      description: "Availability monitoring"
+      depends_on: []
+    authentik:
+      ctid: 104
+      ip: "localhost"
+      mcp_port: 9224
+      layer: security
+      project: "infrastructure/authentik"
+      description: "Authentik SSO"
+      depends_on: []
+    wazuh:
+      ctid: 144
+      ip: "localhost"
+      mcp_port: 9225
+      layer: security
+      project: "infrastructure/wazuh"
+      description: "SIEM/EDR"
+      depends_on: []
+    fleet:
+      ctid: 145
+      ip: "localhost"
+      mcp_port: 9226
+      layer: security
+      project: "infrastructure/fleet"
+      description: "Endpoint MDM"
+      depends_on: []
+    maude:
+      ctid: 180
+      ip: "localhost"
+      mcp_port: 9800
+      layer: coordination
+      project: "maude"
+      description: "coordinator"
+      depends_on:
+        - postgresql
+    ntp:
+      ctid: 103
+      ip: "localhost"
+      mcp_port: 9230
+      layer: infrastructure
+      project: "infrastructure/ntp"
+      description: "NTP time sync"
+      depends_on: []
+    pbs:
+      ctid: 102
+      ip: "localhost"
+      mcp_port: 9231
+      layer: infrastructure
+      project: "infrastructure/pbs"
+      description: "Proxmox Backup Server"
+      depends_on: []
+    gpu-node-2:
+      ctid: 172
+      ip: "localhost"
+      mcp_port: 9240
+      layer: gpu
+      project: "infrastructure/gpu"
+      description: "vLLM serving"
+      depends_on: []
+      model:
+        name: "Qwen/Qwen3-8B"
+        base: "Qwen/Qwen3-8B"
+    erp:
+      ctid: 190
+      ip: "localhost"
+      mcp_port: 9250
+      layer: apps
+      project: "apps/erp"
+      description: "ERP service"
+      depends_on:
+        - postgresql
+    doc-search:
+      ctid: 191
+      ip: "localhost"
+      mcp_port: 9251
+      layer: apps
+      project: "infrastructure/doc-search"
+      description: "Document intelligence"
+      depends_on:
+        - postgresql
+        - qdrant
+    alert-display:
+      ctid: 192
+      ip: "localhost"
+      mcp_port: 9252
+      layer: apps
+      project: "industrial/alert-display"
+      description: "Quality alerts display"
+      depends_on: []
+    alarm-manager:
+      ctid: 156
+      ip: "localhost"
+      mcp_port: 9253
+      layer: example-scada
+      project: "industrial/alarm-manager"
+      description: "Alarm escalation"
+      depends_on:
+        - postgresql
+        - my-service
+    gpu-node-1:
+      ctid: 173
+      ip: "localhost"
+      mcp_port: 9254
+      layer: gpu
+      project: "infrastructure/gpu"
+      description: "vLLM serving (DGX Spark)"
+      depends_on: []
+    control-plane:
+      ctid: 197
+      ip: "localhost"
+      mcp_port: 9255
+      layer: coordination
+      project: "control-plane"
+      description: "Control plane"
+      depends_on: []
+
+  site-b:
+    postgresql:
+      ctid: 330
+      ip: "198.51.100.30"
+      mcp_port: 9201
+      service_port: 5432
+      layer: data
+      project: "infrastructure/postgresql"
+      description: "TimescaleDB"
+      depends_on: []
+    redis:
+      ctid: 333
+      ip: "198.51.100.33"
+      mcp_port: 9204
+      layer: data
+      project: "infrastructure/redis"
+      description: "Cache"
+      depends_on: []
+    monitoring:
+      ctid: 340
+      ip: "198.51.100.40"
+      mcp_port: 9220
+      layer: observability
+      project: "infrastructure/grafana"
+      description: "Dashboards"
+      depends_on:
+        - postgresql
+        - prometheus
+        - loki
+    prometheus:
+      ctid: 341
+      ip: "198.51.100.41"
+      mcp_port: 9221
+      layer: observability
+      project: "infrastructure/prometheus"
+      description: "Metrics"
+      depends_on: []
+    loki:
+      ctid: 342
+      ip: "198.51.100.42"
+      mcp_port: 9222
+      layer: observability
+      project: "infrastructure/loki"
+      description: "Logs"
+      depends_on: []
+    uptime-kuma:
+      ctid: 343
+      ip: "198.51.100.43"
+      mcp_port: 9223
+      layer: observability
+      project: "infrastructure/uptime-kuma"
+      description: "Availability"
+      depends_on: []
+    my-service:
+      ctid: 350
+      ip: "198.51.100.50"
+      mcp_port: 9210
+      layer: example-scada
+      project: "industrial/example-scada/my-service"
+      description: "PLC data collection"
+      depends_on:
+        - postgresql
+    panel:
+      ctid: 351
+      ip: "198.51.100.51"
+      mcp_port: 9211
+      layer: example-scada
+      project: "industrial/example-scada/panel"
+      description: "Operator HMI"
+      depends_on:
+        - postgresql
+    lab-service:
+      ctid: 352
+      ip: "198.51.100.52"
+      mcp_port: 9212
+      layer: industrial
+      project: "industrial/lab-service"
+      description: "Lab MES"
+      depends_on:
+        - postgresql
+    gitea:
+      ctid: 360
+      ip: "198.51.100.60"
+      mcp_port: 9216
+      layer: infrastructure
+      project: "infrastructure/gitea"
+      description: "Gitea mirror"
+      depends_on: []
+    maude:
+      ctid: 380
+      ip: "198.51.100.80"
+      mcp_port: 9800
+      layer: coordination
+      project: "maude"
+      description: "coordinator"
+      depends_on:
+        - postgresql
+
+  site-c:
+    postgresql:
+      ctid: 430
+      ip: "203.0.113.30"
+      mcp_port: 9201
+      layer: data
+      project: "infrastructure/postgresql"
+      description: "TimescaleDB"
+      depends_on: []
+    redis:
+      ctid: 433
+      ip: "203.0.113.33"
+      mcp_port: 9204
+      layer: data
+      project: "infrastructure/redis"
+      description: "Cache"
+      depends_on: []
+    monitoring:
+      ctid: 440
+      ip: "203.0.113.40"
+      mcp_port: 9220
+      layer: observability
+      project: "infrastructure/grafana"
+      description: "Dashboards"
+      depends_on:
+        - postgresql
+        - prometheus
+        - loki
+    prometheus:
+      ctid: 441
+      ip: "203.0.113.41"
+      mcp_port: 9221
+      layer: observability
+      project: "infrastructure/prometheus"
+      description: "Metrics"
+      depends_on: []
+    loki:
+      ctid: 442
+      ip: "203.0.113.42"
+      mcp_port: 9222
+      layer: observability
+      project: "infrastructure/loki"
+      description: "Logs"
+      depends_on: []
+    uptime-kuma:
+      ctid: 443
+      ip: "203.0.113.43"
+      mcp_port: 9223
+      layer: observability
+      project: "infrastructure/uptime-kuma"
+      description: "Availability"
+      depends_on: []
+    wazuh:
+      ctid: 444
+      ip: "203.0.113.44"
+      mcp_port: 9225
+      layer: security
+      project: "infrastructure/wazuh"
+      description: "SIEM/EDR"
+      depends_on: []
+    fleet:
+      ctid: 445
+      ip: "203.0.113.45"
+      mcp_port: 9226
+      layer: security
+      project: "infrastructure/fleet"
+      description: "Endpoint MDM"
+      depends_on: []
+    my-service:
+      ctid: 450
+      ip: "203.0.113.50"
+      mcp_port: 9210
+      layer: example-scada
+      project: "industrial/example-scada/my-service"
+      description: "SCADA data collector"
+      depends_on:
+        - postgresql
+    panel:
+      ctid: 451
+      ip: "203.0.113.51"
+      mcp_port: 9211
+      layer: example-scada
+      project: "industrial/example-scada/panel"
+      description: "SCADA HMI"
+      depends_on:
+        - postgresql
+    lab-service:
+      ctid: 452
+      ip: "203.0.113.52"
+      mcp_port: 9212
+      layer: industrial
+      project: "industrial/lab-service"
+      description: "Lab MES"
+      depends_on:
+        - postgresql
+    dns:
+      ctid: 453
+      ip: "203.0.113.53"
+      mcp_port: 9213
+      layer: infrastructure
+      project: "infrastructure/dns"
+      description: "DNS"
+      depends_on: []
+    gitea:
+      ctid: 460
+      ip: "203.0.113.60"
+      mcp_port: 9216
+      layer: infrastructure
+      project: "infrastructure/gitea"
+      description: "Git server"
+      depends_on: []
+    maude:
+      ctid: 480
+      ip: "203.0.113.80"
+      mcp_port: 9800
+      layer: coordination
+      project: "maude"
+      description: "coordinator"
+      depends_on: []
+    authentik:
+      ctid: 404
+      ip: "203.0.113.4"
+      mcp_port: 9224
+      layer: security
+      project: "infrastructure/authentik"
+      description: "SSO"
+      depends_on: []
+    ntp:
+      ctid: 403
+      ip: "203.0.113.3"
+      mcp_port: 9230
+      layer: infrastructure
+      project: "infrastructure/ntp"
+      description: "NTP"
+      depends_on: []
+    pbs:
+      ctid: 402
+      ip: "203.0.113.2"
+      mcp_port: 9231
+      layer: infrastructure
+      project: "infrastructure/pbs"
+      description: "PBS"
+      depends_on: []
+    doc-search:
+      ctid: 491
+      ip: "203.0.113.91"
+      mcp_port: 9251
+      layer: apps
+      project: "infrastructure/doc-search"
+      description: "Document intelligence"
+      depends_on: []
+    alert-display:
+      ctid: 492
+      ip: "203.0.113.92"
+      mcp_port: 9252
+      layer: apps
+      project: "industrial/alert-display"
+      description: "Quality alerts"
+      depends_on: []
+
+infrastructure:
+  security:
+    authentik:
+      ctid: 104
+    wazuh:
+      ctid: 144
+    fleet:
+      ctid: 145
+
+layers:
+  example-scada:
+    label: "Industrial"
+    description: "PLC data collection, HMI, and engineering tools"
+    rooms:
+      site-a:
+        - my-service
+        - panel
+        - workbench
+        - alarm-manager
+      site-b:
+        - my-service
+        - panel
+      site-c:
+        - my-service
+        - panel
+  maude_layer:
+    label: "Maude Coordination"
+    description: "coordinators across all sites"
+    rooms:
+      site-a:
+        - maude
+      site-b:
+        - maude
+      site-c:
+        - maude
+  observability:
+    label: "Observability"
+    description: "Monitoring, metrics, and logging"
+    rooms:
+      site-a:
+        - monitoring
+        - prometheus
+        - loki
+        - uptime-kuma
+      site-b:
+        - monitoring
+        - prometheus
+        - loki
+        - uptime-kuma
+      site-c:
+        - monitoring
+        - prometheus
+        - loki
+        - uptime-kuma

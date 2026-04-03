@@ -1,0 +1,56 @@
+{% from "macros/badges.html" import status_badge, outcome_badge, health_badge %}
+{% if rooms %}
+<table>
+    <thead>
+        <tr>
+            <th>Room</th>
+            <th>Health Loop</th>
+            <th>Last Check</th>
+            <th>Last Action</th>
+            <th>Agent</th>
+            <th>Deps</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for room in rooms %}
+        <tr>
+            <td><a href="/room/{{ room.name }}">{{ room.name }}</a></td>
+            <td>{{ health_badge(room.health_loop_active) }}</td>
+            <td class="time-ago" style="white-space: nowrap;">{{ room.last_check[:16] if room.last_check else 'Never' }}</td>
+            <td>{{ outcome_badge(room.last_outcome) }}</td>
+            <td>
+                {% if room.agent_active %}
+                    <span class="badge badge-ok">Active</span>
+                {% else %}
+                    &mdash;
+                {% endif %}
+                {% if room.agent_runs_24h > 0 %}
+                    <span class="time-ago">({{ room.agent_runs_24h }})</span>
+                {% endif %}
+            </td>
+            <td>
+                {% if room.deps_health %}
+                    {% for dep in room.deps_health %}
+                        <span class="dep-dot {{ 'dep-dot-ok' if dep.healthy else 'dep-dot-error' }}" title="{{ dep.name }}"></span>
+                    {% endfor %}
+                {% else %}
+                    &mdash;
+                {% endif %}
+            </td>
+            <td>
+                {% if room.status == 'autonomous' %}
+                    <span class="badge badge-ok" title="{{ room.reason }}">Autonomous</span>
+                {% elif room.status == 'degraded' %}
+                    <span class="badge badge-warn" title="{{ room.reason }}">Degraded</span>
+                {% else %}
+                    <span class="badge badge-quiet" title="{{ room.reason }}">Manual</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p class="text-muted">No rooms configured.</p>
+{% endif %}

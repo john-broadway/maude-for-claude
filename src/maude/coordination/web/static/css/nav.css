@@ -1,0 +1,156 @@
+/* ── Navigation ─────────────────────────────────────────────────── */
+
+.nav {
+    background: linear-gradient(180deg, var(--bg-recessed) 0%, var(--bg-surface) 100%);
+    border-bottom: 1px solid var(--gold-dim);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 12px var(--shadow-dark);
+}
+
+/* Gold crown molding line at top */
+.nav::before {
+    content: '';
+    display: block;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--gold-dim) 15%,
+        var(--gold-muted) 35%,
+        var(--gold) 50%,
+        var(--gold-muted) 65%,
+        var(--gold-dim) 85%,
+        transparent 100%);
+}
+
+.nav-inner {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 0.6rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+}
+
+.nav-brand {
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 1.3rem;
+    color: var(--gold);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.nav-brand .brand-icon {
+    width: 28px;
+    height: 28px;
+    opacity: 0.9;
+}
+
+.nav-brand .brand-sub {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 400;
+    font-size: 0.7rem;
+    color: var(--cream-muted);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+}
+
+.nav-sep {
+    width: 1px;
+    height: 24px;
+    background: var(--gold-dim);
+}
+
+.nav-links {
+    display: flex;
+    gap: 0;
+}
+
+.nav-links a {
+    position: relative;
+    color: var(--cream-muted);
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.5rem 1rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: color 0.2s;
+}
+
+/* Animated underline from center */
+.nav-links a::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 1px;
+    background: var(--gold);
+    transition: width 0.25s ease;
+}
+
+.nav-links a:hover {
+    color: var(--gold-light);
+}
+
+.nav-links a:hover::after {
+    width: calc(100% - 2rem);
+}
+
+.nav-links a.active {
+    color: var(--gold);
+}
+
+.nav-links a.active::after {
+    width: calc(100% - 2rem);
+    background: var(--gold);
+}
+
+/* ── Identity chip ─────────────────────────────────────────────── */
+
+.nav-identity {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+}
+
+.nav-user-name {
+    color: var(--cream);
+    font-weight: 500;
+}
+
+.nav-logout {
+    color: var(--cream-muted);
+    font-size: 0.9rem;
+    padding: 0.2rem 0.4rem;
+    opacity: 0.6;
+    transition: opacity 200ms;
+}
+
+.nav-logout:hover {
+    opacity: 1;
+    color: var(--error);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+    .nav-inner {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    .nav-links a {
+        padding: 0.4rem 0.6rem;
+        font-size: 0.78rem;
+    }
+}

@@ -1,0 +1,384 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Governance — Executive Story Page
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Shared Gov Header (used by all 3 governance pages) ────────────── */
+
+.gov-header {
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--gold-dim);
+    padding-bottom: 0.75rem;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.gov-title h1 {
+    font-size: 1.6rem;
+    color: var(--gold);
+    letter-spacing: 0.08em;
+    margin: 0;
+    display: inline;
+}
+
+.gov-subtitle {
+    color: var(--cream-muted);
+    font-size: 0.85rem;
+    margin-left: 1rem;
+    letter-spacing: 0.03em;
+}
+
+/* ── Governance Sub-nav (pill row) ─────────────────────────────────── */
+
+.gov-subnav {
+    display: flex;
+    gap: 0;
+}
+
+.gov-subnav a {
+    color: var(--cream-muted);
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 0.3rem 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--gold-dim);
+    border-right: none;
+    transition: all 0.2s;
+}
+
+.gov-subnav a:first-child {
+    border-radius: 3px 0 0 3px;
+}
+
+.gov-subnav a:last-child {
+    border-right: 1px solid var(--gold-dim);
+    border-radius: 0 3px 3px 0;
+}
+
+.gov-subnav a:hover {
+    color: var(--gold-light);
+    background: rgba(201, 168, 76, 0.08);
+}
+
+.gov-subnav a.active {
+    background: rgba(201, 168, 76, 0.12);
+    color: var(--gold);
+    border-color: var(--gold-muted);
+}
+
+/* ── Main Content Container ────────────────────────────────────────── */
+
+.gov-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+/* ── Section ───────────────────────────────────────────────────────── */
+
+.gov-section {
+    padding: 1.5rem 0;
+}
+
+.gov-section h2 {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    color: var(--gold);
+    letter-spacing: 0.06em;
+    margin-bottom: 0.75rem;
+}
+
+/* ── Prose ─────────────────────────────────────────────────────────── */
+
+.gov-prose {
+    color: var(--cream-muted);
+    font-size: 0.9rem;
+    line-height: 1.75;
+    max-width: none;
+    margin-bottom: 0.75rem;
+}
+
+.gov-prose:last-child {
+    margin-bottom: 0;
+}
+
+/* ── Constitution Pillars ──────────────────────────────────────────── */
+
+.gov-pillars {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.gov-pillar {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-top: 2px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    position: relative;
+    overflow: visible;
+}
+
+.gov-pillar::before {
+    content: '';
+    position: absolute;
+    top: -3px;
+    right: 12px;
+    width: 6px;
+    height: 6px;
+    background: var(--gold-muted);
+    transform: rotate(45deg);
+}
+
+.pillar-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.pillar-text {
+    font-size: 0.82rem;
+    color: var(--cream-muted);
+    line-height: 1.6;
+}
+
+/* ── Room Grid ─────────────────────────────────────────────────────── */
+
+.gov-room-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.gov-layer {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 0.75rem 1rem;
+    min-width: 180px;
+    flex: 1 1 180px;
+    max-width: 260px;
+}
+
+.layer-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--gold-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.5rem;
+}
+
+.layer-rooms {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.gov-room-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid rgba(138, 112, 52, 0.08);
+}
+
+.gov-room-card:last-child {
+    border-bottom: none;
+}
+
+.room-name {
+    font-size: 0.8rem;
+    color: var(--cream);
+    font-weight: 500;
+}
+
+/* ── Agent Grid ────────────────────────────────────────────────────── */
+
+.gov-agent-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+
+.gov-agent-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 0.6rem 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    min-width: 100px;
+}
+
+.company-name {
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.agent-count {
+    font-size: 0.78rem;
+    color: var(--cream-muted);
+}
+
+/* ── Numbers Grid ──────────────────────────────────────────────────── */
+
+.gov-numbers-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.number-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 1rem 1.25rem;
+    text-align: center;
+    min-width: 110px;
+    flex: 1 1 110px;
+    max-width: 160px;
+}
+
+.number-card--ok {
+    border-color: rgba(74, 222, 128, 0.25);
+}
+
+.number-card--warn {
+    border-color: rgba(251, 191, 36, 0.25);
+}
+
+.number-card--error {
+    border-color: rgba(248, 113, 113, 0.25);
+}
+
+.number-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1.1;
+}
+
+.number-card--ok    .number-value { color: var(--ok); }
+.number-card--warn  .number-value { color: var(--warn); }
+.number-card--error .number-value { color: var(--error); }
+
+.number-label {
+    font-size: 0.72rem;
+    color: var(--cream-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 0.25rem;
+}
+
+/* ── Flow Steps ────────────────────────────────────────────────────── */
+
+.gov-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-top: 1rem;
+    max-width: none;
+}
+
+.flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-left: 2px solid var(--gold-dim);
+    border-radius: 0 3px 3px 0;
+    padding: 0.65rem 1rem;
+}
+
+.flow-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--gold);
+    min-width: 20px;
+    text-align: center;
+    padding-top: 0.05rem;
+}
+
+.flow-text {
+    font-size: 0.85rem;
+    color: var(--cream-muted);
+    line-height: 1.5;
+}
+
+.flow-connector {
+    width: 2px;
+    height: 16px;
+    background: linear-gradient(180deg, var(--gold-dim), var(--gold-muted));
+    margin-left: 1.5rem;
+}
+
+/* ── CTA Links ─────────────────────────────────────────────────────── */
+
+.gov-cta-links {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 1.25rem;
+    flex-wrap: wrap;
+}
+
+.gov-cta-links a {
+    font-size: 0.82rem;
+    color: var(--gold-muted);
+    letter-spacing: 0.03em;
+    transition: color 0.2s;
+}
+
+.gov-cta-links a:hover {
+    color: var(--gold-light);
+}
+
+/* ── Responsive ────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .gov-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .gov-pillars {
+        grid-template-columns: 1fr;
+    }
+    .gov-room-grid {
+        flex-direction: column;
+    }
+    .gov-layer {
+        max-width: 100%;
+    }
+    .gov-numbers-grid {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 600px) {
+    .gov-title h1 { font-size: 1.3rem; }
+    .gov-subtitle { display: block; margin-left: 0; margin-top: 0.25rem; }
+    .gov-subnav { flex-wrap: wrap; }
+    .gov-subnav a:last-child { border-right: none; }
+}

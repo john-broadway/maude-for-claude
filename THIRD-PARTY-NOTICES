@@ -1,0 +1,16 @@
+<!-- Version: 1.0 -->
+<!-- Created: 2026-03-28 MST -->
+<!-- Authors: John Broadway, Claude (Anthropic) -->
+Third-Party Software Notices
+============================
+
+asyncssh
+--------
+License: Eclipse Public License 2.0 (EPL-2.0)
+https://www.eclipse.org/legal/epl-2.0/
+
+asyncssh is used as an optional dependency for remote command execution
+(the [ssh] extra). It is dual-licensed under EPL-2.0 and GPL-2.0-or-later.
+Maude uses it under the EPL-2.0 terms. The EPL-2.0 is a weak
+copyleft license — using asyncssh as an unmodified library does not
+affect Maude's MIT license.

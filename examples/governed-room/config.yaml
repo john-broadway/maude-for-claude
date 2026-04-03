@@ -1,0 +1,9 @@
+# Version: 1.0
+# Created: 2026-03-28 MST
+# Authors: John Broadway, Claude (Anthropic)
+# Governed Room configuration — demonstrates governance guards.
+project: governed-room
+service_name: governed-room
+mcp_port: 8003
+room_id: 103
+ip: 127.0.0.1

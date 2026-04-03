@@ -1,0 +1,41 @@
+{% from "macros/badges.html" import status_badge %}
+<div class="room-grid">
+    {% for room in rooms %}
+    <div class="room-tile card-deco-top">
+        <div class="room-tile-header">
+            <span class="room-tile-name">
+                {% if room.web_url %}
+                    <a href="{{ room.web_url }}" target="_blank" rel="noopener">{{ room.name }}</a>
+                {% else %}
+                    <a href="/room/{{ room.name }}">{{ room.name }}</a>
+                {% endif %}
+            </span>
+            {{ status_badge(room.status) }}
+        </div>
+
+        <div class="room-tile-meta">
+            {% if room.last_check %}
+                <span class="time-ago">{{ room.last_check[:16] }}</span>
+            {% else %}
+                <span class="time-ago">No activity</span>
+            {% endif %}
+
+            {% if room.deps_health %}
+            <div class="room-tile-deps">
+                {% for dep in room.deps_health %}
+                    <span class="dep-dot {{ 'dep-dot-ok' if dep.healthy else 'dep-dot-warn' }}"
+                          title="{{ dep.name }} {{ 'healthy' if dep.healthy else 'degraded' }}"></span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="room-tile-links">
+            <a href="/room/{{ room.name }}">detail</a>
+            {% if room.web_url %}
+                <a href="{{ room.web_url }}" target="_blank" rel="noopener" class="web-link">open &#8599;</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>

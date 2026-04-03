@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set active_page = 'search' %}
+
+{% block title %}Search — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Agency Search</h1>
+    <div class="deco-line-thick"></div>
+    <p class="subtitle">Query department agents — ask anything about Maude operations</p>
+</div>
+
+<div class="search-layout">
+    <div class="search-box card deco-corner">
+        <form hx-post="/api/search"
+              hx-target="#search-results"
+              hx-swap="innerHTML"
+              hx-indicator="#search-indicator"
+              class="search-form">
+            <div class="search-input-row">
+                <input type="text"
+                       name="question"
+                       class="chat-input search-input-field"
+                       placeholder="What quality standards apply to our processes? Who handles ITAR compliance?"
+                       autocomplete="off"
+                       required>
+                <button type="submit" class="chat-send-btn">Search</button>
+            </div>
+        </form>
+        <div id="search-indicator" class="htmx-indicator search-loading">
+            <div class="typing-indicator">
+                <span></span><span></span><span></span>
+            </div>
+            <span class="search-loading-text">Routing to department agent...</span>
+        </div>
+    </div>
+
+    <div id="search-results" class="search-results-area">
+        <div class="search-placeholder">
+            <p class="search-placeholder-text">Ask a question to search across all department agents.</p>
+            <p class="search-placeholder-hint">The system routes your question to the most relevant department using semantic and keyword matching, then queries that department's dedicated AI agent.</p>
+        </div>
+    </div>
+
+    <div class="search-docs-section card">
+        <h3 class="section-header">Documents</h3>
+        <div class="deco-line"></div>
+        <p class="search-docs-placeholder">Document search available after Phase 3 — UNAS file indexing pipeline.</p>
+    </div>
+</div>
+{% endblock %}

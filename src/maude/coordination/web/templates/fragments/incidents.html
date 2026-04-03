@@ -1,0 +1,36 @@
+{% if incidents %}
+<table>
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>Room</th>
+            <th>Trigger</th>
+            <th>Outcome</th>
+            <th>Summary</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for inc in incidents %}
+        <tr>
+            <td style="white-space: nowrap;">{{ inc.created_at[:16] if inc.created_at else '?' }}</td>
+            <td><a href="/room/{{ inc.project }}">{{ inc.project }}</a></td>
+            <td>{{ inc.trigger or '?' }}</td>
+            <td>
+                {% if inc.outcome == 'resolved' %}
+                    <span class="badge badge-ok">resolved</span>
+                {% elif inc.outcome == 'failed' %}
+                    <span class="badge badge-attention">failed</span>
+                {% elif inc.outcome == 'escalated' %}
+                    <span class="badge badge-attention">escalated</span>
+                {% else %}
+                    <span class="badge badge-quiet">{{ inc.outcome or '?' }}</span>
+                {% endif %}
+            </td>
+            <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ (inc.summary or '')[:120] }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--cream-muted);">No incidents in this window.</p>
+{% endif %}

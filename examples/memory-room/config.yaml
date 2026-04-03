@@ -1,0 +1,11 @@
+# Version: 1.0
+# Created: 2026-03-28 MST
+# Authors: John Broadway, Claude (Anthropic)
+# Memory Room configuration — demonstrates 3-tier memory with SQLite only.
+# No PostgreSQL or Qdrant required; the MemoryStore falls back to SQLite when
+# upstream tiers are unavailable.
+project: memory-room
+service_name: memory-room
+mcp_port: 8001
+room_id: 101
+ip: 127.0.0.1

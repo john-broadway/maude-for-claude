@@ -1,0 +1,17 @@
+# Version: 1.0
+# Created: 2026-03-28 MST
+# Authors: John Broadway, Claude (Anthropic)
+# Healing Room configuration — demonstrates the self-healing health loop pattern.
+project: healing-room
+service_name: healing-room
+mcp_port: 8002
+room_id: 102
+ip: 127.0.0.1
+
+# Enable the health loop. The runner detects this section and starts the
+# background HealthLoop task alongside the MCP server.
+health_loop:
+  enabled: true
+  interval: 30
+  max_restarts_per_hour: 3
+  cooldown_seconds: 600

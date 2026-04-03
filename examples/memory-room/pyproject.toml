@@ -1,0 +1,45 @@
+# Version: 1.0
+# Created: 2026-03-28 MST
+# Authors: John Broadway, Claude (Anthropic)
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "memory-room"
+version = "1.0.0"
+description = "Memory Room — Maude example demonstrating 3-tier memory"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "maude[memory]",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+memory-room = "memory_room.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/memory_room"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests requiring live infrastructure",
+]

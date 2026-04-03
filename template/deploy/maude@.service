@@ -1,0 +1,42 @@
+[Unit]
+Description=Maude Room — %i
+After=network.target
+
+[Service]
+Type=simple
+User=maude
+Group=maude
+UMask=0077
+EnvironmentFile=/app/%i/maude.env
+ExecStart=/app/%i/.venv/bin/python -m ${MAUDE_MODULE} --config /app/%i/config-local.yaml --host 0.0.0.0 --port ${MAUDE_PORT}
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=maude@%i
+WorkingDirectory=/app/%i
+Environment=MAUDE_CREDENTIALS_PATH=/etc/maude/secrets.yaml
+Environment=PYTHONPATH=/app/maude/src:/app/%i/src
+
+# Memory limits — prevent swap exhaustion under load
+MemoryMax=1G
+MemoryHigh=768M
+MemorySwapMax=256M
+
+# Filesystem
+ProtectSystem=strict
+PrivateTmp=yes
+PrivateDevices=yes
+ReadWritePaths=/var/lib/maude/%i /app/%i/.maude /app/%i/knowledge
+
+# Process isolation
+ProtectProc=invisible
+LockPersonality=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+
+# Network (TCP/Unix only — no raw sockets, netlink, etc.)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

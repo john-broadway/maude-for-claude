@@ -1,0 +1,138 @@
+/* ── Art Deco Decorative Elements ──────────────────────────────── */
+
+/* Thin gradient line */
+.deco-line {
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--gold-muted) 20%,
+        var(--gold) 50%,
+        var(--gold-muted) 80%,
+        transparent 100%);
+    margin: 0.75rem 0;
+}
+
+/* Thick gradient line */
+.deco-line-thick {
+    height: 2px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--gold-dim) 10%,
+        var(--gold-muted) 30%,
+        var(--gold) 50%,
+        var(--gold-muted) 70%,
+        var(--gold-dim) 90%,
+        transparent 100%);
+    margin: 1rem 0;
+}
+
+/* Corner brackets */
+.deco-corner {
+    position: relative;
+}
+.deco-corner::before,
+.deco-corner::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-color: var(--gold-muted);
+    border-style: solid;
+}
+.deco-corner::before {
+    top: -1px; left: -1px;
+    border-width: 2px 0 0 2px;
+}
+.deco-corner::after {
+    bottom: -1px; right: -1px;
+    border-width: 0 2px 2px 0;
+}
+
+/* Diamond chain section divider */
+.deco-divider {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 2rem 0;
+    width: 100%;
+}
+.deco-divider::before,
+.deco-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-dim));
+}
+.deco-divider::after {
+    background: linear-gradient(90deg, var(--gold-dim), transparent);
+}
+.deco-divider .deco-diamond {
+    width: 8px;
+    height: 8px;
+    background: var(--gold-muted);
+    transform: rotate(45deg);
+    flex-shrink: 0;
+    margin: 0 0.75rem;
+}
+
+/* Stepped top border for cards */
+.card-deco-top {
+    position: relative;
+}
+.card-deco-top::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 12px;
+    right: 12px;
+    height: 2px;
+    background: linear-gradient(90deg,
+        transparent,
+        var(--gold-muted) 20%,
+        var(--gold) 50%,
+        var(--gold-muted) 80%,
+        transparent);
+}
+
+/* Full deco frame (all 4 corners) */
+.deco-frame {
+    position: relative;
+}
+.deco-frame::before,
+.deco-frame::after {
+    content: '';
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-color: var(--gold-dim);
+    border-style: solid;
+    pointer-events: none;
+}
+.deco-frame::before {
+    top: 6px; left: 6px;
+    border-width: 1px 0 0 1px;
+}
+.deco-frame::after {
+    bottom: 6px; right: 6px;
+    border-width: 0 1px 1px 0;
+}
+
+/* Inline SVG Art Deco fan pattern */
+.deco-fan {
+    width: 100%;
+    height: 32px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='32' viewBox='0 0 60 32'%3E%3Cpath d='M30 32 C30 16 10 0 0 0 L0 32 Z' fill='none' stroke='%235c4a23' stroke-width='0.5' opacity='0.5'/%3E%3Cpath d='M30 32 C30 16 50 0 60 0 L60 32 Z' fill='none' stroke='%235c4a23' stroke-width='0.5' opacity='0.5'/%3E%3C/svg%3E");
+    background-repeat: repeat-x;
+    background-size: 60px 32px;
+    opacity: 0.5;
+}
+
+/* Chevron repeat border */
+.deco-chevron {
+    width: 100%;
+    height: 12px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12' viewBox='0 0 24 12'%3E%3Cpolyline points='0,12 12,0 24,12' fill='none' stroke='%235c4a23' stroke-width='0.75'/%3E%3C/svg%3E");
+    background-repeat: repeat-x;
+    background-size: 24px 12px;
+    opacity: 0.4;
+}

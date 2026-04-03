@@ -1,0 +1,386 @@
+{% extends "base.html" %}
+{% set active_page = 'governance' %}
+
+{% block title %}Accountability — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="gov-header">
+    <div class="gov-title">
+        <h1>Accountability Matrix</h1>
+        <span class="gov-subtitle">Who can do what — and what guards them</span>
+    </div>
+    <div class="gov-subnav">
+        <a href="/governance">Overview</a>
+        <a href="/governance/accountability" class="active">Accountability</a>
+        <a href="/governance/compliance">Compliance</a>
+        <a href="/status">Report</a>
+    </div>
+</div>
+
+{# ── Stats Bar ─────────────────────────────────────────────────────── #}
+<div class="acct-stats">
+    <div class="acct-stat">
+        <span class="acct-stat-value" id="stat-actors">0</span>
+        <span class="acct-stat-label">Actors</span>
+    </div>
+    <div class="acct-stat">
+        <span class="acct-stat-value" id="stat-tools">0</span>
+        <span class="acct-stat-label">Tools</span>
+    </div>
+    <div class="acct-stat">
+        <span class="acct-stat-value" id="stat-guarded">0%</span>
+        <span class="acct-stat-label">Guarded</span>
+    </div>
+    <div class="acct-stat">
+        <span class="acct-stat-value" id="stat-gaps">0</span>
+        <span class="acct-stat-label">Gaps</span>
+    </div>
+    <button class="acct-export-btn" onclick="exportGapReport()">Export Gap Report</button>
+</div>
+
+{# ── Matrix Layout ─────────────────────────────────────────────────── #}
+<div class="acct-layout">
+
+    {# Sidebar — filters #}
+    <div class="acct-sidebar">
+        <div class="acct-filter-group">
+            <h3 class="acct-filter-heading">Actor Type</h3>
+            <label class="acct-filter-label">
+                <input type="checkbox" data-filter="type" value="control-plane" checked>
+                Control Plane
+            </label>
+            <label class="acct-filter-label">
+                <input type="checkbox" data-filter="type" value="maude-room" checked>
+                Maude Rooms
+            </label>
+            <label class="acct-filter-label">
+                <input type="checkbox" data-filter="type" value="mcp-stdio" checked>
+                MCP Servers
+            </label>
+            <label class="acct-filter-label">
+                <input type="checkbox" data-filter="type" value="dept-agent-group">
+                Dept Agents
+            </label>
+        </div>
+
+        <div class="acct-filter-group">
+            <h3 class="acct-filter-heading">Site</h3>
+            <label class="acct-filter-label">
+                <input type="radio" name="site" value="all" checked>
+                All Sites
+            </label>
+            <label class="acct-filter-label">
+                <input type="radio" name="site" value="slc">
+                SLC
+            </label>
+            <label class="acct-filter-label">
+                <input type="radio" name="site" value="pa">
+                PA
+            </label>
+        </div>
+
+        <div class="acct-filter-group">
+            <h3 class="acct-filter-heading">Show</h3>
+            <label class="acct-filter-label">
+                <input type="checkbox" id="show-gaps" data-filter="gaps">
+                Gaps Only
+            </label>
+        </div>
+
+        <div class="acct-legend">
+            <h3 class="acct-filter-heading">Legend</h3>
+            <div class="acct-legend-item">
+                <div class="acct-legend-icon cell-read">R</div>
+                Read-only access
+            </div>
+            <div class="acct-legend-item">
+                <div class="acct-legend-icon cell-guard">G</div>
+                Guarded (confirm / rate / audit)
+            </div>
+            <div class="acct-legend-item">
+                <div class="acct-legend-icon cell-warn">W</div>
+                Write (with warning)
+            </div>
+            <div class="acct-legend-item">
+                <div class="acct-legend-icon cell-gap">!</div>
+                Gap identified
+            </div>
+            <div class="acct-legend-item">
+                <div class="acct-legend-icon cell-none">&middot;</div>
+                No access
+            </div>
+        </div>
+    </div>
+
+    {# Matrix #}
+    <div class="acct-matrix-container">
+        <table class="acct-matrix" id="matrix"></table>
+    </div>
+
+    {# Detail Panel #}
+    <div class="acct-detail-panel" id="detail-panel">
+        <h3 class="acct-detail-heading">Detail &mdash; Click any cell</h3>
+        <div class="acct-detail-grid" id="detail-content">
+            <div class="acct-detail-item">
+                <div class="acct-detail-label">Instructions</div>
+                <div class="acct-detail-value">Click a cell in the matrix to see tool details, guards, and gaps.</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Governance data — built server-side from accountability.yaml
+const GOVERNANCE = {{ governance_data | tojson }};
+
+// Build the access matrix inline (same logic as matrix.html)
+(function buildAccessMatrix() {
+    var A = GOVERNANCE.access;
+
+    // Access dict already built server-side; augment only if entry is missing
+    // For actors where domain-level access wasn't derived from domain actions,
+    // fall back to the actor's tools_read/tools_write lists if embedded.
+    // (Server builds the full access dict — this is a no-op if complete.)
+})();
+
+// ── Render ──────────────────────────────────────────────────────────
+
+function getActiveFilters() {
+    var types = new Set();
+    document.querySelectorAll('[data-filter="type"]:checked').forEach(function(el) {
+        types.add(el.value);
+    });
+    var siteEl = document.querySelector('input[name="site"]:checked');
+    var site = siteEl ? siteEl.value : "all";
+    var gapsOnly = document.getElementById("show-gaps").checked;
+    return { types: types, site: site, gapsOnly: gapsOnly };
+}
+
+function filterActors(filters) {
+    return GOVERNANCE.actors.filter(function(a) {
+        if (!filters.types.has(a.type)) return false;
+        if (filters.site !== "all") {
+            if (a.sites) {
+                if (a.sites.indexOf(filters.site) === -1) return false;
+            } else if (a.site !== filters.site) return false;
+        }
+        if (filters.gapsOnly) {
+            var acc = GOVERNANCE.access[a.id] || {};
+            return Object.values(acc).some(function(v) { return v.gap; });
+        }
+        return true;
+    });
+}
+
+function cellIcon(level) {
+    switch (level) {
+        case "read":  return "R";
+        case "guard": return "G";
+        case "write": case "warn": return "W";
+        case "gap":   return "!";
+        default:      return "\u00b7";
+    }
+}
+
+function cellClass(level) {
+    switch (level) {
+        case "read":  return "cell-read";
+        case "guard": return "cell-guard";
+        case "write": case "warn": return "cell-warn";
+        case "gap":   return "cell-gap";
+        default:      return "cell-none";
+    }
+}
+
+function renderMatrix() {
+    var filters = getActiveFilters();
+    var actors  = filterActors(filters);
+    var domains = GOVERNANCE.domains;
+    var table   = document.getElementById("matrix");
+
+    var groups = [
+        { label: "Control Plane",    actors: actors.filter(function(a) { return a.type === "control-plane"; }) },
+        { label: "Maude Rooms",     actors: actors.filter(function(a) { return a.type === "maude-room"; }) },
+        { label: "MCP Servers",      actors: actors.filter(function(a) { return a.type === "mcp-stdio"; }) },
+        { label: "Dept Agents",      actors: actors.filter(function(a) { return a.type === "dept-agent-group"; }) },
+    ].filter(function(g) { return g.actors.length > 0; });
+
+    while (table.firstChild) table.removeChild(table.firstChild);
+
+    // thead
+    var thead = document.createElement("thead");
+    var headerRow = document.createElement("tr");
+    headerRow.appendChild(document.createElement("th")); // empty corner
+    domains.forEach(function(d) {
+        var th = document.createElement("th");
+        th.title = d.fullName;
+        th.textContent = d.name;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // tbody
+    var tbody = document.createElement("tbody");
+    groups.forEach(function(group) {
+        var sectionRow = document.createElement("tr");
+        var sectionTd = document.createElement("td");
+        sectionTd.className = "acct-section-header";
+        sectionTd.colSpan = domains.length + 1;
+        sectionTd.textContent = group.label;
+        sectionRow.appendChild(sectionTd);
+        tbody.appendChild(sectionRow);
+
+        group.actors.forEach(function(actor) {
+            var row = document.createElement("tr");
+            var nameTd = document.createElement("td");
+            nameTd.className = "acct-actor-name";
+            nameTd.title = "CTID " + (actor.ctid || "\u2014") + " | " + (actor.ip || "\u2014");
+            nameTd.textContent = actor.name;
+            row.appendChild(nameTd);
+
+            domains.forEach(function(d) {
+                var acc = (GOVERNANCE.access[actor.id] || {})[d.id];
+                var level = acc ? (acc.gap ? "gap" : acc.level) : "none";
+                var td = document.createElement("td");
+                td.className = "acct-cell " + cellClass(level);
+                td.dataset.actor = actor.id;
+                td.dataset.domain = d.id;
+                td.title = d.fullName;
+                td.textContent = cellIcon(level);
+                td.addEventListener("click", function() { showDetail(actor.id, d.id); });
+                row.appendChild(td);
+            });
+            tbody.appendChild(row);
+        });
+    });
+    table.appendChild(tbody);
+
+    // Update stats
+    document.getElementById("stat-actors").textContent = actors.length;
+    var totalTools = 0, guardedTools = 0;
+    actors.forEach(function(a) {
+        var acc = GOVERNANCE.access[a.id] || {};
+        Object.values(acc).forEach(function(v) {
+            totalTools  += (v.tools || []).length;
+            if ((v.guards || []).length > 0) guardedTools += (v.tools || []).length;
+        });
+    });
+    document.getElementById("stat-tools").textContent = totalTools;
+    document.getElementById("stat-guarded").textContent =
+        totalTools > 0 ? Math.round(guardedTools / totalTools * 100) + "%" : "\u2014";
+    document.getElementById("stat-gaps").textContent = GOVERNANCE.gaps.length;
+}
+
+function showDetail(actorId, domainId) {
+    var actor  = GOVERNANCE.actors.find(function(a) { return a.id === actorId; });
+    var domain = GOVERNANCE.domains.find(function(d) { return d.id === domainId; });
+    var acc    = (GOVERNANCE.access[actorId] || {})[domainId];
+    var gap    = (acc && acc.gap)
+        ? GOVERNANCE.gaps.find(function(g) { return g.id === acc.gap; })
+        : null;
+
+    var panel = document.getElementById("detail-content");
+    while (panel.firstChild) panel.removeChild(panel.firstChild);
+
+    function addItem(label, value, cls) {
+        var item = document.createElement("div");
+        item.className = "acct-detail-item";
+        var lEl = document.createElement("div");
+        lEl.className = "acct-detail-label";
+        lEl.textContent = label;
+        var vEl = document.createElement("div");
+        vEl.className = "acct-detail-value" + (cls ? " " + cls : "");
+        vEl.textContent = value;
+        item.appendChild(lEl);
+        item.appendChild(vEl);
+        panel.appendChild(item);
+    }
+
+    if (!acc) {
+        addItem("Actor",  actor ? actor.name : actorId);
+        addItem("Domain", domain ? domain.fullName : domainId);
+        addItem("Access", "No access to this domain");
+        return;
+    }
+
+    addItem("Actor",  (actor ? actor.name : actorId) + (actor && actor.ctid ? " (CTID " + actor.ctid + ")" : ""));
+    addItem("Domain", domain ? domain.fullName : domainId);
+    if (actor && actor.ip) addItem("IP", actor.ip);
+    addItem("Access Level", acc.level);
+    addItem("Tools (" + (acc.tools || []).length + ")", (acc.tools || []).join(", ") || "\u2014");
+    addItem("Guards", (acc.guards || []).length > 0
+        ? acc.guards.map(function(g) { return "@" + g; }).join(" + ")
+        : "None");
+
+    if (gap) {
+        var gapItem  = document.createElement("div");
+        gapItem.className = "acct-detail-item";
+        var gapLabel = document.createElement("div");
+        gapLabel.className = "acct-detail-label";
+        gapLabel.textContent = "Gap";
+        var gapVal = document.createElement("div");
+        gapVal.className = "acct-detail-value";
+        var badge = document.createElement("span");
+        badge.className = "acct-gap-badge gap-sev-" + gap.severity;
+        badge.textContent = gap.id;
+        var sevText = document.createElement("span");
+        sevText.className = "gap-sev-text gap-sev-" + gap.severity;
+        sevText.textContent = " " + gap.severity.toUpperCase() + " \u2014 " + gap.issue;
+        gapVal.appendChild(badge);
+        gapVal.appendChild(sevText);
+        gapItem.appendChild(gapLabel);
+        gapItem.appendChild(gapVal);
+        panel.appendChild(gapItem);
+        addItem("Fix", gap.fix);
+        addItem("Status", gap.status);
+        if (gap.residual) addItem("Residual Risk", gap.residual);
+    }
+}
+
+function exportGapReport() {
+    var md = "# Maude Gap Report\n\n";
+    md += "Generated: " + new Date().toISOString().split("T")[0] + "\n\n";
+    md += "| ID | Severity | Domain | Status | Issue | Fix |\n";
+    md += "|---|---|---|---|---|---|\n";
+    GOVERNANCE.gaps.forEach(function(g) {
+        md += "| " + g.id + " | " + g.severity + " | " + g.domain + " | " + g.status + " | " + g.issue + " | " + g.fix + " |\n";
+    });
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(md).then(function() {
+            var btn = document.querySelector(".acct-export-btn");
+            var orig = btn.textContent;
+            btn.textContent = "Copied!";
+            btn.style.borderColor = "var(--ok)";
+            btn.style.color = "var(--ok)";
+            setTimeout(function() {
+                btn.textContent = orig;
+                btn.style.borderColor = "";
+                btn.style.color = "";
+            }, 2000);
+        });
+    } else {
+        var ta = document.createElement("textarea");
+        ta.value = md;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+        document.body.removeChild(ta);
+    }
+}
+
+// Wire up filters
+document.querySelectorAll("[data-filter], input[name='site']").forEach(function(el) {
+    el.addEventListener("change", renderMatrix);
+});
+
+// Initial render
+renderMatrix();
+</script>
+{% endblock %}

@@ -1,0 +1,192 @@
+/* ── Operations Layout (formerly Lobby) ────────────────────────── */
+
+.ops-header {
+    margin-bottom: 1rem;
+    border-bottom: 1px solid var(--gold-dim);
+    padding-bottom: 0.75rem;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.ops-title h1 {
+    font-size: 1.6rem;
+    color: var(--gold);
+    letter-spacing: 0.08em;
+    margin: 0;
+    display: inline;
+}
+
+.ops-subtitle {
+    color: var(--cream-muted);
+    font-size: 0.85rem;
+    margin-left: 1rem;
+    letter-spacing: 0.03em;
+}
+
+.ops-subnav {
+    display: flex;
+    gap: 0;
+}
+
+.ops-subnav a {
+    color: var(--cream-muted);
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 0.4rem 1rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    border: 1px solid var(--gold-dim);
+    border-right: none;
+    transition: all 0.2s;
+}
+
+.ops-subnav a:first-child {
+    border-radius: 3px 0 0 3px;
+}
+
+.ops-subnav a:last-child {
+    border-right: 1px solid var(--gold-dim);
+    border-radius: 0 3px 3px 0;
+}
+
+.ops-subnav a:hover {
+    color: var(--gold-light);
+    background: rgba(201, 168, 76, 0.08);
+}
+
+.ops-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2.5rem;
+    position: relative;
+}
+
+.ops-main::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    max-width: 500px;
+    height: 100%;
+    background: url('/static/img/maude-concierge.svg') no-repeat center center;
+    background-size: contain;
+    opacity: 0.04;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.rooms-panel {
+    min-width: 0;
+    position: relative;
+    z-index: 1;
+}
+
+.chat-panel {
+    z-index: 1;
+}
+
+/* ── Room Grid ─────────────────────────────────────────────────── */
+
+.room-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 0.6rem;
+}
+
+.room-tile {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 0.75rem 0.9rem;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.room-tile:hover {
+    border-color: var(--gold-muted);
+    box-shadow: 0 2px 8px var(--shadow-dark);
+}
+
+.room-tile-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.room-tile-header .badge {
+    font-size: 0.72rem;
+    padding: 0.1rem 0.4rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.room-tile-name {
+    font-weight: 600;
+    font-size: 0.82rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.room-tile-name a { color: var(--cream); }
+.room-tile-name a:hover { color: var(--gold-light); }
+
+.room-tile-meta {
+    font-size: 0.68rem;
+    color: var(--cream-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.room-tile-deps {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.room-tile-links {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 0.35rem;
+    padding-top: 0.3rem;
+    border-top: 1px solid rgba(138, 112, 52, 0.1);
+}
+
+.room-tile-links a {
+    font-size: 0.68rem;
+    color: var(--cream-muted);
+    letter-spacing: 0.03em;
+}
+
+.room-tile-links a:hover {
+    color: var(--gold-light);
+}
+
+.room-tile-links .web-link {
+    color: var(--gold-muted);
+    font-weight: 500;
+}
+
+.room-tile-links .web-link:hover {
+    color: var(--gold);
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .room-grid {
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    }
+    .ops-header {
+        flex-direction: column;
+    }
+}

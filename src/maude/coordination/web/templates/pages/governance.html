@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% from "macros/summary.html" import summary_stat %}
+{% set active_page = 'governance' %}
+
+{% block title %}Governance — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="gov-header">
+    <div class="gov-title">
+        <h1>Governance</h1>
+        <span class="gov-subtitle">Maude — How We're Built</span>
+    </div>
+    <div class="gov-subnav">
+        <a href="/governance" class="active">Overview</a>
+        <a href="/governance/accountability">Accountability</a>
+        <a href="/governance/compliance">Compliance</a>
+        <a href="/status">Report</a>
+    </div>
+</div>
+
+<div class="gov-main">
+
+    {# ── Summary Stats Bar ─────────────────────────────────────────── #}
+    <div class="summary-bar">
+        {{ summary_stat(room_count, 'Rooms Active') }}
+        {{ summary_stat(tool_count, 'Tools Registered') }}
+        {{ summary_stat(guarded_pct|string + '%', 'Guarded', 'ok') }}
+        {{ summary_stat(agent_count, 'Dept Agents') }}
+        {{ summary_stat(site_count, 'Sites') }}
+    </div>
+
+    {# ── Section 1: Maude ────────────────────────────────── #}
+    <section class="gov-section reveal-on-scroll">
+        <div class="deco-divider"><span class="deco-diamond"></span></div>
+        <h2>Maude</h2>
+        <p class="gov-prose">A federation of {{ room_count }} sovereign systems under shared law. Each one has a job, its own identity, its own territory, and full accountability for everything it does. They monitor their own health, recover from failures, and escalate when they can't handle something alone.</p>
+        <p class="gov-prose">This is not a product. It is an institution — built from 25 years of institutional knowledge about how your organization actually works, translated into systems that can run themselves.</p>
+    </section>
+
+    {# ── Section 2: The Constitution ───────────────────────────────── #}
+    <section class="gov-section reveal-on-scroll">
+        <div class="deco-divider"><span class="deco-diamond"></span></div>
+        <h2>The Constitution</h2>
+        <p class="gov-prose">Every system follows the same rules — the Maude Constitution v3.0. It governs credentials, data sovereignty, safety, and how systems interact. No system is above the law.</p>
+        <div class="gov-pillars">
+            <div class="gov-pillar">
+                <span class="pillar-label">Credential Governance</span>
+                <span class="pillar-text">Every key is scoped. No shared credentials across trust boundaries. Production is a blood oath.</span>
+            </div>
+            <div class="gov-pillar">
+                <span class="pillar-label">Data Sovereignty</span>
+                <span class="pillar-text">Every database serves a single domain. Data does not cross domain boundaries through shared tables or cross-database queries.</span>
+            </div>
+            <div class="gov-pillar">
+                <span class="pillar-label">Safety</span>
+                <span class="pillar-text">No action that cannot be undone is taken without explicit approval. Destructive operations require confirmation.</span>
+            </div>
+            <div class="gov-pillar">
+                <span class="pillar-label">Audit</span>
+                <span class="pillar-text">Every tool call, restart, and cross-room interaction is logged. The audit trail is the court of record — immutable and append-only.</span>
+            </div>
+        </div>
+    </section>
+
+    {# ── Section 3: The Rooms ──────────────────────────────────────── #}
+    <section class="gov-section reveal-on-scroll">
+        <div class="deco-divider"><span class="deco-diamond"></span></div>
+        <h2>The Rooms</h2>
+        <p class="gov-prose">{{ room_count }} rooms across {{ site_count }} sites. Each room is autonomous — it runs itself, monitors itself, and fixes what it can. When it can't, it escalates. Every action is logged.</p>
+        <div class="gov-room-grid">
+            {% for layer_name, layer_rooms in rooms_by_layer.items() %}
+            <div class="gov-layer">
+                <h3 class="layer-label">{{ layer_name }}</h3>
+                <div class="layer-rooms">
+                    {% for room in layer_rooms %}
+                    <div class="gov-room-card">
+                        <span class="room-name">{{ room.name }}</span>
+                        <span class="badge badge-{{ 'ok' if room.site == 'slc' else 'warn' }}">{{ room.site|upper }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    {# ── Section 4: The People ─────────────────────────────────────── #}
+    <section class="gov-section reveal-on-scroll">
+        <div class="deco-divider"><span class="deco-diamond"></span></div>
+        <h2>The People</h2>
+        <p class="gov-prose">{{ agent_count }} department specialists across {{ company_count }} companies. They don't touch systems — they carry organizational knowledge. Each one maps to a real function: quality, engineering, shipping, safety, lab, and more. Ask them a question, they answer from the perspective of their role.</p>
+        <div class="gov-agent-grid">
+            {% for company, count in agents_by_company.items() %}
+            <div class="gov-agent-card">
+                <span class="company-name">{{ company|upper }}</span>
+                <span class="agent-count">{{ count }} agent{% if count != 1 %}s{% endif %}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    {# ── Section 5: The Numbers ────────────────────────────────────── #}
+    <section class="gov-section reveal-on-scroll">
+        <div class="deco-divider"><span class="deco-diamond"></span></div>
+        <h2>The Numbers</h2>
+        <div class="gov-numbers-grid">
+            <div class="number-card">
+                <div class="number-value">{{ room_count }}</div>
+                <div class="number-label">Rooms Active</div>
+            </div>
+            <div class="number-card">
+                <div class="number-value">{{ tool_count }}</div>
+                <div class="number-label">Tools Registered</div>
+            </div>
+            <div class="number-card number-card--ok">
+                <div class="number-value">{{ guarded_pct }}%</div>
+                <div class="number-label">Tools Guarded</div>
+            </div>
+            <div class="number-card{% if gap_count > 0 %} number-card--warn{% endif %}">
+                <div class="number-value">{{ gap_count }}</div>
+                <div class="number-label">Open Gaps</div>
+            </div>
+            <div class="number-card{% if compliance_pct >= 90 %} number-card--ok{% elif compliance_pct >= 70 %} number-card--warn{% elif compliance_pct > 0 %} number-card--error{% endif %}">
+                <div class="number-value">{% if compliance_pct > 0 %}{{ compliance_pct }}%{% else %}—{% endif %}</div>
+                <div class="number-label">Checks Passing</div>
+            </div>
+        </div>
+    </section>
+
+    {# ── Section 6: How It Works ───────────────────────────────────── #}
+    <section class="gov-section reveal-on-scroll">
+        <div class="deco-divider"><span class="deco-diamond"></span></div>
+        <h2>How It Works</h2>
+        <p class="gov-prose">Rooms are autonomous. They monitor their own health, recover from failures, escalate when they can't. The Coordinator coordinates. The control plane deploys and responds to emergencies. Every action is logged in an immutable audit trail.</p>
+        <div class="gov-flow">
+            <div class="flow-step">
+                <span class="flow-num">1</span>
+                <span class="flow-text">Each room monitors its own health every 5 minutes</span>
+            </div>
+            <div class="flow-connector"></div>
+            <div class="flow-step">
+                <span class="flow-num">2</span>
+                <span class="flow-text">Problems detected — automatic recovery attempted</span>
+            </div>
+            <div class="flow-connector"></div>
+            <div class="flow-step">
+                <span class="flow-num">3</span>
+                <span class="flow-text">Can't self-heal — escalation to Coordinator</span>
+            </div>
+            <div class="flow-connector"></div>
+            <div class="flow-step">
+                <span class="flow-num">4</span>
+                <span class="flow-text">Coordinator coordinates cross-room response</span>
+            </div>
+            <div class="flow-connector"></div>
+            <div class="flow-step">
+                <span class="flow-num">5</span>
+                <span class="flow-text">Every action logged — who, what, when, why</span>
+            </div>
+        </div>
+        <div class="gov-cta-links">
+            <a href="/governance/accountability">View Accountability Matrix &rarr;</a>
+            <a href="/governance/compliance">View Compliance Audit &rarr;</a>
+            <a href="/how-it-works">Full Technical Overview &rarr;</a>
+        </div>
+    </section>
+
+</div>
+{% endblock %}

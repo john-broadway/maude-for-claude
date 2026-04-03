@@ -1,0 +1,76 @@
+# Maude for Claude — CI
+# Copyright (c) 2026 John Broadway
+# Licensed under the Apache License, Version 2.0
+# Version: 1.0
+# Created: 2026-03-29 MST
+# Authors: John Broadway, Claude (Anthropic)
+#
+# Runs tests, linting, and origin scrub on every push and pull request.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  scrub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Origin scrub check (reads scripts/scrub-patterns.txt)
+        run: |
+          FOUND=0
+          PFILE="scripts/scrub-patterns.txt"
+          if [ ! -f "$PFILE" ]; then
+            echo "::error::Pattern file missing: $PFILE"
+            exit 2
+          fi
+          while IFS= read -r line; do
+            case "$line" in '#'*|'') continue ;; esac
+            label="${line%%|||*}"
+            pattern="${line##*|||}"
+            label="$(echo "$label" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            pattern="$(echo "$pattern" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            [ -z "$pattern" ] && continue
+            if grep -rEn "$pattern" src/ tests/ template/ .github/ docs/ examples/ skills/ \
+                 --exclude-dir=__pycache__ --exclude='*.pyc' \
+                 --exclude=scrub-patterns.txt 2>/dev/null; then
+              echo "::error::SCRUB FAIL: $label"
+              FOUND=1
+            fi
+          done < "$PFILE"
+          if [ "$FOUND" -ne 0 ]; then
+            echo "::error::Origin scrub failed. Internal references detected."
+            exit 1
+          fi
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install -e ".[dev,all]"
+
+      - name: Show dependency versions
+        run: pip list --format=columns | grep -iE "fastmcp|httpx|pyyaml|asyncpg|qdrant|pytest|starlette"
+
+      - name: Lint
+        run: ruff check src/ tests/
+
+      - name: Test
+        run: pytest -m "not integration" --tb=short -p no:randomly -s 2>&1 | tail -20

@@ -1,0 +1,39 @@
+{% from "macros/badges.html" import status_badge %}
+{% for layer in layers %}
+{% if layer.rooms %}
+<div class="eco-layer" id="layer-{{ layer.key }}">
+    <div class="eco-layer-header">
+        <h3>{{ layer.label }}</h3>
+        <span class="eco-layer-desc">{{ layer.description }}</span>
+    </div>
+    <div class="room-grid">
+        {% for room in layer.rooms %}
+        <div class="room-tile">
+            <div class="room-tile-header">
+                <span class="room-tile-name">
+                    <a href="/room/{{ room.name }}">{{ room.name }}</a>
+                </span>
+                {{ status_badge(room.status) }}
+            </div>
+            <div class="room-tile-meta">
+                <span class="eco-room-info">
+                    CTID {{ room.ctid | default('—') }}
+                    · {{ room.ip | default('—') }}
+                    · :{{ room.mcp_port | default('—') }}
+                </span>
+                {% if room.description %}
+                <span class="eco-room-desc">{{ room.description }}</span>
+                {% endif %}
+            </div>
+            <div class="room-tile-links">
+                <a href="/room/{{ room.name }}">detail</a>
+                {% if room.web_url %}
+                    <a href="{{ room.web_url }}" target="_blank" rel="noopener" class="web-link">open &#8599;</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+{% endfor %}

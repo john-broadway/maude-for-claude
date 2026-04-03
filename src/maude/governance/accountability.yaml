@@ -1,0 +1,445 @@
+# Maude Accountability Matrix — Governance Data Model
+#
+# Canonical YAML mapping every actor, action, guard, site scope, and gap.
+# Drives the interactive matrix (matrix.html) and governance tooling.
+#
+# Authors: John Broadway
+#          Claude (Anthropic) <noreply@anthropic.com>
+# Version: 2.0.0
+# Updated: 2026-04-01
+# Constitution: v4.0.0
+#
+# NOTE: This is a schema demonstration with generic example data.
+# Real deployments should populate this with actual room inventories.
+
+meta:
+  version: "2.0.0"
+  updated: "2026-04-01"
+  constitution_version: "4.0.0"
+
+# ════════════════════════════════════════════════════════════════════
+# ACTORS — Who can do things
+# ════════════════════════════════════════════════════════════════════
+
+actors:
+
+  # ── Control Plane ──────────────────────────────────────────────
+  - id: control-plane
+    name: "Control Plane"
+    type: control-plane
+    ctid: 900
+    ip: "192.0.2.71"
+    model: claude-opus-4-6
+    sites: [site-a, site-b]
+    mcp_servers: all
+    hooks:
+      - block-credential-reads
+      - block-sensitive-edits
+      - block-infra-edits
+      - plc-safety-check
+      - destructive-git-block
+      - dangerous-rm-block
+      - security-scan
+
+  # ── Example Maude Rooms ───────────────────────────────────────
+
+  - id: room:coordinator
+    name: "Coordinator"
+    type: maude-room
+    ctid: 200
+    ip: "192.0.2.80"
+    site: site-a
+    model: example-model/8B
+    layer: maude_layer
+    domains: [coordination, compliance, security]
+    autonomy:
+      enabled: true
+      schedule_minutes: 15
+      health_loop_interval: 300
+      max_restart_attempts: 3
+      scheduled_tools: [service_health]
+      escalation: "health_loop → room_agent → claude_fallback"
+    tools_read:
+      - coordinator_briefing
+      - coordinator_room_status
+      - coordinator_dependency_graph
+      - coordinator_recent_incidents
+      - coordinator_recent_escalations
+      - coordinator_ecosystem_map
+      - fleet_model_status
+      - compliance_scan
+      - security_scan
+    tools_write:
+      - coordinator_relay
+      - fleet_deploy
+      - training_trigger
+    guards: [audit_logged, kill_switch]
+
+  - id: room:postgresql
+    name: "PostgreSQL Room"
+    type: maude-room
+    ctid: 100
+    ip: "192.0.2.30"
+    site: site-a
+    model: example-model/8B
+    layer: data
+    domains: [database]
+    autonomy:
+      enabled: true
+      schedule_minutes: 60
+      health_loop_interval: 300
+      max_restart_attempts: 3
+      scheduled_tools: [service_health, pg_connection_pool]
+      escalation: "PANIC suppresses restart; disk >80% escalates"
+    tools_read:
+      - service_health
+      - pg_connection_pool
+      - pg_data_freshness
+      - pg_db_sizes
+      - pg_query_stats
+      - pg_chunk_health
+      - pg_replication_status
+      - pg_backup_status
+      - pg_vacuum_status
+      - pg_log_errors
+    tools_write:
+      - pg_vacuum_trigger
+      - pg_terminate_idle
+      - service_restart
+    guards: [audit_logged, requires_confirm, rate_limited, kill_switch, acl]
+
+  - id: room:grafana
+    name: "Grafana Room"
+    type: maude-room
+    ctid: 110
+    ip: "192.0.2.40"
+    site: site-a
+    model: example-model/8B
+    layer: observability
+    domains: [monitoring]
+    autonomy:
+      enabled: true
+      schedule_minutes: 60
+      health_loop_interval: 300
+      max_restart_attempts: 3
+      scheduled_tools: [service_health, grafana_health]
+      escalation: "datasource failure → upstream_issue"
+    tools_read:
+      - service_health
+      - grafana_health
+      - grafana_dashboard_list
+      - grafana_dashboard_get
+      - grafana_alert_rules
+      - grafana_datasource_list
+      - grafana_datasource_health
+    tools_write:
+      - grafana_dashboard_deploy
+      - grafana_datasource_create
+      - grafana_alert_rule_create
+      - service_restart
+    guards: [audit_logged, requires_confirm, rate_limited, kill_switch, acl]
+
+  - id: room:app-service
+    name: "Application Service Room"
+    type: maude-room
+    ctid: 120
+    ip: "192.0.2.50"
+    site: site-a
+    model: example-model/8B
+    layer: application
+    domains: [business-logic]
+    autonomy:
+      enabled: true
+      schedule_minutes: 60
+      health_loop_interval: 300
+      max_restart_attempts: 3
+      scheduled_tools: [service_health, app_health]
+    tools_read:
+      - service_health
+      - app_health
+      - app_metrics
+    tools_write:
+      - service_restart
+    guards: [audit_logged, requires_confirm, rate_limited, kill_switch, acl]
+
+  # ── Stdio MCP Servers (on control plane, not rooms) ────────────
+
+  - id: mcp:memory
+    name: "Memory MCP Server"
+    type: mcp-stdio
+    site: site-a
+    description: "Three-tier memory system for Maude agents"
+    tools_read:
+      - memory_brief
+      - memory_recall_similar
+      - memory_recall_recent
+      - memory_recall_by_id
+      - memory_load_knowledge
+      - memory_list_projects
+    tools_write:
+      - memory_store
+      - memory_save
+      - memory_embed
+      - memory_update_knowledge
+    guards: [append-only-by-design]
+
+  - id: mcp:postgres
+    name: "PostgreSQL Direct Query"
+    type: mcp-stdio
+    site: site-a
+    description: "Direct SQL query via FastMCP wrapper"
+    tools_read:
+      - query
+      - list_tables
+    tools_write: []
+    guards: [sql-classifier]
+
+
+# ════════════════════════════════════════════════════════════════════
+# DOMAINS — What can be done
+# ════════════════════════════════════════════════════════════════════
+
+domains:
+
+  - id: database
+    name: "Database Operations"
+    actions:
+      - tool: mcp__postgres__query
+        access: read-write
+        guard: sql-classifier
+        actors: [control-plane]
+        note: "G1 — SQL classifier blocks DDL, warns on writes"
+
+      - tool: pg_vacuum_trigger
+        access: destructive
+        guard: [requires_confirm, rate_limited, audit_logged]
+        actors: [control-plane, "room:postgresql"]
+
+      - tool: pg_terminate_idle
+        access: destructive
+        guard: [requires_confirm, rate_limited, audit_logged]
+        actors: [control-plane, "room:postgresql"]
+
+      - tool: pg_connection_pool
+        access: read-only
+        guard: [audit_logged]
+        actors: [control-plane, "room:postgresql"]
+
+      - tool: pg_data_freshness
+        access: read-only
+        guard: [audit_logged]
+        actors: [control-plane, "room:postgresql"]
+
+  - id: service-lifecycle
+    name: "Service Lifecycle"
+    actions:
+      - tool: service_restart
+        access: destructive
+        guard: [requires_confirm, rate_limited, audit_logged, "acl:admin"]
+        actors: [control-plane, "room:self"]
+        note: "Each room can restart its own service"
+
+      - tool: kill_switch_activate
+        access: destructive
+        guard: [audit_logged]
+        actors: [control-plane]
+        note: "Constitution requires stated reason"
+
+      - tool: kill_switch_deactivate
+        access: destructive
+        guard: [audit_logged]
+        actors: [control-plane]
+
+      - tool: kill_switch_status
+        access: read-only
+        guard: [audit_logged]
+        actors: [control-plane, "room:self"]
+
+  - id: monitoring
+    name: "Monitoring & Dashboards"
+    actions:
+      - tool: grafana_dashboard_deploy
+        access: write
+        guard: [requires_confirm, rate_limited, audit_logged]
+        actors: [control-plane, "room:grafana"]
+
+      - tool: grafana_alert_rule_create
+        access: write
+        guard: [requires_confirm, rate_limited, audit_logged]
+        actors: [control-plane, "room:grafana"]
+
+      - tool: grafana_datasource_create
+        access: write
+        guard: [requires_confirm, rate_limited, audit_logged]
+        actors: [control-plane, "room:grafana"]
+
+  - id: memory
+    name: "Memory & Knowledge"
+    actions:
+      - tool: memory_store
+        access: write
+        guard: append-only-by-design
+        actors: [control-plane, "all rooms via per-room memory tools"]
+        note: "G5 — Accepted risk: append-only, low blast radius"
+
+      - tool: memory_recall_similar
+        access: read-only
+        guard: none
+        actors: [control-plane, "all rooms via per-room memory tools"]
+
+      - tool: memory_update_knowledge
+        access: write
+        guard: append-only-by-design
+        actors: [control-plane]
+
+  - id: compliance-security
+    name: "Compliance & Security"
+    actions:
+      - tool: compliance_scan
+        access: read-only
+        guard: [audit_logged]
+        actors: [control-plane, "room:coordinator"]
+
+      - tool: security_scan
+        access: read-only
+        guard: [audit_logged]
+        actors: [control-plane, "room:coordinator"]
+
+  - id: code-files
+    name: "Code & File Operations"
+    actions:
+      - tool: "Read/Edit/Write"
+        access: read-write
+        guard: [block-credential-reads, block-sensitive-edits, block-infra-edits, security-scan]
+        actors: [control-plane]
+        note: "Rooms cannot edit control plane files"
+
+
+# ════════════════════════════════════════════════════════════════════
+# GAPS — Known security and governance gaps
+# ════════════════════════════════════════════════════════════════════
+
+gaps:
+
+  - id: G1
+    severity: critical
+    domain: database
+    status: fixed
+    issue: "Direct SQL query tool allows arbitrary SQL with no guard"
+    fix: "SQL-classifying wrapper: DDL blocked, writes require confirm=True"
+    residual_risk: "Support role can still write to databases with confirmation"
+
+  - id: G2
+    severity: high
+    domain: plc
+    status: fixed
+    issue: "PLC safety hook warns but does not block"
+    fix: "Changed safety hook to emit deny JSON"
+
+  - id: G3
+    severity: medium
+    domain: code-reviewers
+    status: documented
+    issue: "Multiple overlapping code-reviewer agents across plugins"
+    fix: "Documented routing — each serves a different purpose"
+    routing:
+      post-plan-step: "superpowers:code-reviewer"
+      pr-review: "pr-review-toolkit:code-reviewer"
+      quick-quality: "feature-dev:code-reviewer"
+      external-ai: "coderabbit:code-reviewer"
+
+  - id: G4
+    severity: low
+    domain: agents
+    status: accepted
+    issue: "Subagents inherit all MCP server access"
+    fix: "Platform limitation — mitigated by model tiering + hooks"
+    mitigation: "Hooks apply to all tool calls regardless of caller. Model tiering limits subagent capability."
+
+  - id: G5
+    severity: low
+    domain: memory
+    status: accepted
+    issue: "memory_store has no confirmation gate"
+    fix: "Accepted risk — append-only, low blast radius"
+    mitigation: "Memories are append-only. Overwrite requires explicit memory_update_knowledge."
+
+  - id: G6
+    severity: low
+    domain: database
+    status: fixed
+    issue: "PLC data client uses overprivileged database role instead of least-privilege role"
+    fix: "Changed to least-privilege role"
+
+  - id: G7
+    severity: low
+    domain: database
+    status: fixed
+    issue: "SMB config falls back to overprivileged database role when specific key absent"
+    fix: "Removed fallback — now raises KeyError with clear message"
+
+  - id: G8
+    severity: medium
+    domain: credentials
+    status: fixed
+    issue: "Default IPs in config resolver are site-specific — remote sites silently fall back to primary"
+    fix: "Added warning log when defaults used. Remote sites must set env vars."
+
+
+# ════════════════════════════════════════════════════════════════════
+# HOOKS — Pre/post-tool guards on control plane
+# ════════════════════════════════════════════════════════════════════
+
+hooks:
+  - id: block-credential-reads
+    event: PreToolUse
+    action: deny
+    description: "Blocks Read tool on credential files (secrets.yaml, .env, tokens)"
+
+  - id: block-sensitive-edits
+    event: PreToolUse
+    action: deny
+    description: "Blocks Write/Edit on .env files and credential stores"
+
+  - id: block-infra-edits
+    event: PreToolUse
+    action: deny
+    description: "Blocks direct edits to infrastructure config files"
+
+  - id: plc-safety-check
+    event: PreToolUse
+    action: deny
+    description: "Blocks PLC write operations in code files"
+
+  - id: destructive-git-block
+    event: PreToolUse
+    action: deny
+    description: "Blocks force-push, reset --hard, and other destructive git ops"
+
+  - id: dangerous-rm-block
+    event: PreToolUse
+    action: deny
+    description: "Blocks rm -rf on critical paths"
+
+  - id: security-scan
+    event: PostToolUse
+    action: warn
+    description: "Scans written files for credential leaks"
+
+
+# ════════════════════════════════════════════════════════════════════
+# SITES — Multi-site scope
+# ════════════════════════════════════════════════════════════════════
+
+sites:
+  - id: site-a
+    name: "Site A (Primary)"
+    status: live
+    rooms: 5
+    notes: "Primary site — full Maude deployment"
+
+  - id: site-b
+    name: "Site B (Remote)"
+    status: deploying
+    rooms: 0
+    notes: "First remote site"

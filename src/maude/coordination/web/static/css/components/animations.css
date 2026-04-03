@@ -1,0 +1,127 @@
+/* ── Animation System ──────────────────────────────────────────── */
+
+/* Page content entrance — staggered fade-up */
+@keyframes content-enter {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Hero entrance — grand, slow reveal */
+@keyframes fd-hero-enter {
+    from {
+        opacity: 0;
+        transform: translateY(24px) scale(0.98);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Cascading element fade-up (used with animation-delay) */
+@keyframes fd-fade-up {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Gold sweep loading bar */
+@keyframes loading-sweep {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+}
+
+/* Attention pulse for active states */
+@keyframes gold-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(201, 168, 76, 0.15); }
+    50%      { box-shadow: 0 0 12px 2px rgba(201, 168, 76, 0.25); }
+}
+
+/* Chat typing indicator — gold line sweep */
+@keyframes typing-sweep {
+    0%   { transform: translateX(-100%); opacity: 0; }
+    20%  { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { transform: translateX(200%); opacity: 0; }
+}
+
+/* ── Hover Effects ─────────────────────────────────────────────── */
+
+/* Card lift + glow on hover */
+.hover-lift {
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+.hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--glow-gold);
+}
+
+/* Button shimmer sweep on hover */
+.hover-shimmer {
+    position: relative;
+    overflow: hidden;
+}
+.hover-shimmer::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.12),
+        transparent
+    );
+    transition: none;
+    pointer-events: none;
+}
+.hover-shimmer:hover::after {
+    animation: shimmer-pass 0.6s ease forwards;
+}
+
+@keyframes shimmer-pass {
+    0%   { left: -50%; }
+    100% { left: 150%; }
+}
+
+/* Badge brightness on hover */
+.hover-bright {
+    transition: filter 0.2s ease;
+}
+.hover-bright:hover {
+    filter: brightness(1.2);
+}
+
+/* ── Scroll Reveal (CSS companion to scroll-reveal.js) ─────────── */
+
+.reveal-on-scroll {
+    opacity: 0;
+    transform: translateY(16px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.reveal-on-scroll.revealed {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Stagger children within a parent */
+.reveal-stagger > .reveal-on-scroll:nth-child(1) { transition-delay: 0s; }
+.reveal-stagger > .reveal-on-scroll:nth-child(2) { transition-delay: 0.08s; }
+.reveal-stagger > .reveal-on-scroll:nth-child(3) { transition-delay: 0.16s; }
+.reveal-stagger > .reveal-on-scroll:nth-child(4) { transition-delay: 0.24s; }
+.reveal-stagger > .reveal-on-scroll:nth-child(5) { transition-delay: 0.32s; }
+.reveal-stagger > .reveal-on-scroll:nth-child(6) { transition-delay: 0.40s; }

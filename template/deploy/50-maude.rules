@@ -1,0 +1,10 @@
+// Polkit rule: Allow maude user to restart maude@* units
+// Deployed to /etc/polkit-1/rules.d/50-maude.rules on each LXC
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        subject.user == "maude" &&
+        (action.lookup("unit").indexOf("maude@") == 0 ||
+         action.lookup("verb") == "restart")) {
+        return polkit.Result.YES;
+    }
+});

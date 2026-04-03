@@ -1,0 +1,82 @@
+/* ── Fonts ──────────────────────────────────────────────────────── */
+
+/* Playfair Display — display headings */
+@font-face {
+    font-family: 'Playfair Display';
+    src: url('/static/fonts/PlayfairDisplay-Regular.ttf') format('truetype');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Playfair Display';
+    src: url('/static/fonts/PlayfairDisplay-Bold.ttf') format('truetype');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Cormorant Garamond — body text (luxury serif) */
+@font-face {
+    font-family: 'Cormorant Garamond';
+    src: url('/static/fonts/CormorantGaramond-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Cormorant Garamond';
+    src: url('/static/fonts/CormorantGaramond-Regular.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Cormorant Garamond';
+    src: url('/static/fonts/CormorantGaramond-Regular.woff2') format('woff2');
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Cormorant Garamond';
+    src: url('/static/fonts/CormorantGaramond-Regular.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Cormorant Garamond';
+    src: url('/static/fonts/CormorantGaramond-Italic.woff2') format('woff2');
+    font-weight: 400;
+    font-style: italic;
+    font-display: swap;
+}
+
+/* ── Reset & Base ───────────────────────────────────────────────── */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
+    background: var(--bg-primary);
+    background-image:
+        radial-gradient(ellipse at 50% 0%, rgba(15,52,96,0.5) 0%, transparent 60%),
+        linear-gradient(180deg, var(--bg-primary) 0%, #111328 100%);
+    color: var(--cream);
+    line-height: 1.7;
+    min-height: 100vh;
+    font-size: 18px;
+    display: flex;
+    flex-direction: column;
+}
+
+a { color: var(--gold-light); text-decoration: none; transition: color 0.2s; }
+a:hover { color: var(--gold); text-decoration: none; }
+
+h1, h2, h3, h4 {
+    font-family: 'Playfair Display', Georgia, 'Times New Roman', serif;
+    font-weight: 700;
+    color: var(--cream);
+    letter-spacing: 0.02em;
+}

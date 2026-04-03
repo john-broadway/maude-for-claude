@@ -1,0 +1,28 @@
+# Origin scrub patterns — single source of truth.
+# One grep pattern per line. Comments and blank lines ignored.
+# Both scripts/scrub-check.sh and .github/workflows/ci.yml read this file.
+#
+# To add a new pattern: add a line here. Both gates pick it up automatically.
+# Format: LABEL ||| PATTERN
+# The pattern is passed directly to grep -E.
+
+Old env var prefix ||| CHARON_
+Site names ||| HP-SLC|HP-PA|HP_SLC|HP_PA
+Internal IPs ||| 10\.0\.0\.|10\.0\.1\.|10\.10\.|10\.20\.|10\.30\.|10\.40\.
+Internal DNS ||| \.internal\.lan
+Old project names ||| jw_mcp|jw-mcp|the-continental
+Hardware names ||| sr650v2|pve-slc|pve-pa
+Old config dir ||| \.charon/
+Old coordinator ||| Front Desk|front_desk
+VPN details ||| Site Magic|WireGuard
+Company name ||| \bAMC\b|AMC Acquisitions
+Internal DB name ||| database: plc
+Internal services ||| \baurum\b|\bassay\b|\baegis\b|\bbulletin-board\b
+Old framework name ||| \bCharon\b|\bcharon\b
+Continental ||| \bContinental\b
+SCADA names ||| \bchronicle\b
+GPU names ||| \bsparky\b|\bsparked\b
+Agent names ||| \bwinston\b|\bWinston\b
+Company domains ||| hammonplating|broadways\.org
+Document service ||| \bMint\b
+ERP service ||| \bERPNext\b|\berpnext\b

@@ -1,0 +1,420 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Infrastructure Report — Clean business report styling
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Override: use system sans-serif for this page ────────────────── */
+
+.pm-page {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--cream);
+    line-height: 1.6;
+}
+
+.pm-page h1,
+.pm-page h2,
+.pm-page h3,
+.pm-page h4 {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 600;
+    letter-spacing: 0;
+}
+
+.pm-page .gov-header {
+    border-bottom: 2px solid var(--gold-dim);
+    padding-bottom: 0.6rem;
+    margin-bottom: 0.75rem;
+}
+
+.pm-page .gov-title h1 {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.pm-page .gov-subtitle {
+    font-size: 0.9rem;
+}
+
+.pm-page .gov-section {
+    padding: 1rem 0;
+}
+
+.pm-page .gov-section h2 {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--cream);
+    letter-spacing: 0;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(138, 112, 52, 0.15);
+    padding-bottom: 0.3rem;
+}
+
+.pm-page .gov-prose {
+    font-size: 0.95rem;
+    line-height: 1.65;
+    color: var(--cream-muted);
+}
+
+/* Kill the deco dividers on this page */
+.pm-page .deco-divider {
+    display: none;
+}
+
+/* ── Meta line ────────────────────────────────────────────────────── */
+
+.pm-meta {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(138, 112, 52, 0.1);
+}
+
+.pm-meta-item {
+    font-size: 0.88rem;
+    color: var(--cream-muted);
+}
+
+.pm-meta-label {
+    color: var(--gold);
+    font-weight: 600;
+    font-size: 0.88rem;
+    margin-right: 0.3rem;
+}
+
+/* ── Summary bar override ─────────────────────────────────────────── */
+
+.pm-page .summary-bar {
+    margin: 0.75rem 0;
+}
+
+.pm-page .summary-stat .number {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.pm-page .summary-stat .label {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* ── Pillar Cards ─────────────────────────────────────────────────── */
+
+.pm-pillars {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.pm-pillar {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 1rem 1.1rem;
+}
+
+.pm-pillar-num {
+    font-size: 0.75rem;
+    color: var(--gold-muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 0.1rem;
+}
+
+.pm-pillar-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--cream);
+    margin-bottom: 0.4rem;
+}
+
+.pm-pillar-items {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.pm-pillar-items li {
+    font-size: 0.88rem;
+    color: var(--cream-muted);
+    line-height: 1.55;
+    padding: 0.1rem 0 0.1rem 0.9rem;
+    position: relative;
+}
+
+.pm-pillar-items li::before {
+    content: '\2013';
+    color: var(--gold-dim);
+    position: absolute;
+    left: 0;
+}
+
+/* ── Tables ──────────────────────────────────────────────────────── */
+
+.pm-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.pm-table thead th {
+    text-align: left;
+    font-weight: 700;
+    color: var(--gold);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 2px solid var(--gold-dim);
+}
+
+.pm-table tbody td {
+    padding: 0.4rem 0.75rem;
+    color: var(--cream-muted);
+    border-bottom: 1px solid rgba(138, 112, 52, 0.08);
+}
+
+.pm-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.pm-table code {
+    font-size: 0.85rem;
+    color: var(--gold);
+}
+
+/* ── Site Cards ──────────────────────────────────────────────────── */
+
+.pm-site-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 1rem 1.25rem;
+    margin-top: 0.75rem;
+}
+
+.pm-site-header {
+    margin-bottom: 0.75rem;
+}
+
+.pm-site-header h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--cream);
+    margin-bottom: 0.15rem;
+}
+
+.pm-site-detail {
+    font-size: 0.85rem;
+    color: var(--cream-muted);
+}
+
+.pm-site-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.pm-site-col h4 {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 0.4rem;
+}
+
+.pm-site-network {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid rgba(138, 112, 52, 0.1);
+}
+
+.pm-net-badge {
+    font-size: 0.8rem;
+    color: var(--cream-muted);
+    background: rgba(138, 112, 52, 0.08);
+    border: 1px solid rgba(138, 112, 52, 0.12);
+    border-radius: 2px;
+    padding: 0.2rem 0.5rem;
+}
+
+/* ── Timeline ─────────────────────────────────────────────────────── */
+
+.pm-timeline {
+    margin-top: 0.75rem;
+}
+
+.pm-week-header {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--cream);
+    padding: 0.5rem 0 0.3rem;
+    margin-top: 0.75rem;
+    border-bottom: 1px solid var(--gold-dim);
+}
+
+.pm-week-header:first-child {
+    margin-top: 0;
+}
+
+.pm-day {
+    display: flex;
+    gap: 1rem;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid rgba(138, 112, 52, 0.06);
+    align-items: baseline;
+}
+
+.pm-day:last-child {
+    border-bottom: none;
+}
+
+.pm-date {
+    font-size: 0.88rem;
+    color: var(--gold);
+    font-weight: 600;
+    min-width: 90px;
+    flex-shrink: 0;
+}
+
+.pm-event {
+    font-size: 0.9rem;
+    color: var(--cream-muted);
+    line-height: 1.6;
+}
+
+/* ── Lessons ──────────────────────────────────────────────────────── */
+
+.pm-lessons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 0.75rem;
+}
+
+.pm-lesson-col h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.pm-lesson-col--worked h3 { color: var(--ok); }
+.pm-lesson-col--failed h3 { color: var(--warn); }
+
+.pm-lesson-item {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 0.65rem 0.85rem;
+    margin-bottom: 0.5rem;
+}
+
+.pm-lesson-title {
+    font-size: 0.92rem;
+    font-weight: 700;
+    color: var(--cream);
+    margin-bottom: 0.15rem;
+}
+
+.pm-lesson-text {
+    font-size: 0.88rem;
+    color: var(--cream-muted);
+    line-height: 1.6;
+}
+
+/* ── Number cards override (from governance.css) ────────────────── */
+
+.pm-page .gov-numbers-grid {
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.pm-page .number-card {
+    min-width: 100px;
+    max-width: 150px;
+    padding: 0.85rem 1rem;
+}
+
+.pm-page .number-value {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.pm-page .number-label {
+    font-size: 0.7rem;
+}
+
+/* ── Gov pillars override ────────────────────────────────────────── */
+
+.pm-page .gov-pillars {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+}
+
+.pm-page .gov-pillar {
+    border-top: none;
+}
+
+.pm-page .gov-pillar::before {
+    display: none;
+}
+
+.pm-page .pillar-label {
+    font-size: 0.85rem;
+}
+
+.pm-page .pillar-text {
+    font-size: 0.88rem;
+}
+
+/* ── Verdict ──────────────────────────────────────────────────────── */
+
+.pm-verdict {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-top: 2px solid var(--gold-muted);
+    border-radius: 3px;
+    padding: 1.25rem 1.5rem;
+    margin-top: 0.75rem;
+}
+
+.pm-verdict p {
+    font-size: 0.95rem;
+    color: var(--cream-muted);
+    line-height: 1.7;
+    margin-bottom: 0.5rem;
+}
+
+.pm-verdict p:last-child {
+    margin-bottom: 0;
+    color: var(--cream);
+    font-weight: 600;
+}
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .pm-pillars { grid-template-columns: 1fr; }
+    .pm-lessons { grid-template-columns: 1fr; }
+    .pm-page .gov-pillars { grid-template-columns: 1fr; }
+    .pm-site-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+    .pm-day { flex-direction: column; gap: 0.15rem; }
+    .pm-site-network { flex-direction: column; }
+}

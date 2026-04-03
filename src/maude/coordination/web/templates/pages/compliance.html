@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% from "macros/summary.html" import summary_stat %}
+{% set active_page = 'governance' %}
+
+{% block title %}Compliance — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="gov-header">
+    <div class="gov-title">
+        <h1>Compliance Audit</h1>
+        <span class="gov-subtitle">Constitutional compliance across all projects</span>
+    </div>
+    <div class="gov-subnav">
+        <a href="/governance">Overview</a>
+        <a href="/governance/accountability">Accountability</a>
+        <a href="/governance/compliance" class="active">Compliance</a>
+        <a href="/status">Report</a>
+    </div>
+</div>
+
+{% if not audit_available %}
+{# ── No audit results yet ─────────────────────────────────────────── #}
+<div class="comp-empty">
+    <div class="comp-empty-inner">
+        <div class="comp-empty-title">No Audit Results</div>
+        <p class="comp-empty-text">Run the compliance audit to generate results.</p>
+        <code class="comp-empty-cmd">python tools/audit-compliance.py --all</code>
+    </div>
+</div>
+
+{% else %}
+{# ── Summary Bar ───────────────────────────────────────────────────── #}
+{% set s = audit.get('summary', {}) %}
+<div class="summary-bar">
+    {{ summary_stat(s.get('total_checks', 0), 'Total Checks') }}
+    {{ summary_stat(s.get('pass', 0), 'Passing', 'ok') }}
+    {{ summary_stat(s.get('fail', 0), 'Failing', 'error') }}
+    {{ summary_stat(s.get('warn', 0) if s.get('warn') else s.get('warning', 0), 'Warnings', 'warn') }}
+    {{ summary_stat(s.get('skip', 0), 'Skipped', 'quiet') }}
+</div>
+
+{# ── Filters ───────────────────────────────────────────────────────── #}
+<div class="comp-filters">
+    <select id="severity-filter" class="comp-select" onchange="filterChecks()">
+        <option value="all">All Severities</option>
+        <option value="critical">Critical</option>
+        <option value="high">High</option>
+        <option value="medium">Medium</option>
+        <option value="low">Low</option>
+    </select>
+    <select id="status-filter" class="comp-select" onchange="filterChecks()">
+        <option value="all">All Statuses</option>
+        <option value="fail">Failing Only</option>
+        <option value="warn">Warnings Only</option>
+        <option value="pass">Passing Only</option>
+    </select>
+    <select id="project-filter" class="comp-select" onchange="filterChecks()">
+        <option value="all">All Projects</option>
+        {% for project_key in audit.get('projects', {}).keys() %}
+        <option value="{{ project_key }}">{{ project_key }}</option>
+        {% endfor %}
+    </select>
+    <button class="comp-reset-btn" onclick="resetFilters()">Reset</button>
+</div>
+
+{# ── Project Cards ─────────────────────────────────────────────────── #}
+<div class="comp-projects" id="projects">
+    {% for project_key, project in audit.get('projects', {}).items() %}
+    {% set proj_pass = project.get('summary', {}).get('pass', 0) %}
+    {% set proj_fail = project.get('summary', {}).get('fail', 0) %}
+    {% set proj_warn = project.get('summary', {}).get('warn', project.get('summary', {}).get('warning', 0)) %}
+    {% set checks = project.get('checks', {}) %}
+    {% set failing_checks = checks.items() | selectattr('1.status', 'in', ['fail', 'warn']) | list %}
+    <div class="comp-project-card" data-project="{{ project_key }}">
+        <div class="comp-project-header">
+            <h3 class="comp-project-name">{{ project_key }}</h3>
+            <div class="comp-project-stats">
+                {% if proj_pass > 0 %}
+                <span class="badge badge-ok">{{ proj_pass }} pass</span>
+                {% endif %}
+                {% if proj_fail > 0 %}
+                <span class="badge badge-attention">{{ proj_fail }} fail</span>
+                {% endif %}
+                {% if proj_warn > 0 %}
+                <span class="badge badge-warn">{{ proj_warn }} warn</span>
+                {% endif %}
+            </div>
+        </div>
+        {% if failing_checks %}
+        <div class="comp-project-checks">
+            {% for check_id, check in checks.items() %}
+            {% if check.get('status') in ['fail', 'warn'] %}
+            <div class="comp-check-item comp-check-{{ check.get('status', 'fail') }}"
+                 data-severity="{{ check.get('severity', 'medium') }}"
+                 data-status="{{ check.get('status', 'fail') }}">
+                <span class="comp-check-id">{{ check_id }}</span>
+                <span class="comp-check-detail">{{ check.get('detail', check.get('message', '')) }}</span>
+                {% set sev = check.get('severity', 'medium') %}
+                <span class="badge {% if sev in ['critical', 'high'] %}badge-attention{% elif sev == 'medium' %}badge-warn{% else %}badge-quiet{% endif %}">{{ sev }}</span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="comp-project-clean">
+            <span class="badge badge-ok">All checks passing</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+{% if audit_available %}
+<script>
+function filterChecks() {
+    var sevFilter  = document.getElementById("severity-filter").value;
+    var statFilter = document.getElementById("status-filter").value;
+    var projFilter = document.getElementById("project-filter").value;
+
+    document.querySelectorAll(".comp-project-card").forEach(function(card) {
+        var projectKey = card.dataset.project;
+        if (projFilter !== "all" && projectKey !== projFilter) {
+            card.style.display = "none";
+            return;
+        }
+
+        var checks = card.querySelectorAll(".comp-check-item");
+        var anyVisible = false;
+        checks.forEach(function(check) {
+            var sev    = check.dataset.severity || "medium";
+            var status = check.dataset.status || "fail";
+            var sevOk  = sevFilter === "all" || sev === sevFilter;
+            var statOk = statFilter === "all" || status === statFilter;
+            if (sevOk && statOk) {
+                check.style.display = "";
+                anyVisible = true;
+            } else {
+                check.style.display = "none";
+            }
+        });
+
+        // Show project card if it has matching checks or if showing all
+        var cleanBanner = card.querySelector(".comp-project-clean");
+        if (cleanBanner) {
+            // Projects with no failures — hide if filtering for specific statuses
+            card.style.display = statFilter !== "pass" && statFilter !== "all" ? "none" : "";
+        } else {
+            card.style.display = anyVisible ? "" : "none";
+        }
+    });
+}
+
+function resetFilters() {
+    document.getElementById("severity-filter").value = "all";
+    document.getElementById("status-filter").value = "all";
+    document.getElementById("project-filter").value = "all";
+    filterChecks();
+}
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,139 @@
+{% if error %}
+<div class="search-error">
+    <p>{{ error }}</p>
+</div>
+
+{% elif no_results %}
+<div class="search-no-results">
+    <p class="search-no-results-msg">No results found for "{{ question }}"</p>
+    <p class="search-no-results-hint">Try rephrasing, or use one of these:</p>
+    <div class="search-nav-grid">
+        <a href="/chat?context={{ question | urlencode }}" class="search-nav-card">
+            <span class="search-nav-title">Ask Maude</span>
+            <span class="search-nav-desc">Chat directly about your question</span>
+        </a>
+        <a href="/operations" class="search-nav-card">
+            <span class="search-nav-title">Operations</span>
+            <span class="search-nav-desc">Room status and fleet health</span>
+        </a>
+        <a href="/governance" class="search-nav-card">
+            <span class="search-nav-title">Governance</span>
+            <span class="search-nav-desc">Constitution and compliance</span>
+        </a>
+        <a href="/ecosystem" class="search-nav-card">
+            <span class="search-nav-title">Ecosystem</span>
+            <span class="search-nav-desc">Full system map</span>
+        </a>
+    </div>
+</div>
+
+{% else %}
+
+{# ── Navigation Matches ──────────────────────────────────────── #}
+{% if nav_matches %}
+<div class="search-nav-section">
+    <div class="search-nav-grid">
+        {% for page in nav_matches %}
+        <a href="{{ page.url }}" class="search-nav-card">
+            <span class="search-nav-title">{{ page.title }}</span>
+            <span class="search-nav-desc">{{ page.desc }}</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="search-two-panel">
+    {# ── Left Panel: Department Answer ─────────────────────── #}
+    <div class="search-panel-dept">
+        {% if answer %}
+        <div class="search-result-answer card deco-corner">
+            <div class="search-result-header">
+                <span class="badge badge-ok">{{ department }}</span>
+                <span class="search-agent-name">{{ agent_name }}</span>
+            </div>
+            <div class="deco-divider"><span class="deco-diamond"></span></div>
+            <div class="search-answer-body">{{ answer }}</div>
+
+            {% if department %}
+            <div class="search-chat-link">
+                <a href="/chat?dept={{ department }}&context={{ question | urlencode }}"
+                   class="search-chat-btn">
+                    Continue in Chat &rarr;
+                </a>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if also_relevant %}
+        <div class="search-also-panel">
+            <h4 class="search-section-label">Also Relevant</h4>
+            <div class="search-also-list">
+                {% for dept in also_relevant %}
+                <a href="/chat?dept={{ dept.department }}&context={{ question | urlencode }}" class="search-also-item">
+                    <span class="badge badge-quiet">{{ dept.department }}</span>
+                    <span class="search-also-name">{{ dept.agent_name }}</span>
+                    <span class="search-also-score">{{ "%.0f"|format(dept.score * 100) }}%</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% else %}
+        {# No department answer — only show if we also have no nav matches #}
+        {% if not nav_matches %}
+        <div class="search-empty-panel">
+            <p>No department match.</p>
+            <a href="/chat?context={{ question | urlencode }}" class="search-chat-btn">Ask Maude directly &rarr;</a>
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+
+    {# ── Right Panel: Related Documents ────────────────────── #}
+    <div class="search-panel-docs">
+        {% if documents %}
+        <div class="search-docs-panel">
+            <h4 class="search-section-label">Documents</h4>
+            <div class="deco-divider"><span class="deco-diamond"></span></div>
+            <div class="search-doc-list">
+                {% for doc in documents %}
+                <div class="search-doc-item">
+                    <div class="search-doc-icon">
+                        {% if doc.extension in ['.pdf'] %}
+                            <span class="doc-type-icon">PDF</span>
+                        {% elif doc.extension in ['.stp', '.step', '.iges', '.dwg'] %}
+                            <span class="doc-type-icon">CAD</span>
+                        {% elif doc.extension in ['.xlsx', '.xls'] %}
+                            <span class="doc-type-icon">XLS</span>
+                        {% elif doc.extension in ['.docx', '.doc'] %}
+                            <span class="doc-type-icon">DOC</span>
+                        {% else %}
+                            <span class="doc-type-icon">FILE</span>
+                        {% endif %}
+                    </div>
+                    <div class="search-doc-info">
+                        <div class="search-doc-name">{{ doc.filename }}</div>
+                        {% if doc.site %}
+                        <span class="badge badge-quiet search-doc-site">{{ doc.site }}</span>
+                        {% endif %}
+                        {% if doc.share %}
+                        <span class="search-doc-share">{{ doc.share }}</span>
+                        {% endif %}
+                        {% if doc.parent_doctype %}
+                        <span class="search-doc-erp">{{ doc.parent_doctype }}: {{ doc.parent_name }}</span>
+                        {% endif %}
+                        {% if doc.preview %}
+                        <div class="search-doc-preview">{{ doc.preview }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="search-doc-score">{{ "%.0f"|format(doc.score * 100) }}%</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

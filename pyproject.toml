@@ -1,0 +1,95 @@
+# Version: 1.0.0
+# Created: 2026-03-28 MST
+# Authors: John Broadway, Claude (Anthropic)
+
+[project]
+name = "maude-claude"
+version = "1.1.1"
+description = "Maude for Claude — autonomous agent framework for infrastructure operations"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "John Broadway"},
+]
+keywords = ["mcp", "agent", "autonomous", "infrastructure", "self-healing", "governance"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+    "fastmcp>=3.0.0,<4",
+    "pyyaml>=6.0",
+    "httpx>=0.27.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/john-broadway/maude-for-claude"
+Repository = "https://github.com/john-broadway/maude-for-claude"
+Changelog = "https://github.com/john-broadway/maude-for-claude/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+memory = ["asyncpg>=0.29.0", "qdrant-client>=1.12.0"]
+healing = ["maude-claude[memory]"]
+ssh = ["asyncssh>=2.17.0"]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "jinja2>=3.1.0",
+    "sse-starlette>=2.0.0",
+    "starlette>=0.40.0",
+    "msal>=1.28.0",
+]
+cache = ["redis[hiredis]>=5.0.0,<6"]
+training = ["maude-claude[memory]"]
+all = ["maude-claude[memory,healing,ssh,web,cache,training]"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=6.0.0",
+    "pre-commit>=4.0.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+maude-coordination = "maude.coordination.cli:main"
+maude-coordination-mcp = "maude.coordination.mcp:main"
+maude-memory-mcp = "maude.memory.mcp_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/maude"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests requiring live infrastructure",
+]
+
+[tool.coverage.run]
+source = ["src/maude"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

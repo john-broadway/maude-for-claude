@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Maude Coordinator</title>
+    <link rel="stylesheet" href="/static/css/art-deco.css">
+    <style>
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80vh;
+            text-align: center;
+        }
+        .login-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--gold-dim);
+            padding: 2.5rem;
+            max-width: 400px;
+            width: 100%;
+        }
+        .login-title {
+            font-family: 'Playfair Display', serif;
+            color: var(--gold);
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .login-subtitle {
+            color: var(--cream-muted);
+            font-size: 0.85rem;
+            margin-bottom: 2rem;
+        }
+        .login-error {
+            background: rgba(248, 113, 113, 0.1);
+            border: 1px solid var(--error);
+            color: var(--error);
+            padding: 0.75rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.85rem;
+        }
+        .login-btn {
+            display: inline-block;
+            background: var(--gold);
+            color: var(--bg-primary);
+            padding: 0.75rem 2rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: background 200ms;
+        }
+        .login-btn:hover {
+            background: var(--gold-light);
+        }
+    </style>
+</head>
+<body>
+    <div class="container login-container">
+        <div class="login-card">
+            <div class="deco-line"></div>
+            <h1 class="login-title">Maude</h1>
+            <p class="login-subtitle">Sign in to continue</p>
+            {% if error %}
+            <div class="login-error">{{ error }}</div>
+            {% endif %}
+            <a href="/login" class="login-btn">Sign in with Microsoft</a>
+            <div class="deco-line" style="margin-top: 2rem;"></div>
+        </div>
+    </div>
+</body>
+</html>

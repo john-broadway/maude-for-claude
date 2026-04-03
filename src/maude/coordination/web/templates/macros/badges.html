@@ -1,0 +1,38 @@
+{# Reusable badge macros — replaces 6+ copy-paste badge patterns. #}
+
+{% macro status_badge(status, reason='') %}
+{# Autonomy status badge: autonomous | degraded | manual | unknown #}
+{% if status == 'autonomous' %}
+    <span class="badge badge-autonomous" {% if reason %}title="{{ reason }}"{% endif %}>auto</span>
+{% elif status == 'degraded' %}
+    <span class="badge badge-degraded" {% if reason %}title="{{ reason }}"{% endif %}>degraded</span>
+{% elif status == 'unknown' %}
+    <span class="badge badge-quiet" {% if reason %}title="{{ reason }}"{% endif %}>unknown</span>
+{% else %}
+    <span class="badge badge-manual" {% if reason %}title="{{ reason }}"{% endif %}>manual</span>
+{% endif %}
+{% endmacro %}
+
+{% macro outcome_badge(outcome) %}
+{# Last action outcome badge: no_action | resolved | escalated | failed #}
+{% if outcome == 'no_action' %}
+    <span class="badge badge-quiet">None</span>
+{% elif outcome == 'resolved' %}
+    <span class="badge badge-warn">Restart</span>
+{% elif outcome == 'escalated' %}
+    <span class="badge badge-attention">Escalated</span>
+{% elif outcome == 'failed' %}
+    <span class="badge badge-attention">Failed</span>
+{% else %}
+    <span class="badge badge-quiet">&mdash;</span>
+{% endif %}
+{% endmacro %}
+
+{% macro health_badge(active) %}
+{# Health loop running/stopped badge. #}
+{% if active %}
+    <span class="badge badge-ok">Running</span>
+{% else %}
+    <span class="badge badge-attention">Stopped</span>
+{% endif %}
+{% endmacro %}

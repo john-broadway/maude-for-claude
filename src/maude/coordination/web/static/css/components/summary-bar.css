@@ -1,0 +1,78 @@
+/* ── Summary Bar ────────────────────────────────────────────────── */
+
+.summary-bar {
+    display: flex;
+    justify-content: center;
+    gap: 3rem;
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.5rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px var(--shadow-dark);
+    position: relative;
+}
+
+.summary-bar::before,
+.summary-bar::after {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    border-color: var(--gold);
+    border-style: solid;
+    pointer-events: none;
+}
+
+.summary-bar::before {
+    top: -1px;
+    left: -1px;
+    border-width: 2px 0 0 2px;
+}
+
+.summary-bar::after {
+    bottom: -1px;
+    right: -1px;
+    border-width: 0 2px 2px 0;
+}
+
+.summary-stat { text-align: center; }
+
+.summary-stat .number {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--gold);
+    line-height: 1.2;
+    text-shadow: 0 0 8px var(--shadow-gold);
+}
+
+.summary-stat .label {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--cream-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+}
+
+/* Semantic number color variants — replace inline style= attributes */
+.summary-stat .number--ok { color: var(--ok); }
+.summary-stat .number--warn { color: var(--warn); }
+.summary-stat .number--error { color: var(--error); }
+.summary-stat .number--quiet { color: var(--quiet); }
+
+/* ── Fleet stats bar (secondary) ───────────────────────────────── */
+
+.fleet-stats { display: flex; justify-content: center; gap: 3rem; margin-bottom: 1.5rem; padding: 0.75rem 1.5rem; background: var(--bg-surface); border: 1px solid var(--gold-dim); border-radius: 4px; opacity: 0.85; }
+.fleet-stats .summary-stat .number { font-size: 1.4rem; }
+.fleet-stats .summary-stat .label { font-size: 0.7rem; }
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .summary-bar {
+        gap: 1.5rem;
+        flex-wrap: wrap;
+    }
+}

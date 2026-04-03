@@ -1,0 +1,33 @@
+# Version: 1.0
+# Created: 2026-03-28 MST
+# Authors: John Broadway, Claude (Anthropic)
+# Maude - Full Stack Development Environment
+# Usage: docker compose up -d
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: maude
+      POSTGRES_USER: maude
+      POSTGRES_PASSWORD: maude-dev  # Development only — change for production
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrantdata:/qdrant/storage
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
+  qdrantdata:

@@ -1,0 +1,110 @@
+/* ── Layout ─────────────────────────────────────────────────────── */
+
+.container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.page-header {
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+.page-header h1 {
+    font-size: 1.8rem;
+    color: var(--gold);
+    letter-spacing: 0.1em;
+}
+
+.page-header .subtitle {
+    color: var(--cream-muted);
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+}
+
+/* ── Two-Column Layout (room detail, deps) ──────────────────────── */
+
+.two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Section Headers ────────────────────────────────────────────── */
+
+.section-header {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    color: var(--gold);
+    margin-bottom: 1rem;
+    letter-spacing: 0.05em;
+}
+
+/* ── Briefing ───────────────────────────────────────────────────── */
+
+.briefing-text {
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 4px;
+    padding: 1rem 1.25rem;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    line-height: 1.7;
+    color: var(--cream-muted);
+}
+
+/* ── Section Divider ────────────────────────────────────────────── */
+
+.section-divider {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin: 2rem 0;
+    width: 100%;
+}
+
+.section-divider::before,
+.section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-dim));
+}
+
+.section-divider::after {
+    background: linear-gradient(90deg, var(--gold-dim), transparent);
+}
+
+.section-divider .deco-diamond {
+    width: 8px;
+    height: 8px;
+    background: var(--gold-muted);
+    transform: rotate(45deg);
+    flex-shrink: 0;
+    margin: 0 0.75rem;
+}
+
+/* ── Health section ────────────────────────────────────────────── */
+
+.health-section { margin-bottom: 1.5rem; }
+.health-section h2 { margin-bottom: 0.75rem; }
+
+/* ── HTMX indicators ───────────────────────────────────────────── */
+
+.htmx-indicator { opacity: 0; transition: opacity 200ms; }
+.htmx-request .htmx-indicator { opacity: 1; }
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .two-col {
+        grid-template-columns: 1fr;
+    }
+}

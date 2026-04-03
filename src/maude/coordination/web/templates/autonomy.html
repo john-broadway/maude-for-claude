@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "macros/summary.html" import summary_stat %}
+{% set active_page = 'autonomy' %}
+
+{% block title %}Autonomy — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Autonomy</h1>
+    <div class="deco-line"></div>
+    <p class="subtitle">{{ autonomous_count }} of {{ total_rooms }} rooms operating autonomously</p>
+</div>
+
+<div class="summary-bar">
+    {{ summary_stat(total_rooms, 'Total Rooms') }}
+    {{ summary_stat(autonomous_count, 'Autonomous', 'ok') }}
+    {{ summary_stat(degraded_count, 'Degraded', 'warn') }}
+    {{ summary_stat(manual_count, 'Manual', 'quiet') }}
+</div>
+
+<div class="fleet-stats">
+    {{ summary_stat(fleet_health_checks_24h, 'Health Checks (24h)') }}
+    {{ summary_stat(fleet_restarts_24h, 'Restarts (24h)', 'warn') }}
+    {{ summary_stat(fleet_escalations_24h, 'Escalations (24h)', 'error') }}
+</div>
+
+<div class="card">
+    <div id="autonomy-grid-wrap">
+        <div class="loading-bar"></div>
+        <div id="autonomy-grid"
+             hx-get="/htmx/autonomy-grid"
+             hx-trigger="every 30s"
+             hx-swap="innerHTML"
+             hx-indicator="#autonomy-grid-wrap">
+            {% include "fragments/autonomy_grid.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

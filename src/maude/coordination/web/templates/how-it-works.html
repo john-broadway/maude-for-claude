@@ -1,0 +1,581 @@
+{% extends "base.html" %}
+{% set active_page = 'how-it-works' %}
+
+{% block title %}How It Works — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>How It Works</h1>
+    <div class="deco-line"></div>
+    <p class="subtitle">Every Room takes care of itself. Here's how — start to finish.</p>
+</div>
+
+<!-- ═══════ THE BIG IDEA ═══════ -->
+
+<div class="hiw-intro card">
+    <h2>The Big Idea</h2>
+    <div class="deco-line"></div>
+    <p>
+        Imagine you have 16 pets. Each one needs food, water, and a check-up every few minutes.
+        You <em>could</em> do it all yourself — but what if each pet could feed itself,
+        call the vet when it's sick, and <strong>remember what medicine worked last time</strong>?
+    </p>
+    <p>
+        That's what this system does. Every service (we call them <strong>Rooms</strong>) watches
+        itself, fixes itself, and learns from every problem it solves. No human needed.
+    </p>
+</div>
+
+<!-- ═══════ MEET THE CAST ═══════ -->
+
+<div class="hiw-section">
+    <h2 class="section-header">Meet the Cast</h2>
+    <div class="deco-line"></div>
+    <p class="hiw-section-intro">
+        Seven characters work together inside every Room. Each one has one job:
+    </p>
+
+    <div class="hiw-cast">
+        <div class="hiw-actor">
+            <div class="hiw-actor-icon" style="border-color: var(--ok);">
+                <span class="hiw-actor-emoji">S</span>
+            </div>
+            <div class="hiw-actor-info">
+                <h4>The Service</h4>
+                <p>The actual program doing real work — Grafana, PostgreSQL, the PLC collector.
+                   It doesn't know it's being watched.</p>
+            </div>
+        </div>
+
+        <div class="hiw-actor">
+            <div class="hiw-actor-icon" style="border-color: var(--warn);">
+                <span class="hiw-actor-emoji">H</span>
+            </div>
+            <div class="hiw-actor-info">
+                <h4>Health Loop</h4>
+                <p>A timer that fires every 60 seconds. No AI — just rules.
+                   <em>"Is it running? Can it respond? Memory OK?"</em>
+                   It can restart things, but it can't think.</p>
+            </div>
+        </div>
+
+        <div class="hiw-actor">
+            <div class="hiw-actor-icon" style="border-color: var(--gold);">
+                <span class="hiw-actor-emoji">R</span>
+            </div>
+            <div class="hiw-actor-info">
+                <h4>Room Agent</h4>
+                <p>The brain. An AI model (Ollama, running on a GPU server) that can
+                   <strong>read logs, check disk, call tools, and reason</strong> about what's wrong.
+                   It doesn't just restart — it <em>investigates</em>.</p>
+            </div>
+        </div>
+
+        <div class="hiw-actor">
+            <div class="hiw-actor-icon" style="border-color: #a78bfa;">
+                <span class="hiw-actor-emoji">T</span>
+            </div>
+            <div class="hiw-actor-info">
+                <h4>Tool Registry</h4>
+                <p>The toolbox. When the AI says <em>"check the logs"</em>, the Tool Registry
+                   translates that into an actual command and runs it. It's the AI's hands.</p>
+            </div>
+        </div>
+
+        <div class="hiw-actor">
+            <div class="hiw-actor-icon" style="border-color: #60a5fa;">
+                <span class="hiw-actor-emoji">M</span>
+            </div>
+            <div class="hiw-actor-info">
+                <h4>Memory Store</h4>
+                <p>Three-tier memory: sticky notes (.md files), a database (PostgreSQL),
+                   and vector search (Qdrant). Every event gets recorded so the system
+                   can find <em>"what fixed this last time?"</em></p>
+            </div>
+        </div>
+
+        <div class="hiw-actor">
+            <div class="hiw-actor-icon" style="border-color: var(--error);">
+                <span class="hiw-actor-emoji">C</span>
+            </div>
+            <div class="hiw-actor-info">
+                <h4>Claude (T4 Backup)</h4>
+                <p>The specialist. Only called when Ollama can't figure it out.
+                   Lives on the control plane, never on the shop floor. Last resort.</p>
+            </div>
+        </div>
+
+        <div class="hiw-actor">
+            <div class="hiw-actor-icon" style="border-color: #f472b6;">
+                <span class="hiw-actor-emoji">L</span>
+            </div>
+            <div class="hiw-actor-info">
+                <h4>Training Loop</h4>
+                <p>The coach. Every few hours, it harvests all past conversations,
+                   fine-tunes the AI model on real problems, and deploys the smarter version fleet-wide.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ THE FULL JOURNEY ═══════ -->
+
+<div class="hiw-section">
+    <h2 class="section-header">The Runtime Loop</h2>
+    <div class="deco-line"></div>
+    <p class="hiw-section-intro">
+        Follow one problem from detection to resolution. Every box shows
+        <strong>who</strong> does it and <strong>what happens next</strong>.
+    </p>
+
+    <div class="hiw-journey">
+        <!-- Step 1: Timer -->
+        <div class="hiw-j-step">
+            <div class="hiw-j-who hiw-who-health">Health Loop</div>
+            <div class="hiw-j-body">
+                <h4>Timer Fires (Every 60s)</h4>
+                <p>Five checks run on the service:</p>
+                <div class="hiw-j-checks">
+                    <span class="hiw-j-check">systemctl is-active?</span>
+                    <span class="hiw-j-check">HTTP health endpoint?</span>
+                    <span class="hiw-j-check">Memory &lt; 90%?</span>
+                    <span class="hiw-j-check">Disk &lt; 80%?</span>
+                    <span class="hiw-j-check">Error count &lt; 10?</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow">
+            <div class="hiw-j-arrow-line"></div>
+        </div>
+
+        <!-- Step 2: Decision -->
+        <div class="hiw-j-step hiw-j-decision">
+            <div class="hiw-j-who hiw-who-health">Health Loop</div>
+            <div class="hiw-j-body">
+                <h4>Decision Point</h4>
+                <div class="hiw-j-branches">
+                    <div class="hiw-j-branch hiw-branch-green">
+                        <span class="hiw-j-branch-label">All 5 pass</span>
+                        <span class="hiw-j-branch-result">Log "healthy", send heartbeat, sleep 60s</span>
+                    </div>
+                    <div class="hiw-j-branch hiw-branch-yellow">
+                        <span class="hiw-j-branch-label">Service down / endpoint fail</span>
+                        <span class="hiw-j-branch-result">Try restart (max 3/hour, 10min cooldown)</span>
+                    </div>
+                    <div class="hiw-j-branch hiw-branch-orange">
+                        <span class="hiw-j-branch-label">Restart rate-limited or won't help</span>
+                        <span class="hiw-j-branch-result">Escalate to Room Agent</span>
+                    </div>
+                    <div class="hiw-j-branch hiw-branch-blue">
+                        <span class="hiw-j-branch-label">Upstream dependency down</span>
+                        <span class="hiw-j-branch-result">Skip restart, log upstream issue</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow">
+            <div class="hiw-j-arrow-line"></div>
+            <span class="hiw-j-arrow-label">escalation triggered</span>
+        </div>
+
+        <!-- Step 3: Memory lookup -->
+        <div class="hiw-j-step">
+            <div class="hiw-j-who hiw-who-health">Health Loop</div>
+            <div class="hiw-j-body">
+                <h4>Check Past Fixes</h4>
+                <p>Before calling the AI, the Health Loop searches Qdrant for similar past problems.
+                   If a match is found, the old fix is attached as a hint.</p>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow">
+            <div class="hiw-j-arrow-line"></div>
+            <span class="hiw-j-arrow-label">trigger + context + past fix</span>
+        </div>
+
+        <!-- Step 4: Room Agent activates -->
+        <div class="hiw-j-step hiw-j-highlight">
+            <div class="hiw-j-who hiw-who-agent">Room Agent</div>
+            <div class="hiw-j-body">
+                <h4>The AI Wakes Up</h4>
+                <p>Four things happen before it thinks:</p>
+                <div class="hiw-j-substeps">
+                    <div class="hiw-j-substep">
+                        <span class="hiw-j-sub-num">a</span>
+                        <span><strong>Load knowledge</strong> — .md files from git</span>
+                    </div>
+                    <div class="hiw-j-substep">
+                        <span class="hiw-j-sub-num">b</span>
+                        <span><strong>Recent activity</strong> — last 10 events from PostgreSQL</span>
+                    </div>
+                    <div class="hiw-j-substep">
+                        <span class="hiw-j-sub-num">c</span>
+                        <span><strong>Similar situations</strong> — vector search in Qdrant</span>
+                    </div>
+                    <div class="hiw-j-substep">
+                        <span class="hiw-j-sub-num">d</span>
+                        <span><strong>Build prompt</strong> — everything above + trigger → sent to Ollama</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow">
+            <div class="hiw-j-arrow-line"></div>
+            <span class="hiw-j-arrow-label">prompt sent to Ollama (GPU)</span>
+        </div>
+
+        <!-- Step 5: Tool loop -->
+        <div class="hiw-j-step hiw-j-highlight hiw-j-loop-box">
+            <div class="hiw-j-who hiw-who-agent">Room Agent + Ollama</div>
+            <div class="hiw-j-body">
+                <h4>The Tool-Use Conversation</h4>
+                <p>The AI and tools have a back-and-forth conversation:</p>
+
+                <div class="hiw-j-convo">
+                    <div class="hiw-j-convo-row hiw-j-convo-ai">
+                        <span class="hiw-j-convo-label">Ollama</span>
+                        <span class="hiw-j-convo-msg">"Let me check the service health first."</span>
+                    </div>
+                    <div class="hiw-j-convo-arrow"></div>
+                    <div class="hiw-j-convo-row hiw-j-convo-tool">
+                        <span class="hiw-j-convo-label">Tool</span>
+                        <span class="hiw-j-convo-msg">service_health → <em>inactive, down 2 min</em></span>
+                    </div>
+                    <div class="hiw-j-convo-arrow"></div>
+                    <div class="hiw-j-convo-row hiw-j-convo-ai">
+                        <span class="hiw-j-convo-label">Ollama</span>
+                        <span class="hiw-j-convo-msg">"Down. Let me check the logs."</span>
+                    </div>
+                    <div class="hiw-j-convo-arrow"></div>
+                    <div class="hiw-j-convo-row hiw-j-convo-tool">
+                        <span class="hiw-j-convo-label">Tool</span>
+                        <span class="hiw-j-convo-msg">service_logs → <em>ERROR: disk full, cannot write WAL</em></span>
+                    </div>
+                    <div class="hiw-j-convo-arrow"></div>
+                    <div class="hiw-j-convo-row hiw-j-convo-ai">
+                        <span class="hiw-j-convo-label">Ollama</span>
+                        <span class="hiw-j-convo-msg">"Disk full. Restarting." → service_restart → <em>success</em></span>
+                    </div>
+                </div>
+
+                <div class="hiw-j-loop-note">
+                    Up to <strong>10 rounds</strong>. When done, it outputs
+                    <code>&lt;summary&gt;</code> and <code>&lt;outcome&gt;</code> tags.
+                </div>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow">
+            <div class="hiw-j-arrow-line"></div>
+            <span class="hiw-j-arrow-label">can't figure it out?</span>
+        </div>
+
+        <!-- Step 6: T4 Escalation -->
+        <div class="hiw-j-step hiw-j-t4">
+            <div class="hiw-j-who hiw-who-claude">Claude (T4)</div>
+            <div class="hiw-j-body">
+                <h4>T4 Escalation</h4>
+                <p>If Ollama gives up, the <em>entire conversation</em> — all tool calls and results —
+                   gets handed to Claude. It sees everything Ollama tried, then continues
+                   where it left off with the same tools.</p>
+                <p class="hiw-j-note">This is rare. Claude is the safety net — never on the shop floor,
+                   only on the control plane.</p>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow">
+            <div class="hiw-j-arrow-line"></div>
+            <span class="hiw-j-arrow-label">outcome determined</span>
+        </div>
+
+        <!-- Step 7: Exit Learning -->
+        <div class="hiw-j-step hiw-j-highlight">
+            <div class="hiw-j-who hiw-who-memory">Memory Store</div>
+            <div class="hiw-j-body">
+                <h4>Remember Everything</h4>
+                <p>Win or lose, <strong>every run</strong> gets stored to all three tiers:</p>
+                <div class="hiw-j-substeps">
+                    <div class="hiw-j-substep">
+                        <span class="hiw-j-sub-num hiw-sub-t1">T1</span>
+                        <span><strong>Knowledge files</strong> — .md updates pushed to Gitea</span>
+                    </div>
+                    <div class="hiw-j-substep">
+                        <span class="hiw-j-sub-num hiw-sub-t2">T2</span>
+                        <span><strong>PostgreSQL</strong> — full row: trigger, actions, tools, outcome, model</span>
+                    </div>
+                    <div class="hiw-j-substep">
+                        <span class="hiw-j-sub-num hiw-sub-t3">T3</span>
+                        <span><strong>Qdrant</strong> — vector embedding with root cause and tools used</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow">
+            <div class="hiw-j-arrow-line"></div>
+            <span class="hiw-j-arrow-label">event published</span>
+        </div>
+
+        <!-- Step 8: Cross-room -->
+        <div class="hiw-j-step">
+            <div class="hiw-j-who hiw-who-event">Event Publisher</div>
+            <div class="hiw-j-body">
+                <h4>Tell the Hotel</h4>
+                <p>A PG NOTIFY event fires so every other Room can see what happened.
+                   This is how Rooms learn from each other without talking directly.</p>
+            </div>
+        </div>
+
+        <!-- Feedback loop -->
+        <div class="hiw-j-feedback">
+            <div class="hiw-j-feedback-line"></div>
+            <span>Next health check, the memory is already there — and the system is smarter.</span>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ THE TRAINING LOOP ═══════ -->
+
+<div class="hiw-section">
+    <h2 class="section-header">The Training Loop</h2>
+    <div class="deco-line"></div>
+    <p class="hiw-section-intro">
+        Remembering past fixes is good. But the AI itself gets better over time —
+        past conversations become training data, and training data becomes a smarter model.
+    </p>
+
+    <div class="hiw-journey">
+        <div class="hiw-j-step">
+            <div class="hiw-j-who hiw-who-memory">Training Loop</div>
+            <div class="hiw-j-body">
+                <h4>1. Harvest</h4>
+                <p>Every 6 hours, the Training Loop queries PostgreSQL for new agent conversations.
+                   If 100+ new examples exist since the last run, the pipeline starts.</p>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow"><div class="hiw-j-arrow-line"></div></div>
+
+        <div class="hiw-j-step">
+            <div class="hiw-j-who hiw-who-memory">Training Loop</div>
+            <div class="hiw-j-body">
+                <h4>2. Clean &amp; Export</h4>
+                <p>Conversations are converted to ChatML format with quality filters:</p>
+                <div class="hiw-j-checks">
+                    <span class="hiw-j-check">Has tool calls</span>
+                    <span class="hiw-j-check">In English</span>
+                    <span class="hiw-j-check">Has summary tags</span>
+                    <span class="hiw-j-check">Not trivial</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow">
+            <div class="hiw-j-arrow-line"></div>
+            <span class="hiw-j-arrow-label">SFTP to GPU</span>
+        </div>
+
+        <div class="hiw-j-step hiw-j-highlight">
+            <div class="hiw-j-who hiw-who-agent">GPU Server</div>
+            <div class="hiw-j-body">
+                <h4>3. Fine-Tune</h4>
+                <p>QLoRA training on the GPU — the base model (Qwen2.5-7B, 4-bit) stays frozen
+                   while small adapter layers (0.53% of total params) learn from every conversation.
+                   After 3 epochs, the adapters merge back into one clean model.</p>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow"><div class="hiw-j-arrow-line"></div></div>
+
+        <div class="hiw-j-step">
+            <div class="hiw-j-who hiw-who-event">Training Loop</div>
+            <div class="hiw-j-body">
+                <h4>4. Deploy</h4>
+                <p>The merged model is loaded into Ollama on <strong>both</strong> GPU servers
+                   (gpu-a + gpu-b, active-active) with the system prompt baked in.</p>
+            </div>
+        </div>
+
+        <div class="hiw-j-arrow"><div class="hiw-j-arrow-line"></div></div>
+
+        <div class="hiw-j-step hiw-j-highlight">
+            <div class="hiw-j-who hiw-who-agent">Model Manager</div>
+            <div class="hiw-j-body">
+                <h4>5. Rebuild Room Models</h4>
+                <p>Each Room gets a custom Modelfile — same fine-tuned base, but with
+                   its own system prompt, knowledge, and domain specialization.
+                   14 Room models rebuilt on the new foundation.</p>
+            </div>
+        </div>
+
+        <div class="hiw-j-feedback">
+            <div class="hiw-j-feedback-line"></div>
+            <span>Every Room is now running a smarter model — trained on real problems from real Rooms.</span>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ WHAT TRIGGERS WHAT ═══════ -->
+
+<div class="hiw-section">
+    <h2 class="section-header">What Triggers What</h2>
+    <div class="deco-line"></div>
+
+    <div class="hiw-triggers card">
+        <div class="hiw-trigger-row hiw-trigger-header">
+            <span class="hiw-trigger-event">Event</span>
+            <span class="hiw-trigger-who">Who</span>
+            <span class="hiw-trigger-what">What Happens</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">60s timer tick</span>
+            <span class="hiw-trigger-who">asyncio</span>
+            <span class="hiw-trigger-what">Health Loop runs 5 checks</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">Check fails</span>
+            <span class="hiw-trigger-who">Health Loop</span>
+            <span class="hiw-trigger-what">Restart (if rate limit allows)</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">Restart fails / rate-limited</span>
+            <span class="hiw-trigger-who">Health Loop</span>
+            <span class="hiw-trigger-what">Escalate to Room Agent</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">Escalation fires</span>
+            <span class="hiw-trigger-who">base.py</span>
+            <span class="hiw-trigger-what">Room Agent runs with full context</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">Ollama returns tool_calls</span>
+            <span class="hiw-trigger-who">Room Agent</span>
+            <span class="hiw-trigger-what">Execute tools, feed results back</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">Ollama says "escalated"</span>
+            <span class="hiw-trigger-who">Room Agent</span>
+            <span class="hiw-trigger-what">Hand off to Claude (T4)</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">Agent loop ends</span>
+            <span class="hiw-trigger-who">Room Agent</span>
+            <span class="hiw-trigger-what">Store to 3 memory tiers, publish event</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">6h training timer</span>
+            <span class="hiw-trigger-who">Training Loop</span>
+            <span class="hiw-trigger-what">Harvest, train, deploy if threshold met</span>
+        </div>
+        <div class="hiw-trigger-row">
+            <span class="hiw-trigger-event">Scheduled cron</span>
+            <span class="hiw-trigger-who">asyncio</span>
+            <span class="hiw-trigger-what">Proactive health check (no escalation)</span>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ THREE LAYERS OF MEMORY ═══════ -->
+
+<div class="hiw-section">
+    <h2 class="section-header">Three Layers of Memory</h2>
+    <div class="deco-line"></div>
+
+    <div class="hiw-memory-tiers">
+        <div class="hiw-memory-tier">
+            <div class="hiw-tier-header">
+                <span class="hiw-tier-badge" style="background: var(--ok); color: var(--bg-primary);">Tier 1</span>
+                <h4>Knowledge Files</h4>
+            </div>
+            <p>Simple text files the Room keeps about itself.
+               Pushed to Gitea via git after every significant event.</p>
+            <div class="hiw-analogy">Like sticky notes on your monitor.</div>
+        </div>
+
+        <div class="hiw-memory-tier">
+            <div class="hiw-tier-header">
+                <span class="hiw-tier-badge" style="background: var(--warn); color: var(--bg-primary);">Tier 2</span>
+                <h4>PostgreSQL</h4>
+            </div>
+            <p>Structured log of everything — timestamped, categorized, queryable.
+               Every health check, restart, and agent run gets a row.</p>
+            <div class="hiw-analogy">Like a detailed diary with dates and categories.</div>
+        </div>
+
+        <div class="hiw-memory-tier">
+            <div class="hiw-tier-header">
+                <span class="hiw-tier-badge" style="background: var(--gold); color: var(--bg-primary);">Tier 3</span>
+                <h4>Qdrant Vectors</h4>
+            </div>
+            <p>Memories turned into math so the system can find <em>similar</em> problems,
+               not just exact matches — even if the words are different.</p>
+            <div class="hiw-analogy">Like recognizing a song even when someone hums it differently.</div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ BY THE NUMBERS ═══════ -->
+
+<div class="hiw-section">
+    <h2 class="section-header">By The Numbers</h2>
+    <div class="deco-line"></div>
+
+    <div class="summary-bar">
+        <div class="summary-stat">
+            <div class="number">16</div>
+            <div class="label">Autonomous Rooms</div>
+        </div>
+        <div class="summary-stat">
+            <div class="number">4</div>
+            <div class="label">Escalation Tiers</div>
+        </div>
+        <div class="summary-stat">
+            <div class="number">3</div>
+            <div class="label">Memory Layers</div>
+        </div>
+        <div class="summary-stat">
+            <div class="number">60s</div>
+            <div class="label">Check Interval</div>
+        </div>
+    </div>
+
+    <div class="fleet-stats">
+        <div class="summary-stat">
+            <div class="number">7B</div>
+            <div class="label">Model Parameters</div>
+        </div>
+        <div class="summary-stat">
+            <div class="number" style="color: var(--gold-light);">0.53%</div>
+            <div class="label">Trained via LoRA</div>
+        </div>
+        <div class="summary-stat">
+            <div class="number">2</div>
+            <div class="label">GPU Servers</div>
+        </div>
+        <div class="summary-stat">
+            <div class="number" style="color: var(--ok);">6h</div>
+            <div class="label">Training Cycle</div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════ BOTTOM LINE ═══════ -->
+
+<div class="hiw-intro card" style="text-align: center; margin-top: 1.5rem;">
+    <h2>The Bottom Line</h2>
+    <div class="deco-line"></div>
+    <p style="font-size: 1.05rem; max-width: 700px; margin: 0 auto;">
+        Two feedback loops. The <strong>fast loop</strong> remembers every fix instantly —
+        next time a similar problem appears, the answer is already there.
+        The <strong>slow loop</strong> fine-tunes the AI itself every few hours,
+        so it gets better at problems it's never seen before.
+    </p>
+    <p style="color: var(--gold); margin-top: 0.75rem; font-family: 'Playfair Display', serif; font-size: 1.1rem;">
+        It doesn't just heal — it evolves.
+    </p>
+</div>
+
+{% endblock %}

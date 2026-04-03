@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "macros/summary.html" import summary_stat %}
+{% set active_page = 'operations' %}
+
+{% block title %}Operations — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="ops-header">
+    <div class="ops-title">
+        <h1>Operations</h1>
+        <span class="ops-subtitle">Command Center</span>
+    </div>
+    <div class="ops-subnav">
+        <a href="/ecosystem">Ecosystem</a>
+        <a href="/autonomy">Autonomy</a>
+        <a href="/dependencies">Dependencies</a>
+        <a href="/memory">Memory</a>
+    </div>
+</div>
+
+<div class="ops-main">
+    {# Zone A — Fleet Summary Bar #}
+    <div class="summary-bar reveal-on-scroll">
+        {{ summary_stat(total_rooms, 'Total Rooms') }}
+        {{ summary_stat(autonomous_count, 'Autonomous', 'ok') }}
+        {{ summary_stat(degraded_count, 'Degraded', 'warn') }}
+        {{ summary_stat(manual_count, 'Manual', 'quiet') }}
+    </div>
+
+    {# Zone B — Room Grid #}
+    <div class="rooms-panel reveal-on-scroll">
+        <div id="room-cards-wrap">
+            <div class="loading-bar"></div>
+            <div id="room-cards"
+                 hx-get="/htmx/room-cards"
+                 hx-trigger="every 30s"
+                 hx-swap="innerHTML"
+                 hx-indicator="#room-cards-wrap">
+                {% include "fragments/room_cards.html" %}
+            </div>
+        </div>
+    </div>
+
+
+</div>
+{% endblock %}

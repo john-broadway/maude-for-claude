@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% set active_page = 'room' %}
+
+{% block title %}{{ room_name }} — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Room: {{ room_name }}</h1>
+    <div class="deco-line"></div>
+    <p class="subtitle"><a href="/operations">Back to Operations</a></p>
+</div>
+
+<div class="summary-bar">
+    {% if summary %}
+    <div class="summary-stat">
+        <div class="number">{{ summary.total_runs or 0 }}</div>
+        <div class="label">Runs (24h)</div>
+    </div>
+    <div class="summary-stat">
+        <div class="number" style="color: var(--ok)">{{ summary.resolved or 0 }}</div>
+        <div class="label">Resolved</div>
+    </div>
+    <div class="summary-stat">
+        <div class="number" style="color: var(--error)">{{ summary.failed or 0 }}</div>
+        <div class="label">Failed</div>
+    </div>
+    <div class="summary-stat">
+        <div class="number" style="color: var(--warn)">{{ summary.escalated or 0 }}</div>
+        <div class="label">Escalated</div>
+    </div>
+    {% else %}
+    <div class="summary-stat">
+        <div class="number" style="color: var(--quiet)">0</div>
+        <div class="label">No activity (24h)</div>
+    </div>
+    {% endif %}
+</div>
+
+<div class="two-col">
+    <div class="card">
+        <div class="card-section-title">Dependencies</div>
+        {% if depends_on %}
+            <p style="font-size: 0.9rem;">Depends on:
+                {% for dep in depends_on %}
+                    {% set dep_info = deps_health | selectattr("name", "equalto", dep) | first %}
+                    <span class="dep-dot {{ 'dep-dot-ok' if dep_info and dep_info.healthy else 'dep-dot-error' }}" title="{{ dep }}"></span>
+                    <strong>{{ dep }}</strong>{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            </p>
+        {% else %}
+            <p style="font-size: 0.9rem; color: var(--cream-muted);">No upstream dependencies</p>
+        {% endif %}
+    </div>
+    <div class="card">
+        <div class="card-section-title">Dependents</div>
+        {% if depended_by %}
+            <p style="font-size: 0.9rem;">Needed by: <strong>{{ depended_by | join(', ') }}</strong></p>
+        {% else %}
+            <p style="font-size: 0.9rem; color: var(--cream-muted);">No downstream dependents</p>
+        {% endif %}
+        {% if affected_by %}
+            <p style="font-size: 0.85rem; color: var(--warn); margin-top: 0.25rem;">
+                If this room fails: {{ affected_by | join(', ') }}
+            </p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="health-section">
+    <h2 class="section-header">Health Loop History</h2>
+    <div class="deco-line"></div>
+    {% if health_history %}
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Outcome</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for h in health_history %}
+                <tr>
+                    <td class="time-ago" style="white-space: nowrap;">{{ h.created_at[:16] if h.created_at else '?' }}</td>
+                    <td>
+                        {% if h.outcome == 'no_action' %}
+                            <span class="badge badge-quiet">no action</span>
+                        {% elif h.outcome == 'resolved' %}
+                            <span class="badge badge-ok">resolved</span>
+                        {% elif h.outcome == 'failed' %}
+                            <span class="badge badge-attention">failed</span>
+                        {% elif h.outcome == 'escalated' %}
+                            <span class="badge badge-attention">escalated</span>
+                        {% else %}
+                            <span class="badge badge-quiet">{{ h.outcome or '?' }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ (h.summary or '')[:140] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="color: var(--cream-muted);">No health loop checks in the last 24 hours.</p>
+    </div>
+    {% endif %}
+</div>
+
+<div class="health-section">
+    <h2 class="section-header">Room Agent History</h2>
+    <div class="deco-line"></div>
+    {% if agent_history %}
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Trigger</th>
+                    <th>Outcome</th>
+                    <th>Summary</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in agent_history %}
+                <tr>
+                    <td class="time-ago" style="white-space: nowrap;">{{ a.created_at[:16] if a.created_at else '?' }}</td>
+                    <td>{{ a.trigger or '?' }}</td>
+                    <td>
+                        {% if a.outcome == 'resolved' %}
+                            <span class="badge badge-ok">resolved</span>
+                        {% elif a.outcome == 'failed' %}
+                            <span class="badge badge-attention">failed</span>
+                        {% elif a.outcome == 'escalated' %}
+                            <span class="badge badge-attention">escalated</span>
+                        {% else %}
+                            <span class="badge badge-quiet">{{ a.outcome or '?' }}</span>
+                        {% endif %}
+                    </td>
+                    <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ (a.summary or '')[:120] }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="card">
+        <p style="color: var(--cream-muted);">No agent runs in the last 24 hours.</p>
+    </div>
+    {% endif %}
+</div>
+
+<h2 class="section-header">Recent Incidents (24h)</h2>
+<div class="deco-line"></div>
+{% if incidents %}
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Trigger</th>
+                <th>Outcome</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for inc in incidents %}
+            <tr>
+                <td style="white-space: nowrap;">{{ inc.created_at[:16] if inc.created_at else '?' }}</td>
+                <td>{{ inc.trigger or '?' }}</td>
+                <td>
+                    {% if inc.outcome == 'resolved' %}
+                        <span class="badge badge-ok">resolved</span>
+                    {% elif inc.outcome == 'failed' %}
+                        <span class="badge badge-attention">failed</span>
+                    {% elif inc.outcome == 'escalated' %}
+                        <span class="badge badge-attention">escalated</span>
+                    {% else %}
+                        <span class="badge badge-quiet">{{ inc.outcome or '?' }}</span>
+                    {% endif %}
+                </td>
+                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ (inc.summary or '')[:120] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <p style="color: var(--cream-muted);">No incidents in the last 24 hours.</p>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% set active_page = 'memory' %}
+
+{% block title %}Memory — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Memory Browser</h1>
+    <div class="deco-line"></div>
+    <p class="subtitle">Cross-room agent activity — last 2 hours</p>
+</div>
+
+{% if activity %}
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Room</th>
+                <th>Trigger</th>
+                <th>Outcome</th>
+                <th>Model</th>
+                <th>Tokens</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for a in activity %}
+            <tr>
+                <td style="white-space: nowrap;">{{ a.created_at[:16] if a.created_at else '?' }}</td>
+                <td><a href="/room/{{ a.project }}">{{ a.project }}</a></td>
+                <td>{{ a.trigger or '?' }}</td>
+                <td>
+                    {% if a.outcome == 'resolved' %}
+                        <span class="badge badge-ok">resolved</span>
+                    {% elif a.outcome == 'failed' %}
+                        <span class="badge badge-attention">failed</span>
+                    {% elif a.outcome == 'escalated' %}
+                        <span class="badge badge-attention">escalated</span>
+                    {% elif a.outcome == 'no_action' %}
+                        <span class="badge badge-quiet">no_action</span>
+                    {% else %}
+                        <span class="badge badge-quiet">{{ a.outcome or '?' }}</span>
+                    {% endif %}
+                </td>
+                <td style="font-size: 0.78rem;">{{ a.model or '?' }}</td>
+                <td style="font-size: 0.78rem;">{{ a.tokens_used or '?' }}</td>
+                <td style="max-width: 350px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ (a.summary or '')[:100] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="card">
+    <p style="color: var(--cream-muted);">No agent activity in the last 2 hours.</p>
+</div>
+{% endif %}
+{% endblock %}

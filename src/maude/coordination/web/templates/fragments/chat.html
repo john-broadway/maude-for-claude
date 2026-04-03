@@ -1,0 +1,25 @@
+<div class="chat-container" id="chat-box">
+    <div class="chat-header">
+        <h3>Speak with Maude</h3>
+        <span class="chat-status" id="chat-status">ready</span>
+    </div>
+    <div class="chat-messages" id="chat-messages">
+        <div class="chat-msg chat-msg-maude">
+            <div class="msg-sender">Maude</div>
+            <div class="msg-content">Good evening. Welcome to Maude. I can provide hotel briefings, check room status and dependencies, review incidents and escalations, or answer agency questions across all departments. Try the quick actions below, or ask me anything.</div>
+        </div>
+    </div>
+    <div class="chat-quick-actions" id="chat-quick-actions">
+        <button class="quick-action-btn" data-prompt="Give me a full hotel briefing">Briefing</button>
+        <button class="quick-action-btn" data-prompt="What is the current status of all rooms?">Status</button>
+        <button class="quick-action-btn" data-prompt="Are there any recent incidents or failures?">Incidents</button>
+        <button class="quick-action-btn" data-prompt="Are there any unresolved escalations?">Escalations</button>
+        <button class="quick-action-btn" data-prompt="Which agency departments handle quality complaints?">Agency</button>
+    </div>
+    <div class="chat-input-row">
+        <input type="text" class="chat-input" id="chat-input"
+               placeholder="Ask Maude about the hotel..."
+               autocomplete="off">
+        <button class="chat-send-btn" id="chat-send" onclick="sendMessage()">Send</button>
+    </div>
+</div>

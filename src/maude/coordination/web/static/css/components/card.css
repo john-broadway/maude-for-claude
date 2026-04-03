@@ -1,0 +1,55 @@
+/* ── Cards ──────────────────────────────────────────────────────── */
+
+.card {
+    background: linear-gradient(135deg, var(--bg-surface), rgba(22,33,62,0.7));
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 0.75rem 1rem;
+    position: relative;
+    transition: border-color 0.2s, transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.card:hover {
+    border-color: var(--gold-muted);
+    transform: translateY(-2px);
+    box-shadow: var(--glow-gold);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card-title {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-weight: 700;
+    font-size: 0.82rem;
+}
+
+.card-title a { color: var(--cream); }
+.card-title a:hover { color: var(--gold-light); }
+
+.card-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.card-section-title {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--gold);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-bottom: 0.5rem;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+    .card-grid {
+        grid-template-columns: 1fr;
+    }
+}

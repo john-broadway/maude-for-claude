@@ -1,0 +1,58 @@
+/* ── Palette ────────────────────────────────────────────────────── */
+
+:root {
+    /* Background layers (deep → surface) */
+    --bg-abyss:     #0a0b18;
+    --bg-recessed:  #0d0d1a;
+    --bg-primary:   #12132a;
+    --bg-surface:   #16213e;
+    --bg-elevated:  #0f3460;
+    --bg-input:     #0d1b3e;
+
+    /* Gold family (proven in production — unchanged) */
+    --gold:         #c9a84c;
+    --gold-light:   #d4af37;
+    --gold-muted:   #8a7034;
+    --gold-dim:     #5c4a23;
+
+    /* Gold ghost / glow (for atmospheric effects) */
+    --gold-ghost:   #3d3118;
+    --gold-glow:    rgba(201, 168, 76, 0.08);
+
+    /* Warm accents */
+    --bronze:       #b87333;
+    --champagne:    #f7e7ce;
+
+    /* Text */
+    --ivory:        #f5f0e1;
+    --cream:        #f5f0e1;          /* backward compat alias */
+    --cream-muted:  #b8a88a;
+    --quiet:        #5a6070;
+
+    /* Semantic */
+    --ok:           #4ade80;
+    --warn:         #fbbf24;
+    --error:        #f87171;
+
+    /* Shadows & Glows */
+    --shadow-gold:  rgba(201, 168, 76, 0.15);
+    --shadow-dark:  rgba(0, 0, 0, 0.4);
+    --shadow-deep:  0 4px 24px rgba(0, 0, 0, 0.55), 0 1px 4px rgba(0, 0, 0, 0.35);
+    --glow-gold:    0 0 20px rgba(201, 168, 76, 0.12), 0 0 4px rgba(201, 168, 76, 0.08);
+    --glow-warm:    0 0 30px rgba(184, 115, 51, 0.08);
+
+    /* Spacing scale */
+    --space-xs:   0.35rem;   /*  5.6px */
+    --space-sm:   0.6rem;    /*  9.6px */
+    --space-md:   1rem;      /* 16px   */
+    --space-lg:   1.5rem;    /* 24px   */
+    --space-xl:   2.5rem;    /* 40px   */
+
+    /* Font sizes — Cormorant Garamond minimum floor: 0.85rem */
+    --text-xs:    0.78rem;   /* monospace / decorative only */
+    --text-sm:    0.85rem;   /* smallest readable body text */
+    --text-base:  1rem;      /* default body */
+    --text-md:    1.1rem;    /* section headers */
+    --text-lg:    1.4rem;    /* page section titles */
+    --text-xl:    1.8rem;    /* page h1 */
+}

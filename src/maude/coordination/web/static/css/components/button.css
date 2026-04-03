@@ -1,0 +1,184 @@
+/* ── Chat Prompt Tabs ─────────────────────────────────────────── */
+
+.chat-prompts {
+    padding: 0 1rem;
+    border-top: 1px solid var(--gold-dim);
+    flex-shrink: 0;
+}
+
+.prompt-tabs {
+    display: flex;
+    gap: 0;
+}
+
+.prompt-tab {
+    padding: 0.4rem 0.9rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--cream-muted);
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.prompt-tab:hover,
+.prompt-tab.active {
+    color: var(--gold);
+    border-bottom-color: var(--gold);
+}
+
+.prompt-panel {
+    display: none;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.5rem 0;
+}
+
+.prompt-panel.active {
+    display: flex;
+}
+
+.quick-action-btn {
+    background: rgba(201, 168, 76, 0.06);
+    border: 1px solid rgba(201, 168, 76, 0.12);
+    border-radius: 999px;
+    padding: 0.25rem 0.75rem;
+    color: var(--cream-muted);
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.quick-action-btn:hover {
+    background: rgba(201, 168, 76, 0.12);
+    border-color: var(--gold-muted);
+    color: var(--gold);
+}
+
+/* ── Chat Send Button ──────────────────────────────────────────── */
+
+.chat-send-btn {
+    background: linear-gradient(135deg, var(--gold-muted), var(--gold));
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 4px;
+    padding: 0.6rem 1.2rem;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    overflow: hidden;
+}
+
+.chat-send-btn::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.15), transparent);
+    pointer-events: none;
+}
+
+.chat-send-btn:hover {
+    background: linear-gradient(135deg, var(--gold), var(--gold-light));
+    box-shadow: 0 2px 8px var(--shadow-gold);
+}
+
+.chat-send-btn:hover::after {
+    animation: shimmer-pass 0.6s ease forwards;
+}
+
+.chat-send-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Standard Button Classes — use across all pages for consistency
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* Primary — filled gold, dark text */
+.btn-primary {
+    display: inline-block;
+    background: linear-gradient(135deg, var(--gold-muted), var(--gold));
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 3px;
+    padding: 0.45rem 1.1rem;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.90rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, var(--gold), var(--gold-light));
+    box-shadow: 0 2px 8px var(--shadow-gold);
+    color: var(--bg-primary);
+}
+
+/* Secondary — outlined gold */
+.btn-secondary {
+    display: inline-block;
+    background: transparent;
+    border: 1px solid var(--gold-dim);
+    border-radius: 3px;
+    padding: 0.4rem 1rem;
+    color: var(--gold);
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.90rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+}
+
+.btn-secondary:hover {
+    background: rgba(201, 168, 76, 0.1);
+    border-color: var(--gold-muted);
+    color: var(--gold-light);
+}
+
+/* Tertiary — text link, underline on hover */
+.btn-tertiary {
+    display: inline-block;
+    background: none;
+    border: none;
+    padding: 0.25rem 0;
+    color: var(--gold-muted);
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.88rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    transition: color 0.2s;
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+}
+
+.btn-tertiary:hover {
+    color: var(--gold-light);
+    border-bottom-color: var(--gold-dim);
+}

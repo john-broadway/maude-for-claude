@@ -1,0 +1,9 @@
+{# Summary bar and stat macros — replaces inline style= attributes. #}
+
+{% macro summary_stat(value, label, variant='') %}
+{# Single stat block. variant: ok | warn | error | quiet (maps to CSS class). #}
+<div class="summary-stat">
+    <div class="number{% if variant %} number--{{ variant }}{% endif %}">{{ value }}</div>
+    <div class="label">{{ label }}</div>
+</div>
+{% endmacro %}

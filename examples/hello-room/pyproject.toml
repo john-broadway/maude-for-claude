@@ -1,0 +1,42 @@
+# Version: 1.0
+# Created: 2026-03-28 MST
+# Authors: John Broadway, Claude (Anthropic)
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hello-room"
+version = "1.0.0"
+description = "Hello Room — Maude example with zero infrastructure"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "maude",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.3.0",
+]
+
+[project.scripts]
+hello-room = "hello_room.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hello_room"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

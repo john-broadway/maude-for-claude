@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% set active_page = 'dependencies' %}
+
+{% block title %}Dependencies — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Dependencies</h1>
+    <div class="deco-line"></div>
+    <p class="subtitle">Room dependency graph — which rooms break if one goes down</p>
+</div>
+
+<div class="two-col">
+    <div class="card">
+        <div class="card-section-title">Room Dependencies</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Room</th>
+                    <th>Depends On</th>
+                    <th>Needed By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for room in rooms %}
+                <tr>
+                    <td><a href="/room/{{ room.room }}">{{ room.room }}</a></td>
+                    <td>{{ room.depends_on | join(', ') if room.depends_on else '-' }}</td>
+                    <td>{{ room.depended_by | join(', ') if room.depended_by else '-' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <div class="card-section-title">Impact Analysis</div>
+        <p style="font-size: 0.82rem; color: var(--cream-muted); margin-bottom: 0.75rem;">
+            If a room goes down, these rooms are transitively affected.
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th>If Down</th>
+                    <th>Affected Rooms</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for room in rooms %}
+                {% set affected = room.depended_by %}
+                {% if affected %}
+                <tr>
+                    <td><strong>{{ room.room }}</strong></td>
+                    <td style="color: var(--warn);">{{ affected | join(', ') }}</td>
+                </tr>
+                {% endif %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

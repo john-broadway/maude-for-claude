@@ -1,0 +1,355 @@
+/* ── The Landing — Maude Search ─────────────────────────────────── */
+
+/* Kill container constraints — full bleed */
+.container:has(.landing) {
+    padding: 0;
+    max-width: none;
+}
+
+/* ── Full-viewport landing ─────────────────────────────────────── */
+
+.landing {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 52px);
+    padding: 2rem 1.5rem;
+    overflow: hidden;
+}
+
+/* ── Atmospheric background layers ─────────────────────────────── */
+
+.landing-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background:
+        radial-gradient(ellipse 800px 500px at 50% 40%,
+            rgba(201, 168, 76, 0.04), transparent 70%),
+        radial-gradient(ellipse 600px 400px at 50% 60%,
+            rgba(15, 52, 96, 0.15), transparent),
+        linear-gradient(180deg,
+            var(--bg-abyss) 0%,
+            var(--bg-primary) 40%,
+            var(--bg-recessed) 100%);
+}
+
+.landing-grain {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    opacity: 0.018;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 200px;
+}
+
+/* ── Center column ─────────────────────────────────────────────── */
+
+.landing-center {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+    max-width: 740px;
+}
+
+/* ── Brand block ───────────────────────────────────────────────── */
+
+.landing-brand {
+    text-align: center;
+    margin-bottom: 2.5rem;
+}
+
+.brand-ornament {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    width: 120px;
+    margin: 0 auto 0.75rem;
+}
+
+.ornament-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--gold-dim));
+}
+
+.ornament-line:last-child {
+    background: linear-gradient(90deg, var(--gold-dim), transparent);
+}
+
+.ornament-diamond {
+    width: 6px;
+    height: 6px;
+    background: var(--gold-dim);
+    transform: rotate(45deg);
+    flex-shrink: 0;
+}
+
+.brand-prefix {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.88rem;
+    font-style: italic;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.35em;
+    color: var(--cream-muted);
+    margin: 0 0 0.15rem;
+    opacity: 0.7;
+}
+
+.brand-title {
+    font-family: 'Playfair Display', 'Cormorant Garamond', serif;
+    font-size: clamp(2.2rem, 5vw, 3.4rem);
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin: 0;
+    text-shadow: 0 0 40px rgba(201, 168, 76, 0.12);
+}
+
+.brand-flourish {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    width: 200px;
+    margin: 0.5rem auto 0;
+}
+
+.flourish-wing-l,
+.flourish-wing-r {
+    flex: 1;
+    height: 1px;
+}
+
+.flourish-wing-l {
+    background: linear-gradient(90deg, transparent, var(--gold-muted));
+}
+
+.flourish-wing-r {
+    background: linear-gradient(90deg, var(--gold-muted), transparent);
+}
+
+.flourish-gem {
+    width: 5px;
+    height: 5px;
+    background: var(--gold);
+    transform: rotate(45deg);
+    flex-shrink: 0;
+}
+
+/* ── Search pill ───────────────────────────────────────────────── */
+
+.landing-search {
+    width: 100%;
+    margin-bottom: 1.75rem;
+}
+
+.search-form {
+    width: 100%;
+}
+
+.search-pill {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    width: 100%;
+    padding: 0.9rem 0.9rem 0.9rem 1.5rem;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid var(--gold-dim);
+    border-radius: 999px;
+    transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+}
+
+.search-pill:focus-within {
+    border-color: var(--gold-muted);
+    background: rgba(255, 255, 255, 0.055);
+    box-shadow:
+        0 1px 6px rgba(0, 0, 0, 0.3),
+        0 0 0 1px rgba(201, 168, 76, 0.08),
+        0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.search-icon {
+    width: 24px;
+    height: 24px;
+    color: var(--gold-dim);
+    flex-shrink: 0;
+    transition: color 0.3s;
+}
+
+.search-pill:focus-within .search-icon {
+    color: var(--gold-muted);
+}
+
+.search-input {
+    flex: 1;
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 1.2rem;
+    font-weight: 400;
+    background: none;
+    border: none;
+    color: var(--cream);
+    outline: none;
+    letter-spacing: 0.01em;
+}
+
+.search-input::placeholder {
+    color: var(--quiet);
+    font-style: italic;
+    opacity: 0.6;
+}
+
+.search-submit {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 50px;
+    height: 50px;
+    background: var(--gold);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.search-submit svg {
+    width: 20px;
+    height: 20px;
+    color: var(--bg-abyss);
+}
+
+.search-submit:hover {
+    background: var(--gold-light);
+    transform: scale(1.05);
+    box-shadow: 0 0 16px rgba(201, 168, 76, 0.25);
+}
+
+.search-submit:active {
+    transform: scale(0.97);
+}
+
+/* ── Loading indicator ─────────────────────────────────────────── */
+
+.landing-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0;
+}
+
+.landing-loading-text {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.82rem;
+    color: var(--cream-muted);
+    font-style: italic;
+}
+
+/* ── Quick action chips ────────────────────────────────────────── */
+
+.landing-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.chip {
+    font-family: 'Cormorant Garamond', Georgia, serif;
+    font-size: 0.92rem;
+    font-weight: 500;
+    padding: 0.5rem 1.25rem;
+    border: 1px solid rgba(201, 168, 76, 0.15);
+    border-radius: 999px;
+    color: var(--cream-muted);
+    background: rgba(255, 255, 255, 0.02);
+    text-decoration: none;
+    letter-spacing: 0.03em;
+    transition: all 0.25s;
+    cursor: pointer;
+}
+
+.chip:hover {
+    border-color: var(--gold-muted);
+    color: var(--gold);
+    background: rgba(201, 168, 76, 0.06);
+    box-shadow: 0 0 12px rgba(201, 168, 76, 0.06);
+}
+
+/* ── Results area ──────────────────────────────────────────────── */
+
+.landing-results {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 900px;
+    padding-top: 0.5rem;
+}
+
+/* ── Hero entrance animations ──────────────────────────────────── */
+
+.fd-animate-hero {
+    animation: fd-hero-enter 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fd-animate-2 {
+    animation: fd-fade-up 0.8s ease both;
+    animation-delay: 0.3s;
+}
+
+.fd-animate-3 {
+    animation: fd-fade-up 0.8s ease both;
+    animation-delay: 0.5s;
+}
+
+/* ── Responsive ────────────────────────────────────────────────── */
+
+@media (max-width: 600px) {
+    .landing {
+        padding: 1.5rem 1rem;
+    }
+
+    .brand-title {
+        letter-spacing: 0.06em;
+    }
+
+    .search-pill {
+        padding: 0.65rem 0.65rem 0.65rem 1rem;
+    }
+
+    .search-input {
+        font-size: 1rem;
+    }
+
+    .search-submit {
+        width: 36px;
+        height: 36px;
+    }
+
+    .search-submit svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .chip {
+        font-size: 0.78rem;
+        padding: 0.35rem 0.85rem;
+    }
+}
+
+@media (min-width: 601px) and (max-width: 900px) {
+    .landing-center {
+        max-width: 580px;
+    }
+}

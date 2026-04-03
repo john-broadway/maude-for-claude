@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% set active_page = 'ecosystem' %}
+
+{% block title %}Ecosystem — Maude Coordinator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Ecosystem</h1>
+    <div class="deco-line"></div>
+    <p class="subtitle">Floor to Doors — {{ total_rooms }} rooms across {{ layers | length }} layers</p>
+</div>
+
+{# ── Infrastructure — Shop Floor ──────────────────────────────── #}
+<div class="eco-section">
+    <div class="eco-section-header">
+        <h2>Shop Floor</h2>
+        <span class="eco-section-desc">PLCs, sensors, production equipment</span>
+    </div>
+
+    <div class="two-col">
+        {# Sites #}
+        <div class="card">
+            <div class="card-section-title">PVE Nodes</div>
+            {% if infrastructure.sites %}
+            <table>
+                <thead>
+                    <tr><th>Site</th><th>Node</th><th>IP</th><th>VLANs</th></tr>
+                </thead>
+                <tbody>
+                    {% for name, site in infrastructure.sites.items() %}
+                    <tr>
+                        <td>{{ name }}</td>
+                        <td>{{ site.pve_node }}</td>
+                        <td>{{ site.ip }}</td>
+                        <td>{{ site.vlans | join(', ') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+
+        {# PLCs #}
+        <div class="card">
+            <div class="card-section-title">PLCs</div>
+            {% if infrastructure.plcs %}
+            <table>
+                <thead>
+                    <tr><th>Name</th><th>IP</th><th>Controller</th></tr>
+                </thead>
+                <tbody>
+                    {% for name, plc in infrastructure.plcs.items() %}
+                    <tr>
+                        <td>{{ name }}</td>
+                        <td>{{ plc.ip }}</td>
+                        <td style="font-size: 0.78rem;">{{ plc.controller }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    </div>
+
+    {# Storage #}
+    <div class="card" style="margin-bottom: 1.5rem;">
+        <div class="card-section-title">UNAS Storage</div>
+        {% if infrastructure.storage %}
+        <table>
+            <thead>
+                <tr><th>Name</th><th>IP</th><th>Mount</th><th>Capacity</th></tr>
+            </thead>
+            <tbody>
+                {% for name, store in infrastructure.storage.items() %}
+                <tr>
+                    <td>{{ name }}</td>
+                    <td>{{ store.ip }}</td>
+                    <td><code>{{ store.mount }}</code></td>
+                    <td>{{ store.capacity }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+
+<div class="deco-line-thick"></div>
+
+{# ── Room Layers (HTMX-refreshable) ──────────────────────────── #}
+<div id="ecosystem-rooms-wrap">
+    <div class="loading-bar"></div>
+    <div id="ecosystem-rooms"
+         hx-get="/htmx/ecosystem-rooms"
+         hx-trigger="every 60s"
+         hx-swap="innerHTML"
+         hx-indicator="#ecosystem-rooms-wrap">
+        {% include "fragments/ecosystem_rooms.html" %}
+    </div>
+</div>
+
+<div class="deco-line-thick"></div>
+
+{# ── Off-Limits ───────────────────────────────────────────────── #}
+<div class="eco-section">
+    <div class="eco-section-header">
+        <h2>Off-Limits</h2>
+        <span class="eco-section-desc">Guest VMs — backup and monitor only, no modifications</span>
+    </div>
+
+    <div class="card">
+        {% if infrastructure.off_limits %}
+        <table>
+            <thead>
+                <tr><th>VMID</th><th>Name</th><th>Policy</th></tr>
+            </thead>
+            <tbody>
+                {% for vm in infrastructure.off_limits %}
+                <tr>
+                    <td>{{ vm.vmid }}</td>
+                    <td>{{ vm.name }}</td>
+                    <td><span class="badge badge-quiet">protect only</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

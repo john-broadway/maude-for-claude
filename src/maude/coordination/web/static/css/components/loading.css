@@ -1,0 +1,28 @@
+/* ── Loading bar — thin gold shimmer during HTMX requests ──────── */
+
+.loading-bar {
+    height: 2px;
+    background: var(--gold-dim);
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 200ms ease-in;
+}
+
+.loading-bar::after {
+    content: '';
+    display: block;
+    height: 100%;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, var(--gold), var(--gold-light), transparent);
+    animation: loading-shimmer 1.2s ease-in-out infinite;
+}
+
+.htmx-request .loading-bar,
+.htmx-request.loading-bar {
+    opacity: 1;
+}
+
+@keyframes loading-shimmer {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(350%); }
+}

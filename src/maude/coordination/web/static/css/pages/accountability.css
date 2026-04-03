@@ -1,0 +1,332 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Accountability Matrix — Dashboard Port
+   Prefix: acct- to avoid conflicts with global classes.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Stats Bar ─────────────────────────────────────────────────────── */
+
+.acct-stats {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    padding: 0.75rem 1.25rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--gold-dim);
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.acct-stat {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+}
+
+.acct-stat-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--gold);
+}
+
+.acct-stat-label {
+    font-size: 0.75rem;
+    color: var(--cream-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.acct-export-btn {
+    margin-left: auto;
+    background: var(--bg-elevated);
+    border: 1px solid var(--gold-dim);
+    color: var(--cream-muted);
+    padding: 0.3rem 0.9rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    transition: all 0.2s;
+}
+
+.acct-export-btn:hover {
+    background: rgba(201, 168, 76, 0.1);
+    border-color: var(--gold-muted);
+    color: var(--gold-light);
+}
+
+/* ── Layout ────────────────────────────────────────────────────────── */
+
+.acct-layout {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    grid-template-rows: 1fr auto;
+    gap: 0;
+    min-height: 500px;
+    border: 1px solid var(--gold-dim);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* ── Sidebar ───────────────────────────────────────────────────────── */
+
+.acct-sidebar {
+    background: var(--bg-surface);
+    border-right: 1px solid var(--gold-dim);
+    padding: 1rem;
+    overflow-y: auto;
+    grid-row: 1 / 2;
+}
+
+.acct-filter-group {
+    margin-bottom: 1.25rem;
+}
+
+.acct-filter-heading {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--gold-muted);
+    margin-bottom: 0.5rem;
+}
+
+.acct-filter-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+    font-size: 0.78rem;
+    color: var(--cream-muted);
+    cursor: pointer;
+    transition: color 0.15s;
+}
+
+.acct-filter-label:hover {
+    color: var(--cream);
+}
+
+.acct-filter-label input[type="checkbox"],
+.acct-filter-label input[type="radio"] {
+    accent-color: var(--gold);
+}
+
+/* ── Legend ────────────────────────────────────────────────────────── */
+
+.acct-legend {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--gold-dim);
+}
+
+.acct-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--cream-muted);
+    padding: 0.2rem 0;
+}
+
+.acct-legend-icon {
+    width: 26px;
+    height: 24px;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+/* ── Matrix Container ──────────────────────────────────────────────── */
+
+.acct-matrix-container {
+    overflow: auto;
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    grid-column: 2 / 3;
+    grid-row: 1 / 2;
+}
+
+/* ── Matrix Table ──────────────────────────────────────────────────── */
+
+.acct-matrix {
+    border-collapse: separate;
+    border-spacing: 2px;
+    width: max-content;
+}
+
+.acct-matrix th,
+.acct-matrix td {
+    padding: 0.25rem 0.5rem;
+    text-align: center;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.acct-matrix thead th {
+    background: var(--bg-elevated);
+    color: var(--cream-muted);
+    font-weight: 700;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    border-radius: 2px;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.35rem 0.55rem;
+}
+
+.acct-actor-name {
+    text-align: left !important;
+    position: sticky;
+    left: 0;
+    z-index: 5;
+    background: var(--bg-surface);
+    padding-left: 0.75rem !important;
+    font-weight: 500;
+    min-width: 170px;
+    border-radius: 2px;
+    font-size: 0.78rem;
+    color: var(--cream);
+}
+
+.acct-section-header {
+    text-align: left !important;
+    padding-left: 0.5rem !important;
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--gold-muted);
+    background: rgba(201, 168, 76, 0.04);
+    border-radius: 2px;
+}
+
+/* ── Matrix Cells ──────────────────────────────────────────────────── */
+
+.acct-cell {
+    width: 36px;
+    height: 30px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+.acct-cell:hover {
+    transform: scale(1.2);
+    z-index: 20;
+    position: relative;
+    box-shadow: 0 0 8px var(--shadow-gold);
+}
+
+/* Cell variants — match legend */
+.cell-none  { color: var(--quiet); background: transparent; }
+.cell-read  { background: rgba(74, 222, 128, 0.12);  color: var(--ok); }
+.cell-guard { background: rgba(201, 168, 76, 0.15);  color: var(--gold); }
+.cell-warn  { background: rgba(251, 191, 36, 0.15);  color: var(--warn); }
+.cell-gap   { background: rgba(248, 113, 113, 0.15); color: var(--error); }
+
+/* ── Detail Panel ──────────────────────────────────────────────────── */
+
+.acct-detail-panel {
+    grid-column: 1 / -1;
+    grid-row: 2 / 3;
+    background: var(--bg-surface);
+    border-top: 1px solid var(--gold-dim);
+    padding: 0.85rem 1.25rem;
+    min-height: 130px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.acct-detail-heading {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--gold-muted);
+    margin-bottom: 0.6rem;
+}
+
+.acct-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 0.75rem;
+}
+
+.acct-detail-item {
+    font-size: 0.72rem;
+}
+
+.acct-detail-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--gold-muted);
+    margin-bottom: 0.15rem;
+}
+
+.acct-detail-value {
+    color: var(--cream);
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+/* ── Gap Badges in Detail Panel ────────────────────────────────────── */
+
+.acct-gap-badge {
+    display: inline-block;
+    padding: 0.15rem 0.55rem;
+    border-radius: 2px;
+    font-size: 0.70rem;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    margin-right: 0.25rem;
+}
+
+.gap-sev-critical.acct-gap-badge { background: rgba(248, 113, 113, 0.2); color: var(--error); }
+.gap-sev-high.acct-gap-badge     { background: rgba(251, 191, 36, 0.2);  color: var(--warn); }
+.gap-sev-medium.acct-gap-badge   { background: rgba(201, 168, 76, 0.2);  color: var(--gold); }
+.gap-sev-low.acct-gap-badge      { background: rgba(90, 96, 112, 0.2);   color: var(--quiet); }
+
+.gap-sev-text { font-size: 0.75rem; }
+.gap-sev-critical.gap-sev-text { color: var(--error); }
+.gap-sev-high.gap-sev-text     { color: var(--warn); }
+.gap-sev-medium.gap-sev-text   { color: var(--gold); }
+.gap-sev-low.gap-sev-text      { color: var(--quiet); }
+
+/* ── Responsive ────────────────────────────────────────────────────── */
+
+@media (max-width: 900px) {
+    .acct-layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr auto;
+    }
+    .acct-sidebar {
+        border-right: none;
+        border-bottom: 1px solid var(--gold-dim);
+        grid-row: 1 / 2;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        padding: 0.75rem;
+    }
+    .acct-filter-group { margin-bottom: 0; }
+    .acct-legend { margin-top: 0; padding-top: 0; border-top: none; border-left: 1px solid var(--gold-dim); padding-left: 1rem; }
+    .acct-matrix-container { grid-column: 1; grid-row: 2; }
+    .acct-detail-panel { grid-column: 1; grid-row: 3; }
+    .acct-stats { gap: 1rem; }
+    .acct-export-btn { margin-left: 0; margin-top: 0.25rem; width: 100%; }
+}

@@ -1,0 +1,146 @@
+# ── RoomConfig ─────────────────────────────────────────────────────
+# Top-level fields map to maude.daemon.config.RoomConfig dataclass.
+# See: src/maude/daemon/config.py
+
+project: {{PROJECT}}           # Project identifier (matches directory name)
+ctid: {{CTID}}                 # Proxmox LXC container ID
+ssh_alias: {{SSH_ALIAS}}       # SSH alias from ~/.ssh/config (for ssh executor)
+ip: "{{IP}}"                   # LXC IP address
+service_name: {{SERVICE_NAME}} # systemd unit name of the application service
+port: {{MCP_PORT}}             # MCP Streamable HTTP port (convention: 9000+CTID)
+service_port: {{SERVICE_PORT}} # Application port on the LXC (for health checks)
+health_endpoint: "http://localhost:{{SERVICE_PORT}}/api/health"  # HTTP health URL
+database: app_data        # Default PostgreSQL database for domain queries
+
+# "ssh" = run commands via asyncssh to ssh_alias (for remote management)
+# "local" = run commands via asyncio subprocess (when MCP runs ON the LXC)
+executor_mode: local
+
+description: >-
+  {{PROJECT_TITLE}} service on LXC {{CTID}}.
+
+
+# ── HealthLoopConfig ──────────────────────────────────────────────
+# Background health monitor with auto-recovery.
+# See: src/maude/healing/health_loop.py
+
+health_loop:
+  enabled: true
+  interval_seconds: 300         # Seconds between health checks (default: 300)
+  max_restart_attempts: 3       # Max restarts before giving up (default: 3)
+  cooldown_seconds: 600         # Seconds between restart attempts (default: 600)
+  health_endpoint: "http://localhost:{{SERVICE_PORT}}/api/health"
+  heartbeat_url: ""             # Uptime Kuma push URL (optional, leave empty to skip)
+
+
+# ── RoomAgentConfig ───────────────────────────────────────────────
+# LLM-powered autonomous agent for self-healing and diagnostics.
+# Requires maude[llm] extra for anthropic + qdrant-client.
+# See: src/maude/healing/room_agent.py
+
+room_agent:
+  enabled: true
+  name: {{PROJECT}}             # Agent identity name
+  knowledge_dir: .maude/  # Tier 1 memory — markdown files (relative to WorkingDirectory)
+  max_iterations: 10            # Max tool-call loops per agent run
+  max_tokens: 4096              # Max LLM response tokens (scheduled checks use 512)
+
+  scheduled_tools:
+    - service_health
+
+  # Tools the Room Agent is allowed to call (must be registered on the MCP server)
+  tools:
+    - service_status
+    - service_health
+    - service_logs
+    - service_errors
+    - service_restart
+    # Add project-specific domain tools here
+
+  # Three-tier memory configuration
+  memory:
+    postgresql: true            # Tier 2: structured memory in agent.agent_memory
+    qdrant: true                # Tier 3: vector embeddings for similarity search
+    recent_limit: 10            # Max recent memories to include in context
+    similar_limit: 5            # Max similar memories from Qdrant
+
+  # LLM routing: vLLM backend
+  llm:
+    vllm:
+      model: Qwen/Qwen3-32B
+      temperature: 0.2
+
+  # Knowledge directory git sync (auto-pull/push memory changes)
+  git:
+    enabled: true
+    remote: origin
+    branch: main
+    auto_pull: true             # Pull latest knowledge before agent runs
+    auto_push: true             # Push memory updates after agent runs
+
+  # Triggers that invoke the Room Agent
+  triggers:
+    - type: health_loop_escalation   # Called when health loop escalates
+    - type: schedule
+      interval_seconds: 3600         # Periodic scheduled check (seconds)
+
+
+# ── LocalMemory ──────────────────────────────────────────────────
+# SQLite-backed sovereign memory — Tier 1.5.
+# Each Room gets its own database at /var/lib/maude/{project}/memory.db.
+# Survives PG/Qdrant outages. SyncWorker promotes records in background.
+# See: src/maude/memory/local_store.py, src/maude/memory/sync_worker.py
+
+local_memory:
+  enabled: true                  # Set false to disable local SQLite memory
+  sync_up_interval: 60           # Seconds between SQLite → PG sync (default: 60)
+  sync_down_interval: 300        # Seconds between PG → SQLite cache refresh (default: 300)
+  privacy:
+    default_scope: patterns      # room_query default: "patterns", "incidents", or "all"
+    share_incidents: false        # Allow cross-room access to incident memories
+    share_patterns: true          # Allow cross-room access to pattern/decision memories
+
+
+# ── AutonomousAdmin ──────────────────────────────────────────────
+# Config-driven autonomous actions and guardrails.
+# Controls what a Room can do WITHOUT human confirmation.
+# See: src/maude/memory/admin_registry.py
+
+autonomous_admin:
+  enabled: false                 # Set true to enable autonomous admin actions
+  allowed_actions:               # Actions the Room can take autonomously
+    - restart_service
+    - clear_cache
+    - rotate_logs
+  guardrails:                    # Constitutional guardrails (cannot be overridden)
+    - no_self_stop               # Cannot stop/disable own service
+    - no_config_mutation          # Cannot modify own config files
+    - no_cross_room              # Cannot affect other rooms
+    - no_data_destruction         # Cannot delete non-ephemeral data
+  min_pattern_confidence: 0.75   # Min success rate for Layer 1.5 auto-resolve
+  min_pattern_occurrences: 3     # Min past occurrences for auto-resolve
+
+
+# ── EventPublisher ────────────────────────────────────────────────
+# PG NOTIFY publisher for cross-room coordination (Phase 2).
+# Events are published to the 'maude_events' PostgreSQL channel.
+# See: src/maude/infra/events.py
+
+events:
+  enabled: false                # Set true to publish events to Coordinator
+  backend: pg                   # "pg" (PG NOTIFY) or "redis" (Redis Streams)
+  db_host: ""                   # PostgreSQL host override (default: from credentials)
+  database: agent               # Database for NOTIFY channel
+
+
+# ── Redis ────────────────────────────────────────────────────────
+# Optional Redis client for distributed caching, rate limiting,
+# and event streaming. Requires maude[cache] extra.
+# Gracefully degrades if unavailable.
+# See: src/maude/infra/redis_client.py
+
+redis:
+  enabled: false                # Set true to enable Redis integration
+  host: ""                      # Default: from credentials or localhost
+  port: 6379
+  db: 0
