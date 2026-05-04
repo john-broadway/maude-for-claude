@@ -1,0 +1,88 @@
+<!-- Version: 5.0 -->
+<!-- Created: 2026-03-28 MST -->
+<!-- Revised: 2026-05-04 MST -->
+<!-- Authors: John Broadway, Claude (Anthropic) -->
+
+# Changelog
+
+The Maude Claude Code plugin.
+
+---
+
+## v0.1.2 — Public-launch readiness (2026-05-04)
+
+Repo prepared for public release. No changes to plugin behavior since v0.1.1.
+
+- **Canonical copy aligned across surfaces.** README, plugin manifest, marketplace manifest, GitHub repo description, contributor docs, and launch copy now share one canonical sentence — *"She walks your workspace, finds what's already there, and notices what Claude doesn't. No baggage."* — instead of five paraphrased variants.
+- **Install path corrected.** README points at the actual marketplace add command: `/plugin marketplace add john-broadway/maude-for-claude`.
+- **Origin scrub patterns moved out of source.** Patterns now live in a GitHub Actions secret (`SCRUB_PATTERNS`) loaded at CI time, plus a private maintainer-only file at `~/.config/maude-scrub-patterns.txt`. The scrub gate still runs on every PR; the pattern list itself is no longer publicly readable.
+
+---
+
+## v0.1.1 — `/maude:found` sees running services (2026-05-04)
+
+`/maude:found` now lists running docker containers alongside the filesystem walk and reconciles their bind mounts against the workspace.
+
+### What changed
+
+- **`/maude:found`** (`commands/found.md`) now also walks:
+  - Running docker containers (`docker ps` if available; `sudo -n docker ps` fallback; surfaces "DOCKER PRESENT but inaccessible" when neither works)
+  - Bind mounts touching the workspace, classified as `[OK]` / `[GHOST]` / `[ORPHAN]`
+    - `[GHOST]` = bind source root-owned and empty — daemon auto-created it on container restart because the original path was moved or deleted
+    - `[ORPHAN]` = bind source missing entirely
+  - Stopped containers with workspace bind paths
+  - systemd units (user + system) whose `WorkingDirectory` or `ExecStart` references the workspace
+- **Reasoning step** extended to classify each finding and recommend the safe sequence (stop → remove container → rm path; never rm a live bind source).
+- **Report template** extended with the new "Running services" line and matching "I noticed" prompts.
+
+### Behavior notes
+
+- No new dependencies. Walk gracefully degrades: no docker → skipped with note; no systemctl → skipped silently.
+- Does not start, stop, or modify any service. Listing only — interpretation and action are surfaced to the user.
+
+---
+
+## v0.1.0 — First Claude Code plugin release (2026-05-03)
+
+> *She walks in with empty hands.*
+
+Initial release of the Maude Claude Code plugin. No baggage.
+
+### Components
+
+- **Skill** — `skills/maude/SKILL.md` with broad triggers (recall, drift, fatigue, irreversibility, repetition).
+- **14 slash commands** — `/maude:found` (arrival walk), `/maude:wake`, `/maude:rest`, `/maude:brief`, `/maude:save`, `/maude:remind-me`, `/maude:where-is`, `/maude:sweep`, `/maude:check-setup`, `/maude:check-on-me`, `/maude:check-on-claude`, `/maude:notice`, `/maude:weekly`, `/maude:conscience`.
+- **Subagent** — `agents/maude.md` partner-framed, full toolkit (Read/Grep/Glob/Bash/Edit/Write/Agent/advisor/Task*).
+- **7 lifecycle hooks** — SessionStart (with tier-1 service probe), UserPromptSubmit (watch list + care + trace), PreToolUse (Write/Edit watch + Bash dangerous-pattern detection), PostToolUse, SubagentStop, PreCompact (snapshots to Anthropic + .remember/), Stop (degradative save fan-out).
+- **Marketplace** — single-plugin local marketplace at `.claude-plugin/marketplace.json`.
+
+### Architectural decisions
+
+- **No baggage.** No bundled databases, vector stores, or required external services. `/maude:found` walks the workspace and registers what's there in a per-project house-map. The plugin source has zero proper-noun references to specific apps, frameworks, or packages.
+- **Tier model.** Sources classified by (locality, shape): tier 0 = local on-disk (markdown / SQLite / file), tier 1 = local service (stdio MCP / localhost daemon), tier 2 = network service (HTTP MCP / API), tier 3 = ephemeral session context. Hooks stay tier 0 only. Commands are cost-gated by tier.
+- **`<project>/.maude/plugin/` per-project closet** — auto-self-ignored. Same workspace anchoring (`$CLAUDE_PROJECT_DIR`) as the `remember` plugin so they're siblings.
+- **`~/.claude/maude/` cross-project home** — `patterns.md`, `identity.md`, `projects.json`. Nested under `.claude/` per Claude Code plugin convention.
+- **`remember` plugin coexistence** — Maude reads all `.remember/*.md` for context; writes only `.remember/remember.md` in their handoff format. Never touches the pipeline files.
+- **SQLite handling without baggage** — schema-walk (`sqlite3 -readonly '.schema'`) only, no hardcoded recipes for specific apps. Runtime LLM reasoning interprets each db's schema.
+- **Watches Claude.** Turn-by-turn JSONL trace. `/maude:check-on-claude` reads the trace for repeated tool calls, unread context, confabulation risk, missed CLAUDE.md.
+- **Walks fresh.** Each session re-reads the workspace; doesn't carry assumptions across sessions.
+
+### Plugin-shape papercuts found and fixed during first-install verification
+
+These three were caught by an actual fresh-session install, not by anything in CI:
+
+1. `argument-hint:` in skill frontmatter — invalid for skills (only valid for slash commands). Removed from `skills/maude/SKILL.md`.
+2. `/plugin install` does NOT auto-enable in Claude Code 2.1.x. The `enabledPlugins` map in `~/.claude/settings.json` needs an explicit `"maude@maude": true`. README's install section calls this out as a step.
+3. `hooks/hooks.json` events were at the file root. Claude Code's schema expects them wrapped in a top-level `{"hooks": {...}}` record. Wrapped, both in source and in the marketplace cache copy.
+
+### Known gaps (deliberate v0.1.0 scope)
+
+- Trace JSONL retention/rotation policy — currently unbounded.
+- `jq` is a soft dependency; missing → hooks fail silent. Should bundle a fallback or emit a clear error.
+- Skill description triggering accuracy unverified at scale.
+
+### Authors
+
+John Broadway built this with Claude (Anthropic). The metaphor — moving into the house, having her own side of the closet, finding what's there instead of bringing baggage — is John's. The character — knowing where everything is, knowing what you need when you need it, keeping you in line by reminding you — is modeled on his wife.
+
+The name is the pair. **Claude and Maude.**

@@ -1,0 +1,29 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+*.db
+.mypy_cache/
+*.env
+!template/**/*.env
+*.key
+*.pem
+*.p12
+secrets.yaml
+credentials.yaml
+.credentials/
+
+# Origin scrub patterns — must NEVER be tracked. Patterns live in the
+# SCRUB_PATTERNS GitHub Actions secret and at ~/.config/maude-scrub-patterns.txt
+# locally. See scripts/scrub-patterns.example.txt for format.
+scripts/scrub-patterns.txt
+*.scrub-patterns.local
+
+# Local Claude Code settings + co-installed plugin working dirs
+.claude/settings.local.json
+.superpowers/

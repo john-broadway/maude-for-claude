@@ -1,0 +1,15 @@
+# Origin scrub patterns — format reference.
+#
+# This file shows the format. Real patterns are NOT in source — they live in
+# the SCRUB_PATTERNS GitHub Actions secret (loaded at CI time) and at
+# $HOME/.config/maude-scrub-patterns.txt locally (gitignored).
+#
+# One rule per line. Comments and blank lines ignored.
+# Format: LABEL ||| GREP_EXTENDED_REGEX
+# The pattern is passed to `grep -E`.
+#
+# Examples (illustrative only — these are not real patterns we scrub):
+
+Example domain ||| example\.com|example\.org
+Example IP block ||| 192\.0\.2\.|198\.51\.100\.
+Example identifier ||| \bplaceholder-name\b

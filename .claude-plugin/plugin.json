@@ -1,0 +1,19 @@
+{
+  "name": "maude",
+  "version": "0.1.2",
+  "description": "Claude's partner inside Claude Code. She walks your workspace, finds what's already there, and notices what Claude doesn't. No baggage — no bundled database, no vector store, no backend. Works with what's in the workspace, the remember plugin, and any vaults you've registered. Beta.",
+  "author": {
+    "name": "John Broadway"
+  },
+  "homepage": "https://github.com/john-broadway/maude-for-claude",
+  "repository": "https://github.com/john-broadway/maude-for-claude",
+  "license": "Apache-2.0",
+  "keywords": [
+    "maude",
+    "configuration",
+    "memory",
+    "agent",
+    "infrastructure",
+    "session-continuity"
+  ]
+}

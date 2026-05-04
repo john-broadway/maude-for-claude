@@ -1,0 +1,46 @@
+# Maude for Claude — CI
+# Copyright (c) 2026 John Broadway
+# Licensed under the Apache License, Version 2.0
+# Version: 3.0
+# Revised: 2026-05-04 MST — patterns moved to GitHub Actions secret
+# Authors: John Broadway, Claude (Anthropic)
+#
+# Origin scrub on every push and pull request.
+# Patterns live in the SCRUB_PATTERNS repository secret (not in source).
+#
+# Security note: the SCRUB_PATTERNS secret is bound via `env:` and never
+# interpolated into shell commands. This is the safe pattern; see
+# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  scrub:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Load scrub patterns from secret
+        env:
+          SCRUB_PATTERNS: ${{ secrets.SCRUB_PATTERNS }}
+        run: |
+          if [ -z "$SCRUB_PATTERNS" ]; then
+            echo "::error::SCRUB_PATTERNS secret is not set on this repository."
+            echo "::error::Add it under Settings to Secrets and variables to Actions."
+            exit 2
+          fi
+          mkdir -p "$RUNNER_TEMP/scrub"
+          printf '%s' "$SCRUB_PATTERNS" > "$RUNNER_TEMP/scrub/patterns.txt"
+          chmod 600 "$RUNNER_TEMP/scrub/patterns.txt"
+          echo "patterns loaded ($(wc -l < "$RUNNER_TEMP/scrub/patterns.txt") lines)"
+
+      - name: Origin scrub check
+        env:
+          SCRUB_PATTERNS_FILE: ${{ runner.temp }}/scrub/patterns.txt
+        run: bash scripts/scrub-check.sh
