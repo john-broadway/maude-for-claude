@@ -58,10 +58,38 @@ case "$TARGET" in
     ;;
 esac
 
+# Check 4: CLAUDE.md unread this session — Claude is about to edit without
+# having read the project's hard rules. Once-per-day cooldown via care.json.
+CARE="$(maude_self_dir)/care.json"
+if command -v jq >/dev/null 2>&1; then
+  TODAY="$(date +%Y-%m-%d)"
+  WARNED_DATE=""
+  [ -f "$CARE" ] && WARNED_DATE="$(jq -r '.claudemd_warned // ""' "$CARE" 2>/dev/null)"
+  if [ "$WARNED_DATE" != "$TODAY" ]; then
+    PROJ_DIR="$(maude_project_dir)"
+    PROJ_CLAUDEMD="$PROJ_DIR/CLAUDE.md"
+    USER_CLAUDEMD="$HOME/.claude/CLAUDE.md"
+    NESTED_CLAUDEMD="$PROJ_DIR/.claude/CLAUDE.md"
+    if [ -f "$PROJ_CLAUDEMD" ] || [ -f "$USER_CLAUDEMD" ] || [ -f "$NESTED_CLAUDEMD" ]; then
+      TRACE="$(maude_self_dir)/trace/today-$(date +%Y-%m-%d).jsonl"
+      READ_HIT=""
+      if [ -f "$TRACE" ]; then
+        READ_HIT="$(jq -r 'select(.tool == "Read" and (.target // "" | endswith("CLAUDE.md"))) | .target' "$TRACE" 2>/dev/null | head -1)"
+      fi
+      if [ -z "$READ_HIT" ]; then
+        printf 'Maude: about to edit %s but CLAUDE.md has not been Read this session. Worth reading the rules first.\n' "$TARGET" >&2
+        SURFACED="${SURFACED}claudemd-unread "
+        if [ -f "$CARE" ]; then
+          TMP="$(mktemp 2>/dev/null)" && jq --arg t "$TODAY" '.claudemd_warned = $t' "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE"
+        fi
+      fi
+    fi
+  fi
+fi
 
-# Log to today's daily if we surfaced anything
+# Log to project-local trace if we surfaced anything
 if [ -n "$SURFACED" ]; then
-  maude_log_to_today "- $(date +%H:%M) | pre-tool | flags=${SURFACED% } | target=$TARGET"
+  maude_log_trace "pre-tool" "flags=${SURFACED% } target=$TARGET"
 fi
 
 exit 0

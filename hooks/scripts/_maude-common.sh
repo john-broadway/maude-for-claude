@@ -38,7 +38,46 @@
 # Project root — prefer $CLAUDE_PROJECT_DIR (set by Claude Code), fall back to pwd.
 # This matches the remember plugin's anchoring so .maude/ and .remember/ stay siblings.
 maude_project_dir() {
-  printf '%s' "${CLAUDE_PROJECT_DIR:-$(pwd)}"
+  # Claude Code exports CLAUDE_PROJECT_DIR to hook subprocesses but NOT to
+  # the Bash tool subprocess. So slash-command-invoked scripts have to find
+  # the workspace root themselves. Order:
+  #   1. $CLAUDE_PROJECT_DIR if set (always for hooks)
+  #   2. Walk up the process tree looking for the `claude` process; read its
+  #      cwd. On Linux this matches what hooks see, regardless of how many
+  #      bash subshells are layered between the script and Claude Code.
+  #   3. Walk up the FILESYSTEM from pwd looking for an existing
+  #      .maude/plugin/ closet (non-Linux fallback / edge cases).
+  #   4. pwd (first-time setup, no closet anywhere).
+  if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
+    printf '%s' "$CLAUDE_PROJECT_DIR"
+    return
+  fi
+  pid="${PPID:-}"
+  i=0
+  while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$i" -lt 16 ]; do
+    if [ -r "/proc/$pid/comm" ]; then
+      cmd="$(cat /proc/$pid/comm 2>/dev/null)"
+      if [ "$cmd" = "claude" ]; then
+        cc_cwd="$(readlink /proc/$pid/cwd 2>/dev/null)"
+        if [ -n "$cc_cwd" ] && [ "$cc_cwd" != "/" ] && [ -d "$cc_cwd" ]; then
+          printf '%s' "$cc_cwd"
+          return
+        fi
+        break
+      fi
+    fi
+    pid="$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null)"
+    i=$((i + 1))
+  done
+  d="$(pwd)"
+  while [ "$d" != "/" ] && [ -n "$d" ]; do
+    if [ -d "$d/.maude/plugin" ]; then
+      printf '%s' "$d"
+      return
+    fi
+    d="$(dirname "$d")"
+  done
+  printf '%s' "$(pwd)"
 }
 
 maude_slug() {
@@ -86,15 +125,31 @@ maude_is_watched() {
   grep -qF -- "$target" "$map"
 }
 
-# Append a line to today's daily log in Anthropic memory if the memory dir
-# already exists. Silent if it doesn't — never auto-creates Anthropic structure.
-maude_log_to_today() {
-  local line="$1" mem today
-  mem="$(maude_mem_dir)"
-  [ -d "$mem" ] || return 0
-  today="$mem/today-$(date +%Y-%m-%d).md"
-  [ -f "$today" ] || printf '# %s\n\n' "$(date +%Y-%m-%d)" > "$today"
-  printf -- '%s\n' "$line" >> "$today"
+# Append a JSONL event to the project-local trace.
+# Trace lives in HER closet at <project>/.maude/plugin/trace/, NEVER in Anthropic
+# auto-memory. Auto-creates the trace dir.
+#
+# Payload is written as-is (no redaction filter). Callers must pass short
+# metadata strings (flag names, tool names, paths). Do NOT pass file content,
+# bash output, or anything else that could carry user content — that's a leak
+# vector. Trace is for event audit, not content capture.
+maude_log_trace() {
+  local kind="$1" payload="$2" trace_dir trace ts
+  trace_dir="$(maude_self_dir)/trace"
+  mkdir -p "$trace_dir" 2>/dev/null
+  trace="$trace_dir/today-$(date +%Y-%m-%d).jsonl"
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  if command -v jq >/dev/null 2>&1; then
+    jq -nc --arg ts "$ts" --arg kind "$kind" --arg payload "$payload" \
+      '{ts:$ts, kind:$kind, payload:$payload}' >> "$trace" 2>/dev/null
+  else
+    # Fallback: sed-escape backslashes and quotes for JSON safety
+    local esc
+    esc="$(printf '%s' "$payload" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n')"
+    printf '{"ts":"%s","kind":"%s","payload":"%s"}\n' \
+      "$ts" "$kind" "$esc" >> "$trace"
+  fi
 }
 
 # Ensure her project closet exists, including the auto-gitignore.

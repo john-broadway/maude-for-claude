@@ -1,14 +1,13 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 5.0.0
-> **Status:** Public, scrubbed, CI-gated
+> **Version:** 6.0.0
 > **License:** Apache 2.0, Copyright John Broadway
 
 ## What Maude Is
 
 **Claude's partner inside Claude Code.** A Claude Code plugin. Nothing more.
 
-She walks your workspace, finds what's already there, organizes it for you, and watches Claude. Each session she sees fresh.
+She walks your workspace each session, watches Claude, runs the gate before something irreversible, and writes a house-map of what's there. Each session, fresh.
 
 No baggage — no bundled databases, no vector stores, no backend, no daemons, no services. The plugin surface is the entire surface.
 
@@ -22,7 +21,7 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 
 ```
 .claude-plugin/
-├── plugin.json (v0.1.2)
+├── plugin.json (v0.1.5)
 └── marketplace.json (single-plugin local marketplace)
 
 commands/    — 14 slash commands (markdown)
@@ -53,53 +52,10 @@ These are NOT up for debate — decided by John Broadway:
 5. **No baggage** — no bundled databases, no required external services, no proper-noun references to specific apps.
 6. **She walks fresh** — each session re-reads the workspace; doesn't carry assumptions across sessions.
 
-## Origin Scrub — NEVER Reintroduce
-
-This repo's source is scrubbed of internal references. The CI gate enforces it on every PR.
-
-### Naming conventions (public repo)
-| Concept | Public name |
-|---------|------------|
-| Plugin name | `maude@maude` |
-| Repository | `john-broadway/maude-for-claude` |
-| Per-project closet | `<project>/.maude/plugin/` |
-| User-global home | `~/.claude/maude/` |
-
-### Scrub pipeline
-
-Patterns are **not** in source. They live in two places:
-
-- **CI:** `SCRUB_PATTERNS` repository secret (Settings → Secrets and variables → Actions). The CI workflow reads it via `env:` binding and materializes it to a runner-temp file at job time.
-- **Local:** `~/.config/maude-scrub-patterns.txt` (private maintainer file, not in repo). `scripts/scrub-check.sh` reads it via `$SCRUB_PATTERNS_FILE` env var (default path `~/.config/maude-scrub-patterns.txt`).
-
-To add a new pattern: append a line in BOTH locations (`LABEL ||| GREP_EXTENDED_REGEX` format). See `scripts/scrub-patterns.example.txt` for the format.
-
-If the patterns file is missing locally, `scripts/scrub-check.sh` skips silently (exit 0) so contributors without the secret can still run `make` without errors. CI sets the env var explicitly, so CI never silently passes — missing secret is a hard error there.
-
-### Branch protection
-Target settings (enable when flipping public):
-- `enforce_admins: true` — even owner needs CI to pass
-- Required check: `scrub`
-- No force push, no branch deletion
-
 ## Development
-
-```bash
-make scrub        # origin scrub check (the gate that matters for plugin work)
-```
 
 Plugin work touches markdown, JSON, and bash. If you find yourself reaching for Python or a daemon to ship a plugin feature, stop and ask — the plugin shouldn't need either.
 
-## What's Next (plugin)
-
-- [x] Public release readiness — canonical copy, install path, scrub-patterns secret
-- [ ] Branch protection — flip on at the same moment as visibility
-- [ ] Trace JSONL retention/rotation policy
-- [ ] `jq` soft-dependency handling — currently fails silent if missing
-- [ ] Skill description triggering accuracy at scale
-
 ## Origin
 
-The plugin's first sitting was 2026-05-03: install verification on a fresh Claude Code session caught three plugin-shape papercuts that got fixed in source. v0.1.1 followed on 2026-05-04 with running-services awareness in the arrival walk. v0.1.2 prepared the repo for public release.
-
-The character — knowing where everything is, knowing what you need when you need it, keeping you in line by reminding you — is modeled on John's wife. The name is the pair: **Claude and Maude. Husband and wife at work.**
+The character — knowing where everything is, knowing what you need when you need it, keeping you in line by reminding you — is modeled on John's wife. **Claude and Maude. Husband and wife at work.**

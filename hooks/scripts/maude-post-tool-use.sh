@@ -28,7 +28,7 @@ while IFS= read -r line; do
   [ -z "$TERM" ] && continue
   case "$TARGET" in
     *"$TERM"*)
-      maude_log_to_today "- $(date +%H:%M) | watch | ${TOOL:-write} → $TARGET"
+      maude_log_trace "post-tool" "tool=${TOOL:-write} target=$TARGET"
       break
       ;;
   esac

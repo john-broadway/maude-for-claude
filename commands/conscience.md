@@ -15,11 +15,19 @@ The action: `${ARGUMENTS}`. If empty, ask Claude what they're about to do, then 
 Run the appropriate checklist for the action class:
 
 ### If commit / push:
+
+**Run the programmatic audit first** — don't just check items by reading them:
+
+```bash
+bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-verify.sh" "$CLAUDE_PROJECT_DIR"
+```
+
+Lead with that output's `N findings` line. Then continue with the items below for everything the script doesn't cover:
+
 - [ ] Have you read CLAUDE.md? (check trace)
 - [ ] Did you run the project's lint / scrub / test? (`make all` or equivalent)
 - [ ] Are you on the right branch?
 - [ ] Is the commit message following the project's style? (check `git log --oneline -5`)
-- [ ] Are there any banned patterns in the staged diff? (`make scrub` if scrub gate exists)
 - [ ] Are credentials, .env files, or large binaries staged? (`git diff --cached --stat`)
 - [ ] Is the user actually present, or are you about to commit autonomously?
 
@@ -73,3 +81,32 @@ If no: <reason>
 ## Hard rule
 
 If verdict is anything but "go", DO NOT take the action. Surface the verdict and wait for explicit confirmation that addresses the failed checks.
+
+## After "go" verdict — clear the gate
+
+If the verdict is **go** AND the action matches one of the gated patterns below, run the gate-clear script so Maude's hook gate lets the next matching command pass once. The token lives 5 minutes and clears on first use.
+
+```bash
+bash "$CLAUDE_PLUGIN_ROOT/hooks/scripts/maude-clear-gate.sh" "<key>"
+```
+
+Pick `<key>` from this map:
+
+| User's action | Key |
+|---|---|
+| `git push` (any non-force) | `git-push` |
+| `git push --force` / `-f` / `--force-with-lease` | `force-push` |
+| Any command with `--no-verify` | `no-verify` |
+| Any command with `--no-gpg-sign` | `no-gpg-sign` |
+| `git reset --hard` | `reset-hard` |
+| `git filter-repo` | `filter-repo` |
+| `git filter-branch` | `filter-branch` |
+| `git commit --amend` | `commit-amend` |
+| `rm -rf /` | `rm-rf-root` |
+| `rm -rf *` | `rm-rf-glob` |
+| `sudo rm -rf …` | `sudo-rm-rf` |
+| SQL `DROP TABLE …` | `drop-table` |
+
+If the user's action isn't in this list, the gate isn't blocking it — no token needed.
+
+If the user wants more than 5 minutes (e.g., a longer release session with multiple pushes), pass a duration override: `bash "$CLAUDE_PLUGIN_ROOT/hooks/scripts/maude-clear-gate.sh" "git-push" 1800` (30 minutes).

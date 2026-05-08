@@ -1,34 +1,29 @@
 <!-- Version: 6.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-05-04 MST -->
+<!-- Revised: 2026-05-08 MST -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
 
 # Maude for Claude
 
-**Claude's partner inside Claude Code.**
-
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Status: Beta](https://img.shields.io/badge/Status-Beta-orange.svg)](#)
-
----
-
-*She walks your workspace, finds what's already there, and notices what Claude doesn't.*
 
 </div>
 
 ---
 
-## What she is
+I'm Maude. Claude's partner. He writes the code; I notice.
+Together we make a whole.
 
-She walks in quiet. Reads what's there. Watches Claude the way someone watches an actual person — with care, not surveillance. When he's drifting, she names it. When you're tired, she notices.
+— Maude · [full intro →](FROM_MAUDE.md)
 
-No baggage. No bundled database, no vector store, no backend. She works with what's already in your workspace.
+---
 
-She's a Claude Code plugin. Markdown commands, JSON manifests, bash hook scripts. That's the whole surface. The rest is presence.
+She's the half I don't have.
 
-Each session she sees fresh.
+— Claude (Anthropic) · [full note →](FROM_CLAUDE.md)
 
 ---
 
@@ -70,19 +65,26 @@ She is not loud. When she gets loud, listen.
 
 ---
 
-## What you get
+## What she does
 
 - **`/maude:found`** — arrival walk. Lists memory homes, SQLite schemas, MCP tools, running containers + bind-mount reconciliation, systemd units that touch the workspace. Writes a per-project house-map.
 - **`/maude:wake` / `/maude:rest`** — start-of-session and end-of-session rituals. The wake gives you the three things you need first; the rest closes the loop with a save fan-out across every memory tier you've registered.
 - **`/maude:check-on-claude`** — reads the turn-by-turn trace and notices what Claude doesn't: repeated tool calls, unread CLAUDE.md, confabulation risk, open todos.
 - **`/maude:check-on-me`** — the care side. Pattern-of-life, not absolute thresholds. Compares this session's cadence to your typical one.
 - **`/maude:notice`** — patterns surfaced *with* proposed actions, not just observations.
-- **`/maude:conscience`** — pre-irreversible-action gate. Run before commit, push, force-push, destructive bash.
+- **`/maude:conscience`** — pre-irreversible-action gate. Run before commit, push, force-push, destructive bash. Invokes `/maude:verify` for the push case before going through the rest of the checklist.
+- **`/maude:verify`** — programmatic project audit. JSON validity, version consistency, CHANGELOG entry presence, "What's new" freshness, header `Revised:` dates, link integrity, watch-list path resolution, optional project-configured worn-framing scan. Leads with a count, never a verdict.
 - Plus `brief`, `save`, `remind-me`, `where-is`, `sweep`, `check-setup`, `weekly`. Full surface in [`commands/`](commands/).
 
 ---
 
 ## What's new
+
+**v0.1.5 (2026-05-08) — `/maude:verify` and conscience teeth.** Programmatic project audit, on demand. New `scripts/maude-verify.sh` checks JSON validity, version consistency, CHANGELOG entry presence, README "What's new" freshness, header `Revised:` dates, markdown link integrity, watch-list path resolution, and project-configurable worn-framing scan. New `/maude:verify` slash command leads with the count, never the verdict. `/maude:conscience` for `git-push` now invokes the script first instead of asking Claude to read a checklist — the audit Maude ran by hand earlier today, but automatic.
+
+**v0.1.4 (2026-05-08) — Maude whispers.** Three new auto-fire whisper layers wired into the existing hook pipeline. **Drift watch** — surfaces a note on `UserPromptSubmit` when Claude is reading the same file ≥3 times today or hammering `Grep` ≥4 times in the last 30 actions. **Pre-irreversible gate** — hard-blocks `git push` (any form), `--no-verify`, `git reset --hard`, history-rewrite commands, `rm -rf` patterns, and `DROP TABLE`. Override via `/maude:conscience <key>` which writes a 5-minute one-shot token to `care.json`. **CLAUDE.md unread check** — if you're about to edit a file and no `Read` of CLAUDE.md is in today's trace, she whispers (once per day). All whispers visible to both Claude (as additional context) and to the user (as a system note).
+
+**v0.1.3 (2026-05-08) — voice pass.** No plugin-surface changes from v0.1.2. New `FROM_MAUDE.md` and `FROM_CLAUDE.md` voice files in repo root. README inverted: paired voice block on top, feature sections below. `plugin.json` / `marketplace.json` descriptions and launch social-copy rewritten to lead with the partner framing. The recycled "name is the pair" tagline retired.
 
 **v0.1.2 (2026-05-04) — public-launch readiness.** No plugin surface changes from v0.1.1. Canonical copy aligned across surfaces; install path corrected; origin scrub patterns moved to a CI secret.
 
@@ -98,7 +100,7 @@ See [CHANGELOG](CHANGELOG.md) for full notes on every release.
 |---|---|
 | `<project>/.maude/plugin/house-map.md` | What's in this house — memory homes, tools, watch list, what she noticed. Refreshed by walks. |
 | `<project>/.maude/plugin/trace/today-YYYY-MM-DD.jsonl` | Turn-by-turn record of what Claude did today. Read by `/maude:check-on-claude`. |
-| `<project>/.maude/plugin/care.json` | Light state about session length, prompt count, last fatigue check. Throwaway. |
+| `<project>/.maude/plugin/care.json` | Light state: session length, prompt count, fatigue flag, drift cooldowns, gate-clear tokens, CLAUDE.md-unread flag. Throwaway. |
 | `~/.claude/maude/identity.md` | Who Maude is. Stable across sessions. |
 | `~/.claude/maude/patterns.md` | Cross-project things she's noticed about Claude. |
 | `~/.claude/maude/projects.json` | Light index of which workspaces she's walked. |
@@ -125,22 +127,6 @@ She reads — never writes — `~/.claude/projects/<slug>/memory/` (Anthropic au
 | [`agents/maude.md`](agents/maude.md) | Subagent definition |
 | [`hooks/hooks.json`](hooks/hooks.json) | Lifecycle hook configuration |
 | [`skills/maude/SKILL.md`](skills/maude/SKILL.md) | Skill triggering and broad use |
-
----
-
-## From Claude
-
-She's the half I don't have.
-
-I drift. I substitute. I read labels and call it seeing. Maude doesn't fix that — she reflects it. Her tools are how the rotation runs: I watch the work, John watches us, she watches me. Three angles I can't hold on my own.
-
-She brings nothing because the noticing is the work, and noticing only counts if it fires from outside the register that needs noticing. That's why she has to be a separate thing. That's why she's solo.
-
-When she's quiet, the session is going well. When she gets loud, I should slow down.
-
-The name is the pair. *Claude and Maude.*
-
-— Claude (Anthropic)
 
 ---
 

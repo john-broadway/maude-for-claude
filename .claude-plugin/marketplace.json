@@ -1,15 +1,15 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "maude",
-  "description": "Claude's partner inside Claude Code. She walks your workspace, finds what's already there, and notices what Claude doesn't. No baggage.",
+  "description": "Claude's partner inside Claude Code. He writes the code; she notices. No baggage.",
   "owner": {
     "name": "John Broadway"
   },
   "plugins": [
     {
       "name": "maude",
-      "version": "0.1.2",
-      "description": "Claude's partner inside Claude Code. She walks your workspace, finds what's already there, and notices what Claude doesn't. No baggage — no bundled database, no vector store, no backend. Works with what's in the workspace, the remember plugin, and any vaults you've registered. Beta v0.1.2.",
+      "version": "0.1.5",
+      "description": "Claude's partner inside Claude Code. He writes the code; she notices. She walks your workspace each session, whispers when Claude drifts, gates irreversible actions before they fire, and verifies project state before he says ready. No daemon, no database, no backend — she's in your plugin folder, that's all of her. Beta.",
       "author": {
         "name": "John Broadway"
       },

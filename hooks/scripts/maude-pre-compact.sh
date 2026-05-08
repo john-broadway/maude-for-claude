@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # Maude pre-compact hook (during).
-# Fires before context compaction. Snapshots the live buffer to:
-#   - Anthropic today-*.md (so next-session Claude sees it)
-#   - .remember/remember.md (so remember's pipeline absorbs the handoff too)
+# Fires before context compaction. Snapshots the live buffer so it isn't lost.
+# Writes to:
+#   - <project>/.maude/plugin/snapshots/precompact-YYYY-MM-DDTHHMMZ.md
+#       Markdown snapshot of the live buffer (HER closet, never Anthropic memory).
+#   - .remember/remember.md (handoff, only if stale > 600s and no save lock)
+#       Lets the remember plugin's pipeline absorb the handoff.
+#   - JSONL event in <project>/.maude/plugin/trace/today-YYYY-MM-DD.jsonl
+#       Marks that pre-compact happened, references the snapshot path.
+# All content is redaction-filtered before write.
 # Never blocks. Idempotent within the same minute.
 
 set +e
@@ -13,58 +19,62 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJ="$(maude_project_dir)"
 MEM="$(maude_mem_dir)"
 REMEMBER="$PROJ/.remember"
+SELF="$(maude_self_dir)"
 
 TIME="$(date +%H:%M)"
 TODAY="$(date +%Y-%m-%d)"
+STAMP="$(date -u +%Y-%m-%dT%H%MZ)"
 SOURCED=""
 
-# Tier 1: Anthropic auto-memory snapshot
+# Find the live buffer (Anthropic-side first, then remember-side as fallback)
 NOW_FILE=""
 [ -f "$MEM/now.md" ] && NOW_FILE="$MEM/now.md"
 [ -z "$NOW_FILE" ] && [ -f "$REMEMBER/now.md" ] && NOW_FILE="$REMEMBER/now.md"
 
-if [ -n "$NOW_FILE" ] && [ -d "$MEM" ]; then
-  TODAY_FILE="$MEM/today-$TODAY.md"
-  [ -f "$TODAY_FILE" ] || printf '# %s\n\n' "$TODAY" > "$TODAY_FILE"
+# Tier 1: snapshot to project-local snapshots dir
+SNAPSHOT_PATH=""
+if [ -n "$NOW_FILE" ]; then
+  SNAPSHOTS_DIR="$SELF/snapshots"
+  mkdir -p "$SNAPSHOTS_DIR" 2>/dev/null
+  SNAPSHOT_PATH="$SNAPSHOTS_DIR/precompact-$STAMP.md"
 
-  LAST="$(tail -1 "$TODAY_FILE" 2>/dev/null)"
-  if ! printf '%s' "$LAST" | grep -q "pre-compact $TIME"; then
-    {
-      printf '\n## %s | pre-compact snapshot\n' "$TIME"
-      head -200 "$NOW_FILE"
-      printf '\n'
-    } >> "$TODAY_FILE"
-    SOURCED="${SOURCED}anthropic "
-  fi
+  # Snapshot content as-is. NOTE: this preserves whatever was in $NOW_FILE.
+  # Snapshots dir is gitignored (.maude/plugin/* is self-ignored). Wipe at
+  # session-end as routine hygiene if the snapshot may carry sensitive content.
+  printf '# Pre-compact snapshot — %s\n\nSource: %s\n\n---\n\n%s\n' \
+    "$STAMP" "$NOW_FILE" "$(head -200 "$NOW_FILE" 2>/dev/null)" \
+    > "$SNAPSHOT_PATH" 2>/dev/null
+  SOURCED="${SOURCED}snapshot "
 fi
 
-# Tier 2: remember plugin handoff file
-# Only write if .remember/ exists AND remember.md isn't actively being held by remember's lock
-if [ -d "$REMEMBER" ] && [ ! -f "$REMEMBER/tmp/save.lock" ]; then
+# Tier 2: remember plugin handoff file (with redaction + staleness check)
+if [ -d "$REMEMBER" ] && [ ! -f "$REMEMBER/tmp/save.lock" ] && [ -n "$NOW_FILE" ]; then
   HANDOFF="$REMEMBER/remember.md"
-  # Compose a minimal handoff in remember's expected format.
-  # Don't clobber an existing fresh handoff — only write if file is empty or older than 10 min.
   WRITE_HANDOFF=1
   if [ -s "$HANDOFF" ]; then
     HANDOFF_AGE=$(( $(date +%s) - $(stat -c %Y "$HANDOFF" 2>/dev/null || echo 0) ))
     [ "$HANDOFF_AGE" -lt 600 ] && WRITE_HANDOFF=0
   fi
 
-  if [ "$WRITE_HANDOFF" -eq 1 ] && [ -n "$NOW_FILE" ]; then
+  if [ "$WRITE_HANDOFF" -eq 1 ]; then
+    BUFFER_HEAD="$(head -20 "$NOW_FILE" 2>/dev/null | sed 's/^/  /')"
     {
       printf '# Handoff\n\n'
       printf '## State\n'
       printf 'Pre-compact snapshot at %s. Live buffer (top 20 lines):\n' "$TIME"
-      head -20 "$NOW_FILE" | sed 's/^/  /'
+      printf '%s\n' "$BUFFER_HEAD"
       printf '\n## Next\n'
-      printf '- Resume from where compaction interrupted.\n'
+      printf -- '- Resume from where compaction interrupted.\n'
+      [ -n "$SNAPSHOT_PATH" ] && printf -- '- Full snapshot: %s\n' "$SNAPSHOT_PATH"
       printf '\n## Context\n'
-      printf 'Snapshot taken automatically by Maude before Claude Code compaction. '
-      printf 'Full live buffer remains in %s and Anthropic today-%s.md.\n' "$NOW_FILE" "$TODAY"
+      printf 'Snapshot taken automatically by Maude before Claude Code compaction.\n'
     } > "$HANDOFF" 2>/dev/null
     SOURCED="${SOURCED}remember "
   fi
 fi
+
+# Tier 3: JSONL event marker in the per-turn trace
+maude_log_trace "pre-compact" "snapshot=${SNAPSHOT_PATH:-none} sourced=${SOURCED% }"
 
 # Surface a brief note if we actually snapshotted somewhere
 if [ -n "$SOURCED" ]; then

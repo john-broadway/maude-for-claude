@@ -40,8 +40,8 @@ for entry in "${PATTERNS[@]}"; do
   MSG="${entry##* ||| }"
   if printf '%s' "$CMD" | grep -qE -- "$PAT"; then
     printf 'Maude: %s\n' "$MSG" >&2
-    # Also log to today's daily so the trace shows the moment
-    maude_log_to_today "- $(date +%H:%M) | watch | bash flagged: ${MSG}"
+    # Also log to project-local trace so the audit shows the moment
+    maude_log_trace "bash-watch" "flagged=${MSG}"
     break
   fi
 done

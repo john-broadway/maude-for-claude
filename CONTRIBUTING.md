@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing.
 
-Maude is a Claude Code plugin — Claude's partner inside the session. She walks the workspace, finds what's already there, and watches Claude. No baggage.
+Maude is Claude's partner inside Claude Code. He writes the code; she notices. She walks the workspace each session, watches Claude, and runs the gate before something irreversible. No baggage.
 
 Contributions should respect those same principles: minimal complexity, no new dependencies unless absolutely required, and an explicit-over-implicit posture.
 
