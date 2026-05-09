@@ -218,3 +218,35 @@ maude_tier2_reachable() {
       ;;
   esac
 }
+
+# ─── Gate matching helpers (used by maude-gate.sh) ────────────────────────
+# Strip paired quotes from a shell command string so gate patterns don't
+# match user-supplied literal text inside quoted args (e.g. commit messages
+# containing the substring "git push"). Newlines are flattened first so a
+# multi-line HEREDOC inside `"$(cat <<EOF ... EOF)"` collapses correctly.
+#
+# Order: flatten newlines → strip single-quoted spans → strip double-quoted
+# spans. Single-quoted first because shell single-quotes don't interpret
+# backslashes — matching them is unambiguous and removes their content
+# (including any stray double-quotes inside) before the double-quote pass.
+maude_strip_quotes() {
+  local cmd="$1"
+  cmd="$(printf '%s' "$cmd" | tr '\n' ' ')"
+  cmd="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g")"
+  cmd="$(printf '%s' "$cmd" | sed -E 's/"([^"\\]|\\.)*"//g')"
+  printf '%s' "$cmd"
+}
+
+# Match a gate pattern against a command. Strips paired quotes first to
+# dodge the in-string false positive that bit v0.1.5 (commit messages
+# describing the gate self-blocked the commit). The pattern is responsible
+# for its own anchoring — see maude-gate.sh for the CMD_START / FLAG
+# constants used to build cmd-start and flag-position anchored patterns.
+#
+# Usage: maude_match_gate_pattern "<command>" "<pattern-regex>"
+# Returns: 0 if matches, 1 otherwise.
+maude_match_gate_pattern() {
+  local cmd="$1" pat="$2" stripped
+  stripped="$(maude_strip_quotes "$cmd")"
+  printf '%s' "$stripped" | grep -qE -- "$pat"
+}

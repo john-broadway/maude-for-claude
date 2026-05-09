@@ -22,6 +22,12 @@ TRACE="$(maude_self_dir)/trace/today-$(date +%Y-%m-%d).jsonl"
 CARE="$(maude_self_dir)/care.json"
 TODAY="$(date +%Y-%m-%d)"
 
+# Ensure care.json is a valid JSON object before jq tries to merge into it.
+# If absent or empty (a corrupted-but-existing zero-byte file), seed with {}.
+if [ ! -s "$CARE" ]; then
+  printf '{}\n' > "$CARE" 2>/dev/null
+fi
+
 # Pull last 30 tool events
 TAIL="$(tail -30 "$TRACE" | jq -c 'select(.kind == "tool")' 2>/dev/null)"
 [ -z "$TAIL" ] && exit 0

@@ -2,6 +2,12 @@
 # Maude gate hook — fires before Bash. HARD-BLOCKS on irreversible patterns.
 # Exits 2 to block; the message goes to the user as the block reason.
 #
+# v0.1.6: matches via maude_match_gate_pattern (in _maude-common.sh) which
+# strips paired quotes from the command before grep-matching. Patterns embed
+# their own anchoring via the CMD_START / FLAG_BEFORE / FLAG_AFTER constants
+# below. This closes the v0.1.5 self-block bug (commit messages containing
+# the literal substring "git push" no longer fire the gate).
+#
 # Override mechanism: /maude:conscience writes a 5-minute token to care.json
 # scoped to a specific key. If the gate matches a pattern AND a live token
 # exists for that key, the gate allows the command through and clears the
@@ -20,24 +26,32 @@ if command -v jq >/dev/null 2>&1; then
 fi
 [ -z "$CMD" ] && exit 0
 
+# Anchors used in the patterns table.
+# CMD_START   = start of input or after a shell separator (;, &, |, ()
+# FLAG_BEFORE = preceded by start-of-input or whitespace
+# FLAG_AFTER  = followed by whitespace or end-of-input
+CMD_START='(^|[;&|(])[[:space:]]*'
+FLAG_BEFORE='(^|[[:space:]])'
+FLAG_AFTER='([[:space:]]|$)'
+
 # Hard-block patterns. Each entry: PATTERN ||| KEY ||| MESSAGE
 # KEY is what `/maude:conscience <key>` clears.
-# Order matters: most-specific first (force-push before git-push).
+# Order matters: most-specific first (force-push variants before plain git push).
 PATTERNS=(
-  'git push.*--force ||| force-push ||| force-push detected. Public, irreversible. Run /maude:conscience force-push if you have verified.'
-  'git push.*--force-with-lease ||| force-push ||| force-push-with-lease detected. Still public-rewriting. Run /maude:conscience force-push if verified.'
-  'git push.*-f([[:space:]]|$) ||| force-push ||| force-push (-f). Run /maude:conscience force-push if verified.'
-  'git push ||| git-push ||| git push detected. Public, irreversible. Run /maude:conscience git-push to override.'
-  '--no-verify ||| no-verify ||| --no-verify skips hooks. Run /maude:conscience no-verify if intentional.'
-  '--no-gpg-sign ||| no-gpg-sign ||| --no-gpg-sign skips signing. Run /maude:conscience no-gpg-sign if intentional.'
-  'git reset --hard ||| reset-hard ||| git reset --hard loses local work. Run /maude:conscience reset-hard once you have stashed.'
-  'git filter-repo ||| filter-repo ||| git filter-repo rewrites history. Run /maude:conscience filter-repo to override.'
-  'git filter-branch ||| filter-branch ||| git filter-branch rewrites history. Run /maude:conscience filter-branch to override.'
-  'git commit --amend ||| commit-amend ||| git commit --amend rewrites the last commit. If pushed, this needs force-push. Run /maude:conscience commit-amend.'
-  'rm -rf / ||| rm-rf-root ||| "rm -rf /" wipes the system. STOP. Run /maude:conscience rm-rf-root only if you really mean it.'
-  'rm -rf \* ||| rm-rf-glob ||| "rm -rf *" — wide blast. Run /maude:conscience rm-rf-glob if you mean it.'
-  'sudo rm -rf ||| sudo-rm-rf ||| sudo rm -rf is destructive at root. Run /maude:conscience sudo-rm-rf if intentional.'
-  'DROP TABLE ||| drop-table ||| SQL DROP TABLE detected. Run /maude:conscience drop-table to override.'
+  "${CMD_START}git push[[:space:]].*--force-with-lease ||| force-push ||| force-push-with-lease detected. Still public-rewriting. Run /maude:conscience force-push if verified."
+  "${CMD_START}git push[[:space:]].*--force ||| force-push ||| force-push detected. Public, irreversible. Run /maude:conscience force-push if you have verified."
+  "${CMD_START}git push[[:space:]].*-f${FLAG_AFTER} ||| force-push ||| force-push (-f). Run /maude:conscience force-push if verified."
+  "${CMD_START}git push${FLAG_AFTER} ||| git-push ||| git push detected. Public, irreversible. Run /maude:conscience git-push to override."
+  "${FLAG_BEFORE}--no-verify${FLAG_AFTER} ||| no-verify ||| --no-verify skips hooks. Run /maude:conscience no-verify if intentional."
+  "${FLAG_BEFORE}--no-gpg-sign${FLAG_AFTER} ||| no-gpg-sign ||| --no-gpg-sign skips signing. Run /maude:conscience no-gpg-sign if intentional."
+  "${CMD_START}git reset[[:space:]].*--hard ||| reset-hard ||| git reset --hard loses local work. Run /maude:conscience reset-hard once you have stashed."
+  "${CMD_START}git filter-repo${FLAG_AFTER} ||| filter-repo ||| git filter-repo rewrites history. Run /maude:conscience filter-repo to override."
+  "${CMD_START}git filter-branch${FLAG_AFTER} ||| filter-branch ||| git filter-branch rewrites history. Run /maude:conscience filter-branch to override."
+  "${CMD_START}git commit[[:space:]].*--amend ||| commit-amend ||| git commit --amend rewrites the last commit. If pushed, this needs force-push. Run /maude:conscience commit-amend."
+  "${CMD_START}rm -rf[[:space:]]+/${FLAG_AFTER} ||| rm-rf-root ||| \"rm -rf /\" wipes the system. STOP. Run /maude:conscience rm-rf-root only if you really mean it."
+  "${CMD_START}rm -rf[[:space:]]+\\*${FLAG_AFTER} ||| rm-rf-glob ||| \"rm -rf *\" — wide blast. Run /maude:conscience rm-rf-glob if you mean it."
+  "${CMD_START}sudo[[:space:]]+rm -rf${FLAG_AFTER} ||| sudo-rm-rf ||| sudo rm -rf is destructive at root. Run /maude:conscience sudo-rm-rf if intentional."
+  "DROP TABLE ||| drop-table ||| SQL DROP TABLE detected. Run /maude:conscience drop-table to override."
 )
 
 MATCHED_KEY=""
@@ -47,7 +61,7 @@ for entry in "${PATTERNS[@]}"; do
   REST="${entry#* ||| }"
   KEY="${REST%% ||| *}"
   MSG="${REST#* ||| }"
-  if printf '%s' "$CMD" | grep -qE -- "$PAT"; then
+  if maude_match_gate_pattern "$CMD" "$PAT"; then
     MATCHED_KEY="$KEY"
     MATCHED_MSG="$MSG"
     break

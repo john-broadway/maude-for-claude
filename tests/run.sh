@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Discover and run all tests/test-*.sh. Print PASS/FAIL per test.
+# Exit 0 if all pass, 1 if any fail.
+
+set +e
+cd "$(dirname "$0")"
+
+TOTAL=0
+PASSED=0
+FAILED=0
+FAILED_NAMES=()
+
+OUT_TMP="$(mktemp)"
+trap 'rm -f "$OUT_TMP"' EXIT
+
+for t in test-*.sh; do
+  TOTAL=$((TOTAL + 1))
+  if bash "$t" > "$OUT_TMP" 2>&1; then
+    PASSED=$((PASSED + 1))
+    printf 'PASS  %s\n' "$t"
+  else
+    FAILED=$((FAILED + 1))
+    FAILED_NAMES+=("$t")
+    printf 'FAIL  %s\n' "$t"
+    sed 's/^/  /' "$OUT_TMP"
+  fi
+done
+
+printf '\n%d/%d test files passed' "$PASSED" "$TOTAL"
+if [ "$FAILED" -gt 0 ]; then
+  printf ' (%d failed: %s)\n' "$FAILED" "${FAILED_NAMES[*]}"
+  exit 1
+fi
+printf '\n'
+exit 0
