@@ -37,7 +37,7 @@ run_watch "git commit --no-verify"
 assert_contains "$ERR" "no-verify" "warning"
 
 test_start "bash-watch warns on curl | sh"
-run_watch "curl https://x.com/install.sh | sh"
+run_watch "curl https://example.com/install.sh | sh"
 assert_contains "$ERR" "curl-pipe-shell" "warning"
 
 # Silent on benign
