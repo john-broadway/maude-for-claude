@@ -1,13 +1,16 @@
 # Maude for Claude — CI
 # Copyright (c) 2026 John Broadway
 # Licensed under the Apache License, Version 2.0
-# Version: 3.0
-# Revised: 2026-05-04 MST — patterns moved to GitHub Actions secret
+# Version: 4.0
+# Revised: 2026-05-08 MST — added tests + verify jobs alongside scrub
 # Authors: John Broadway, Claude (Anthropic)
 #
-# Origin scrub on every push and pull request.
-# Patterns live in the SCRUB_PATTERNS repository secret (not in source).
+# Three independent jobs run on every push and pull request to main:
+#   - scrub   : origin-scrub against the SCRUB_PATTERNS repo secret
+#   - tests   : 162-case bash test harness (make test → tests/run.sh)
+#   - verify  : programmatic project audit (make verify → scripts/maude-verify.sh)
 #
+# Patterns live in the SCRUB_PATTERNS repository secret (not in source).
 # Security note: the SCRUB_PATTERNS secret is bound via `env:` and never
 # interpolated into shell commands. This is the safe pattern; see
 # https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
@@ -44,3 +47,25 @@ jobs:
         env:
           SCRUB_PATTERNS_FILE: ${{ runner.temp }}/scrub/patterns.txt
         run: bash scripts/scrub-check.sh
+
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify jq present
+        run: jq --version
+
+      - name: Run hook test suite (make test)
+        run: make test
+
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify jq present
+        run: jq --version
+
+      - name: Run project audit (make verify)
+        run: make verify
