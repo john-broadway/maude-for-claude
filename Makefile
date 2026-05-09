@@ -1,7 +1,4 @@
-.PHONY: scrub test verify
-
-scrub:
-	bash scripts/scrub-check.sh
+.PHONY: test verify
 
 test:
 	bash tests/run.sh

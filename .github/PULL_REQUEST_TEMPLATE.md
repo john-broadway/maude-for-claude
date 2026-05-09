@@ -1,5 +1,5 @@
-<!-- Version: 2.0 -->
-<!-- Revised: 2026-05-04 MST — plugin-only -->
+<!-- Version: 3.0 -->
+<!-- Revised: 2026-05-08 MST — scrub removed; tests + verify are the local gates -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 ## What does this PR do?
@@ -12,7 +12,8 @@
 
 ## Checklist
 
-- [ ] Scrub check passes (`make scrub`)
+- [ ] Hook test suite passes (`make test`)
+- [ ] Project audit returns 0 findings (`make verify`)
 - [ ] JSON manifests still valid (`.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `hooks/hooks.json`)
 - [ ] No proper-noun references to specific apps, frameworks, or third-party packages
 - [ ] No hardcoded IPs, credentials, or org-specific references
@@ -20,4 +21,4 @@
 
 ## How was this tested?
 
-<!-- What did you run? What did you verify? Plugin-loads-in-fresh-session, scrub passes locally, etc. -->
+<!-- What did you run? What did you verify? Plugin-loads-in-fresh-session, make test green, make verify clean, etc. -->

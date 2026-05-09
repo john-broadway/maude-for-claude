@@ -1,19 +1,17 @@
 # Maude for Claude — CI
 # Copyright (c) 2026 John Broadway
 # Licensed under the Apache License, Version 2.0
-# Version: 4.0
-# Revised: 2026-05-08 MST — added tests + verify jobs alongside scrub
+# Version: 5.0
+# Revised: 2026-05-08 MST — origin-scrub job removed; tests + verify only
 # Authors: John Broadway, Claude (Anthropic)
 #
-# Three independent jobs run on every push and pull request to main:
-#   - scrub   : origin-scrub against the SCRUB_PATTERNS repo secret
+# Two independent jobs run on every push and pull request to main:
 #   - tests   : 162-case bash test harness (make test → tests/run.sh)
 #   - verify  : programmatic project audit (make verify → scripts/maude-verify.sh)
 #
-# Patterns live in the SCRUB_PATTERNS repository secret (not in source).
-# Security note: the SCRUB_PATTERNS secret is bound via `env:` and never
-# interpolated into shell commands. This is the safe pattern; see
-# https://github.blog/security/vulnerability-research/how-to-catch-github-actions-workflow-injections-before-attackers-do/
+# History note: v3.0 / v4.0 of this file ran a `scrub` job against a private
+# SCRUB_PATTERNS repo secret. That gate was specific to literals that no
+# longer exist in this workflow, so the dead protection has been removed.
 
 name: CI
 
@@ -24,30 +22,6 @@ on:
     branches: [main]
 
 jobs:
-  scrub:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Load scrub patterns from secret
-        env:
-          SCRUB_PATTERNS: ${{ secrets.SCRUB_PATTERNS }}
-        run: |
-          if [ -z "$SCRUB_PATTERNS" ]; then
-            echo "::error::SCRUB_PATTERNS secret is not set on this repository."
-            echo "::error::Add it under Settings to Secrets and variables to Actions."
-            exit 2
-          fi
-          mkdir -p "$RUNNER_TEMP/scrub"
-          printf '%s' "$SCRUB_PATTERNS" > "$RUNNER_TEMP/scrub/patterns.txt"
-          chmod 600 "$RUNNER_TEMP/scrub/patterns.txt"
-          echo "patterns loaded ($(wc -l < "$RUNNER_TEMP/scrub/patterns.txt") lines)"
-
-      - name: Origin scrub check
-        env:
-          SCRUB_PATTERNS_FILE: ${{ runner.temp }}/scrub/patterns.txt
-        run: bash scripts/scrub-check.sh
-
   tests:
     runs-on: ubuntu-latest
     steps:
