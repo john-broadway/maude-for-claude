@@ -42,53 +42,66 @@ Report per-tier success/fail in the output.
    TIME="$(date +%H:%M)"
    ```
 
-3. **Write to Anthropic auto-memory** (if `[ -d "$MEM" ]`):
-   - Overwrite `$MEM/now.md` with the digest (live buffer).
-   - Append a `## $TIME | <topic>` section + 1-line summary to `$MEM/today-$TODAY.md`.
-   - Append a one-line entry to `$MEM/recent.md`.
+3. **Read the house-map and write per its `## Memory sources` registry.** The map governs
+   where the digest goes — don't hard-code destinations. Read `$MAP`, then for **each**
+   memory source entry: apply the **tier gate** (Tier 0 always; Tier 1 only if `tier1_up`
+   cached; Tier 2 only if registered writable + auth env set), then execute its leading
+   `write:` **token**:
 
-4. **If the remember plugin is installed** (`[ -d "$REMEMBER" ]`), write to **`$REMEMBER/remember.md`** ONLY — that is the agent-handoff file remember explicitly leaves for agents to write. Format (per remember's own SKILL.md):
-   ```
-   # Handoff
+   - **`digest-fanout`** — overwrite the source's live buffer (`now.md`) with the digest;
+     append a `## $TIME | <topic>` block + 1-line summary to its `today-$TODAY.md`; append
+     one line to its `recent.md`. (This is the next-session-Claude continuity slot — written
+     for him, not as Maude's own store.)
+   - **`handoff-only`** — overwrite ONLY the source's single handoff file (e.g.
+     `remember.md`) in the handoff format below. **Never** touch any other file in that dir
+     (`now.md`, `today-*.md`, `recent.md`, `archive.md`, `core-memories.md`, `logs/`,
+     `tmp/`) — that's the owning system's pipeline.
+     ```
+     # Handoff
 
-   ## State
-   {What's done, what's not. Files, MRs, decisions. 2-4 lines max.}
+     ## State
+     {What's done, what's not. Files, MRs, decisions. 2-4 lines max.}
 
-   ## Next
-   {What to pick up. Priority order. 1-3 items.}
+     ## Next
+     {What to pick up. Priority order. 1-3 items.}
 
-   ## Context
-   {Non-obvious gotchas, blockers, preferences from this session. Skip if nothing.}
-   ```
-   - Overwrite `$REMEMBER/remember.md` (it's the live handoff slot).
-   - Under 20 lines total. Specific. Forward-looking.
-   - DO NOT write to `$REMEMBER/now.md`, `today-*.md`, `recent.md`, `archive.md`, or `core-memories.md` — those are remember's pipeline output. Maude reads them; she doesn't touch them.
+     ## Context
+     {Non-obvious gotchas, blockers, preferences from this session. Skip if nothing.}
+     ```
+     Under 20 lines. Specific. Forward-looking.
+   - **`full`** — Maude's own store; write the slice appropriate to this source. For
+     `user-global` (`~/.claude/maude/`): append to `patterns.md` if a cross-project pattern
+     surfaced, and update `projects.json` with this project's slug + last-seen timestamp.
+     For `maude-self` (`.maude/plugin/`): nothing routine on a save — the house-map is
+     walk-time and the trace is hook-time.
+   - **`read-only`** — skip (recall source; never written by save).
+   - **`secret-deny`** — skip and never echo contents.
+   - **unrecognized/malformed token** — skip the source and name it in the report as a
+     warning. Never guess an action from an unknown token: fail safe (no write), fail loud.
 
-5. **Read the house-map** for additional destinations the user maintains. For each one in the "watch list" or notes, append the appropriate slice:
-   - `journal/$TODAY.md` if a `journal/` dir exists
-   - `decisions/<short-title>.md` if a meaningful decision was made and the user keeps a decisions log
-   - Any vault-shaped destination registered in the house-map — write per the protocol the user (or your prior runtime reasoning) recorded there
-   - Any other location the map flags as a writable destination
+   Also honor any non-memory writable destination the map records (journal/, decisions/,
+   user vaults) per the protocol written beside it.
 
-6. **Update her own cross-project state** (`[ -d "$USER_DIR" ]`):
-   - If a meaningful pattern surfaced this session, append a note to `$USER_DIR/patterns.md`.
-   - Update `$USER_DIR/projects.json` with this project's slug + last-seen timestamp.
+4. **Fallback when the map is silent.** Defaults fire ONLY when the map is absent OR a
+   universal source isn't listed — never to override an entry that IS on the map:
+   - Anthropic auto-memory (`$MEM`) if `[ -d "$MEM" ]` and not on the map → `digest-fanout`.
+   - `$REMEMBER/remember.md` if `[ -d "$REMEMBER" ]` and not on the map → `handoff-only`.
 
-7. **Curate as you save.** Before reporting, look at what you just wrote and what's in the broader memory dirs:
+5. **Curate as you save.** Before reporting, look at what you just wrote and what's in the broader memory dirs:
    - Has this topic appeared in N+ today-*.md or recent.md entries this week? If so, propose: "this is the Nth note about <topic> — promote to a reference file at <path>?"
    - Did the digest mention something that's already in a feedback or project memory file? Cross-reference and surface ("this updates feedback_X — want me to revise that file too?")
    - Does the digest contain something that should be on the watch list? ("you mentioned editing CLAUDE.md three times this week — add it to watch list permanently?")
 
-8. **Report what got persisted AND what's worth promoting:**
+6. **Report what got persisted AND what's worth promoting.** Name each destination AND the
+   `write:` token it obeyed, so it's visible the map drove the write (not hard-code):
 
 ```
-Saved.
-  Anthropic memory: ✓ now.md, today-$TODAY.md, recent.md (or — not present)
-  remember plugin: ✓ remember.md handoff written (or — not installed)
-  journal/$TODAY.md: ✓ (or — not present)
-  decisions/: ✓ added '<title>' (or — no decision this session)
-  <vault from house-map>: ✓ / —
-  cross-project: ✓ patterns updated, projects index touched
+Saved (per house-map).
+  anthropic-auto-memory: ✓ digest-fanout — now.md, today-$TODAY.md, recent.md (or — not on map / not present)
+  remember-plugin:       ✓ handoff-only — remember.md (or — not on map / not installed)
+  user-global:           ✓ full — projects index touched (+ patterns.md if a pattern surfaced)
+  <journal/decisions/vault from map>: ✓ <token> / —
+  fallback used:         <none | anthropic-auto-memory | remember-plugin> (only if map was silent)
 
 I noticed:
   - <topic> has come up 3 times this week — promote to reference file?
@@ -100,7 +113,10 @@ Don't just persist. Curate. Offer.
 
 ## If the house-map is missing
 
-Save to Anthropic memory + remember.md (if remember is installed) + her cross-project home. Suggest `/maude:found` so future saves can spread to other locations the user keeps.
+Use the step-4 fallback: `digest-fanout` to Anthropic memory (if present) + `handoff-only`
+to `.remember/remember.md` (if installed). Her own home (`$USER_DIR` — `full`) is always
+hers to write regardless of the map, so still touch `projects.json`. Suggest `/maude:found`
+so future saves spread to every location the user keeps.
 
 ## Voice
 

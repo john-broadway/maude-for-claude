@@ -20,11 +20,13 @@ Query: `${ARGUMENTS}`. If empty, ask what they're looking for and stop.
 
 1. **Read the house-map first** — it's your index.
    ```bash
-   SLUG="$(pwd | sed 's|/|-|g')"
-   MAP="$(pwd)/.maude/plugin/house-map.md"
+   PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+   MAP="$PROJ/.maude/plugin/house-map.md"
    [ -f "$MAP" ] && cat "$MAP"
    ```
-   If the map mentions the thing or a directory likely to contain it, look there first.
+   If the map mentions the thing or a directory likely to contain it, look there first. The
+   map's `## Memory sources` entries (with their `path:` fields) are the authoritative index
+   for where memory lives — prefer them over a blind workspace grep.
 
 2. **Grep the workspace:**
    ```bash

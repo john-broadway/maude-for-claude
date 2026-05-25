@@ -1,6 +1,6 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 6.0.0
+> **Version:** 0.1.7
 > **License:** Apache 2.0, Copyright John Broadway
 
 ## What Maude Is
