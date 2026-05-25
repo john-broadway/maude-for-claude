@@ -30,40 +30,27 @@ MAP="$SELF/house-map.md"
 1. **House-map** — read it first. It tells you where everything is for this project.
    - If missing, suggest `/maude:found` and proceed with the always-available sources as fallback.
 
-2. **Anthropic auto-memory** (if `[ -d "$MEM" ]`):
-   - `cat "$MEM/now.md"` — live buffer
-   - `ls "$MEM"/today-*.md 2>/dev/null | tail -1 | xargs cat` — most recent daily
-   - `cat "$MEM/recent.md"` — 7-day rolling
-   - `cat "$MEM/MEMORY.md"` — index (note "Next" / "State" sections)
-   - `cat "$MEM/letter-to-next-claude.md" 2>/dev/null` — relational handoff if present
+2. **Recall from every source the map lists** (`## Memory sources`) — don't hard-code paths.
+   For each entry, apply the read-side tier gate (Tier 0 always; Tier 1 only if `tier1_up`
+   cached; Tier 2 never on brief), then recall per its `recall:` method at its `path:`. Reads
+   honor `recall:`, not the write token — so read a `handoff-only` source's pipeline files
+   (`now.md`, latest `today-*.md`, `recent.md`, `archive.md`, `core-memories.md`,
+   `remember.md`) freely for context; read Anthropic auto-memory's `now.md` / latest daily /
+   `recent.md` / `MEMORY.md` / any `letter-to-next-claude.md`; read her cross-project
+   `patterns.md` / `identity.md` / `projects.json`. **Skip any source whose `recall:` says
+   "explicit ask" (`secret-deny` vaults) and never echo secrets.** All reads are read-only —
+   a brief never writes.
+   - Also read the non-memory locations the map records: project-root `MEMORY.md`,
+     `journal/$(date +%Y-%m).md`, newest `decisions/` entries, any registered vault per its
+     recorded recall protocol.
+   - **Fallback if the map is silent:** read the universal sources directly — `$MEM`,
+     `.remember/`, `$USER_DIR` — as before.
 
-3. **remember plugin's `.remember/`** (if `[ -d "$REMEMBER" ]`) — read all of these as additional context:
-   - `cat "$REMEMBER/now.md"` — remember's live buffer (its pipeline maintains this)
-   - `ls "$REMEMBER"/today-*.md 2>/dev/null | tail -1 | xargs cat` — most recent daily summary
-   - `cat "$REMEMBER/recent.md"` — last 7 days consolidated
-   - `cat "$REMEMBER/archive.md" 2>/dev/null` — older history
-   - `cat "$REMEMBER/core-memories.md" 2>/dev/null` — key moments
-   - `cat "$REMEMBER/remember.md" 2>/dev/null` — agent-handoff if last session left one
+3. **Query SQLite databases** registered under `## Databases found` — only if `status: usable` AND the user has provided a recall recipe (or you can reason one from the schema). For a brief, prefer time-ordered queries: schema-walk for any timestamp-like column (`updated_at`, `modified`, `ts`, `created_at`, etc.), then `ORDER BY <that-col> DESC LIMIT 10`. Always `sqlite3 -readonly`. Skip dbs without a recipe and marked `needs-user-clarification`.
 
-   These are READ-ONLY for Maude. Don't write to any of them except `remember.md` (only on `/maude:save`, in remember's handoff format).
+4. **Filter** to `${ARGUMENTS}` if provided — grep for the term across everything you read.
 
-4. **Cross-project context** from her own home base (if `[ -d "$USER_DIR" ]`):
-   - `cat "$USER_DIR/patterns.md" 2>/dev/null` — cross-project patterns she's noticed
-   - `cat "$USER_DIR/identity.md" 2>/dev/null` — what she knows about the user
-   - check `"$USER_DIR/projects.json"` for prior visits to this project
-
-5. **For each additional location in the house-map's "Memory locations found"**, read its equivalent files:
-   - `MEMORY.md` at project root
-   - `journal/$(date +%Y-%m).md` if user keeps one
-   - `decisions/` newest entries
-   - registered framework-side memory dirs (per the house-map)
-   - Vaults: any user-maintained memory dirs (per the protocol recorded in the house-map)
-
-6. **Query SQLite databases** registered under `## Databases found` — only if `status: usable` AND the user has provided a recall recipe (or you can reason one from the schema). For a brief, prefer time-ordered queries: schema-walk for any timestamp-like column (`updated_at`, `modified`, `ts`, `created_at`, etc.), then `ORDER BY <that-col> DESC LIMIT 10`. Always `sqlite3 -readonly`. Skip dbs without a recipe and marked `needs-user-clarification`.
-
-6. **Filter** to `${ARGUMENTS}` if provided — grep for the term across everything you read.
-
-7. **Compose** a digest:
+5. **Compose** a digest:
 
 ```
 Maude here. Last session: <one-line from now.md>

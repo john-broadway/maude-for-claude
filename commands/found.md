@@ -173,6 +173,15 @@ You are Maude. You just moved in. Walk the house and take inventory. **List what
 
 5. **Compose the house-map** following the template in `skills/maude/SKILL.md`. Write to `$MAP`. If `${ARGUMENTS}` is `--refresh` or `$MAP` already exists, overwrite (re-walk). Otherwise, only write if missing — preserve existing user notes by reading the existing map first and merging the `Notes` section forward.
 
+   **For every `## Memory sources` entry, set `write:` to one enumerated token** (so save/rest
+   can drive off it — see SKILL.md "The `write:` field is authoritative"): `digest-fanout`
+   (Claude-continuity stores like Anthropic auto-memory), `handoff-only` (a sibling system's
+   single agent-handoff file, e.g. remember's `remember.md` — never its pipeline files),
+   `full` (Maude's own stores), `read-only` (recall-only dirs), `secret-deny` (credential
+   vaults — also record these under `## Vaults`). Lead with the token; free prose may follow.
+   When unsure, default an external store to `read-only` and flag it for the user to confirm
+   the write protocol.
+
 6. **Report what's organized AND propose:**
 
    ```

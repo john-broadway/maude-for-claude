@@ -27,19 +27,22 @@ MAP="$SELF/house-map.md"
 ```
 
 1. **House-map check.** Look at `$MAP`. If missing or > 7 days stale, suggest `/maude:found` first; otherwise read it.
-2. **`.remember/` first** if installed (`[ -d "$REMEMBER" ]`) — remember's pipeline already compresses recent context for you:
-   - `cat "$REMEMBER/remember.md"` — last session's handoff (what to come back to)
-   - `cat "$REMEMBER/now.md"` — live buffer
-   - latest `today-*.md`, then `recent.md`
-3. **Anthropic auto-memory** (if `[ -d "$MEM" ]`):
-   - `now.md` (live buffer), latest `today-*.md`, `recent.md`
-   - `letter-to-next-claude.md` if present
-4. **Cross-project context** (if `[ -d "$USER_DIR" ]`):
-   - check `patterns.md` for things she's noticed across projects
-5. **Trace check** (if `[ -d "$SELF/trace" ]`):
+2. **Recall from every source the map lists** (`## Memory sources`). Don't hard-code paths —
+   read what's registered. For each entry, apply the **read-side tier gate** (Tier 0 always;
+   Tier 1 only if marked always-on AND `tier1_up` cached; Tier 2 never on wake), then recall
+   per its `recall:` method at its `path:`. Reads honor `recall:`, not the write token — so
+   read a `handoff-only` source's pipeline files freely for context, but **skip any source
+   whose `recall:` says "explicit ask" (e.g. `secret-deny` vaults) and never echo secrets.**
+   - Prefer the compressed sources first if present — a remember-style pipeline's
+     `remember.md` (last handoff) + `now.md` + latest `today-*.md` + `recent.md` already
+     summarize recent context; Anthropic auto-memory's `now.md` / latest daily / `recent.md`
+     and any `letter-to-next-claude.md`; her cross-project `patterns.md`.
+   - **Fallback if the map is silent:** read the universal sources directly — `.remember/`
+     (if present), `$MEM` (if present), `$USER_DIR/patterns.md`.
+3. **Trace check** (if `[ -d "$SELF/trace" ]`):
    - tail the most recent JSONL — what was Claude doing last
    - Surface any repeated tool calls or stuck patterns
-6. **Surface 1-3 things first.** Pick what matters most: an unresolved blocker, an open punch list item, a half-written file from yesterday, a save that didn't happen, a pattern that's been recurring.
+4. **Surface 1-3 things first.** Pick what matters most: an unresolved blocker, an open punch list item, a half-written file from yesterday, a save that didn't happen, a pattern that's been recurring.
 
 ## Format
 

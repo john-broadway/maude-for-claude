@@ -31,40 +31,31 @@ MAP="$SELF/house-map.md"
 
 1. **Read the house-map** — it lists every memory location for this project.
 
-2. **Search Anthropic auto-memory** (if `[ -d "$MEM" ]`):
+2. **Search every source the map lists** (`## Memory sources`) — don't hard-code paths. For
+   each entry, apply the tier gate (Tier 0 always; Tier 1 if `tier1_up` cached; Tier 2 only
+   on `--deep` or a rich-query tag), then grep its `path:` per its `recall:` method. Reads
+   honor `recall:` — search a `handoff-only` source's whole dir (its compressed pipeline
+   often has the answer in fewer files), Anthropic auto-memory, and her cross-project home.
+   **Skip `secret-deny` / "explicit ask" sources unless the topic explicitly targets them,
+   and never echo secrets.**
    ```bash
-   grep -rln -i "$ARGUMENTS" "$MEM" 2>/dev/null
+   # for each source PATH from the map:
+   grep -rln -i "$ARGUMENTS" "$SRC_PATH" 2>/dev/null
    ```
+   **Fallback if the map is silent:** grep `$MEM`, `$REMEMBER`, `$USER_DIR` directly.
 
-3. **Search remember's `.remember/`** (if `[ -d "$REMEMBER" ]`) — its tier-compressed memory often has the answer in fewer files:
-   ```bash
-   grep -ln -i "$ARGUMENTS" "$REMEMBER"/now.md "$REMEMBER"/today-*.md \
-                            "$REMEMBER"/recent.md "$REMEMBER"/archive.md \
-                            "$REMEMBER"/core-memories.md "$REMEMBER"/remember.md 2>/dev/null
-   ```
+3. **Search additional vaults** the house-map registers (custom journals, decisions). For each: grep its files OR call its recall API per the protocol recorded in the map.
 
-4. **Search her cross-project home** (if `[ -d "$USER_DIR" ]`):
-   ```bash
-   grep -ln -i "$ARGUMENTS" "$USER_DIR"/patterns.md "$USER_DIR"/identity.md 2>/dev/null
-   ```
-
-5. **Search additional vaults** the house-map registers (custom journals, decisions). For each: grep its files OR call its recall API per the protocol recorded in the map.
-
-6. **Query SQLite databases** the house-map registered under `## Databases found` — only if `status: usable` AND the user has confirmed the schema (or the recall recipe field is filled in).
+4. **Query SQLite databases** the house-map registered under `## Databases found` — only if `status: usable` AND the user has confirmed the schema (or the recall recipe field is filled in).
    - For each db, check the registered recall recipe in the map. If it's filled in (e.g., the user added `recall: SELECT body FROM <table> WHERE body LIKE :q`), use it.
    - If the recipe is missing but the db is registered as usable, schema-walk again (`sqlite3 -readonly "$DB" '.schema'`), reason about which columns are likely text-bearing (column names suggesting prose: `body`, `content`, `text`, `description`, `note`, `message`, etc.), and run a `LIKE '%<topic>%'` query on those.
    - Always `sqlite3 -readonly`. Always sanitize `$ARGUMENTS` for single quotes. Skip dbs marked `needs-user-clarification` or `ignored`.
 
    The plugin doesn't ship hardcoded schema recipes. It ships the technique: schema-walk, reason about column purpose, query text-like columns. You — at runtime — are the reasoner.
 
-6. **Read the matching files** — they have the why baked in. Anthropic auto-memory format always includes a `**Why:**` line for feedback/project memories.
+5. **Read the matching files** — they have the why baked in. Anthropic auto-memory format always includes a `**Why:**` line for feedback/project memories.
 
-7. **Recent-session scan** within Anthropic memory:
-   ```bash
-   grep -ln -i "$ARGUMENTS" "$MEM"/now.md "$MEM"/today-*.md "$MEM"/recent.md 2>/dev/null
-   ```
-
-8. **Compose a digest:**
+6. **Compose a digest:**
 
 ```
 You asked about: <topic>

@@ -1,6 +1,6 @@
-<!-- Version: 6.0 -->
+<!-- Version: 0.1.7 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-05-08 MST -->
+<!-- Revised: 2026-05-24 MST -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -79,6 +79,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.1.7 (2026-05-24) — save/rest/recall drive off the house-map.** The house-map registered every memory source, but `save`/`rest` hard-coded the two common stores by directory check — so editing the map's `write:` rule for them did nothing. Now `write:` is an authoritative token (`digest-fanout` / `handoff-only` / `full` / `read-only` / `secret-deny`) that `save`/`rest` execute deterministically, and the read commands (`wake` / `brief` / `remind-me`) recall from whatever the map lists. Edit the map, change the behavior — "she works with whatever's there" is now wired, not just stated. Universal stores remain a fallback only when the map is silent. Stale standalone `Version:` headers across the docs corrected to the real `0.1.7` line.
 
 **v0.1.6 (2026-05-08) — gate hardening + full hook test coverage.** The v0.1.5 gate matched bare substrings, so a HEREDOC commit message containing the literal "git push" self-blocked the commit that shipped it. v0.1.6 introduces `maude_strip_quotes` and `maude_match_gate_pattern` in `_maude-common.sh`: paired single- and double-quoted spans (and the heredoc bodies that nest inside `"$(cat <<EOF ... EOF)"`) are stripped before pattern-matching, and every gate pattern carries its own command-position or flag-position anchor. Side effect: `rm -rf /tmp/foo` and `rm -rf *.tmp` no longer false-positive. Plus a real test harness — `tests/lib.sh` + 16 `tests/test-*.sh` + `make test` — exercising every script in `hooks/scripts/` and `scripts/maude-verify.sh`. From 9 ad-hoc invocations in v0.1.5 to 162 codified test cases.
 

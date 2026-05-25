@@ -94,8 +94,8 @@ The house-map is a simple Markdown file Maude maintains at `<project>/.maude/plu
 # Updated: <last update timestamp>
 
 ## Memory sources (tier-classified, populated by /maude:found)
-- anthropic-auto-memory | tier: 0 | shape: markdown | path: ~/.claude/projects/<slug>/memory/ | recall: grep+cat | write: append (now.md, today-*.md, recent.md)
-- remember-plugin       | tier: 0 | shape: markdown | path: <project>/.remember/ | recall: grep+cat | write: remember.md only (handoff format)
+- anthropic-auto-memory | tier: 0 | shape: markdown | path: ~/.claude/projects/<slug>/memory/ | recall: grep+cat | write: digest-fanout (now.md, today-*.md, recent.md)
+- remember-plugin       | tier: 0 | shape: markdown | path: <project>/.remember/ | recall: grep+cat | write: handoff-only (remember.md)
 - maude-self            | tier: 0 | shape: markdown | path: <project>/.maude/plugin/ | recall: grep+cat | write: full
 - user-global           | tier: 0 | shape: markdown | path: ~/.claude/maude/ | recall: grep+cat | write: full (patterns.md, identity.md, projects.json)
 - (everything else discovered on the walk — paths, shapes, and what the user told her about each — goes here as flat entries the user can edit)
@@ -137,6 +137,41 @@ The house-map is a simple Markdown file Maude maintains at `<project>/.maude/plu
 ```
 
 The map is editable. The user can add notes, remove things, correct her. She re-reads it every time before acting.
+
+### The `write:` field is authoritative
+
+`write:` is not a description — it is the **instruction** save/rest obey for that source.
+It leads with **one token** from the fixed vocabulary below; free prose may follow as an
+annotation (e.g. `handoff-only (remember.md)`). The writers read the leading token and act
+on it. Because the map is editable, changing a source's token *changes what save/rest do* —
+that is the point: the map governs, not hard-coded paths.
+
+| Token | What save/rest do | Typical source |
+|---|---|---|
+| `digest-fanout` | Overwrite the live buffer (`now.md`) with the digest; append a `## TIME \| topic` block to `today-<date>.md`; append one line to `recent.md`. Written for next-session **Claude's continuity** — not as Maude's own store. | anthropic-auto-memory |
+| `handoff-only` | Write ONLY the source's single handoff file (e.g. `remember.md`) in its handoff format. **Never** touch any other file in that dir — pipeline output belongs to the owning system. | remember-plugin |
+| `full` | Maude owns this store — write any of her own files freely. | maude-self, user-global |
+| `read-only` | Recall only. Never write. | user dirs marked read-only |
+| `secret-deny` | Never write, never echo contents; read only on explicit typed ask. | secrets / credential vaults |
+
+Each entry also carries `tier:`. The writers apply the **tier gate first** (Tier 0 always;
+Tier 1 only if `tier1_up` cached; Tier 2 only if registered writable + auth env set), then
+the `write:` token.
+
+**Unrecognized or malformed token** (typo, or a token from a vocabulary version she
+doesn't know) → **skip the source and surface a one-line warning** in the report. Never
+guess an action from an unknown token — fail safe (no write), fail loud (named in output).
+
+### Fallback when the map is silent
+
+- **Map present + source listed** → the map wins, period (tier gate × token).
+- **Map absent, OR a universal source not listed** → documented defaults only:
+  - Anthropic auto-memory (`$MEM`) if the dir exists → `digest-fanout`
+  - `.remember/remember.md` if `.remember/` exists → `handoff-only`
+
+Defaults fire ONLY when the map says nothing — so a fresh project with no walk still saves,
+but an edited map is never overridden by hard-code. These are the two universal conventions
+Maude ships knowing; everything else must be on the map to be written.
 
 ## Workflows (and what their slash commands do)
 

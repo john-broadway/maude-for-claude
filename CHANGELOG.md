@@ -1,11 +1,31 @@
-<!-- Version: 5.0 -->
+<!-- Version: 0.1.7 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-05-08 MST -->
+<!-- Revised: 2026-05-24 MST -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.1.7 — save/rest/recall drive off the house-map (2026-05-24)
+
+The house-map already *registered* every memory source, but the commands didn't *obey* it — `save`/`rest` hard-coded the two common stores (Anthropic auto-memory + `.remember/`) by directory check, so an edit to the map's `write:` rule for those sources was silently ignored. This wires the map as the single source of truth, so "she works with whatever's there" is enforced by the mechanism, not just stated in `identity.md`.
+
+### What changed
+
+- **`write:` is now an authoritative token field.** The house-map's `## Memory sources` entries lead each `write:` with one enumerated token — `digest-fanout`, `handoff-only`, `full`, `read-only`, `secret-deny` — with optional prose after. `save`/`rest` execute the token deterministically (no parse-the-prose-and-hope). Unrecognized tokens fail safe (skip) and fail loud (named in the report). Documented in `skills/maude/SKILL.md` ("The `write:` field is authoritative").
+- **`save.md` / `rest.md` drive off the map.** Hard-coded per-source write steps replaced by a single loop: for each registered source, apply the tier gate, then the `write:` token. Editing the map now changes behavior. Report names each destination and the token it obeyed.
+- **Read commands enumerate from the map too.** `wake` / `brief` / `remind-me` recall from every source the map lists per its `recall:` method and the read-side tier gate, instead of hard-coding `$REMEMBER` / `$MEM` paths; `where-is` now resolves the map via `$CLAUDE_PROJECT_DIR` (was `pwd`, wrong from a subdir).
+- **`found.md` stamps a token per source** on the walk, so future maps are loop-ready.
+- **Fallback contract.** When the map is absent or a universal source isn't listed, the documented defaults fire (Anthropic memory → `digest-fanout`, `.remember/remember.md` → `handoff-only`) — so a fresh project still saves, but an edited map is never overridden by hard-code.
+- **Version-header drift corrected.** `.claude/CLAUDE.md`, `README.md`, `CHANGELOG.md`, and `skills/README.md` carried stale standalone `Version:` headers (6.0.0 / 6.0 / 5.0 / 2.0) that didn't track the plugin. Aligned to the real line (`0.1.7`).
+
+### Behavior notes
+
+- The "never touch a sibling system's pipeline files" rule is unchanged — it's now expressed as the `handoff-only` token (writes only the one handoff file) rather than a hard-coded special case for `.remember/`.
+- `secret-deny` sources are never written and never echoed; read commands skip "explicit ask" sources during routine recall.
 
 ---
 
