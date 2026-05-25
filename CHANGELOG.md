@@ -20,7 +20,7 @@ The house-map already *registered* every memory source, but the commands didn't 
 - **Read commands enumerate from the map too.** `wake` / `brief` / `remind-me` recall from every source the map lists per its `recall:` method and the read-side tier gate, instead of hard-coding `$REMEMBER` / `$MEM` paths; `where-is` now resolves the map via `$CLAUDE_PROJECT_DIR` (was `pwd`, wrong from a subdir).
 - **`found.md` stamps a token per source** on the walk, so future maps are loop-ready.
 - **Fallback contract.** When the map is absent or a universal source isn't listed, the documented defaults fire (Anthropic memory → `digest-fanout`, `.remember/remember.md` → `handoff-only`) — so a fresh project still saves, but an edited map is never overridden by hard-code.
-- **Version-header drift corrected.** `.claude/CLAUDE.md`, `README.md`, `CHANGELOG.md`, and `skills/README.md` carried stale standalone `Version:` headers (6.0.0 / 6.0 / 5.0 / 2.0) that didn't track the plugin. Aligned to the real line (`0.1.7`).
+- **Version-header drift corrected.** `.claude/CLAUDE.md`, `README.md`, `CHANGELOG.md`, `skills/README.md`, and the `.github/` templates + `SECURITY.md` carried stale standalone `Version:` headers (6.0.0 / 6.0 / 5.0 / 3.0 / 2.0) that didn't track the plugin. All aligned to the real line (`0.1.7`); their stale `Revised:` dates refreshed so the `verify` date-staleness gate passes.
 
 ### Behavior notes
 
