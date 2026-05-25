@@ -1,8 +1,8 @@
 # Maude for Claude — CI
 # Copyright (c) 2026 John Broadway
 # Licensed under the Apache License, Version 2.0
-# Version: 5.0
-# Revised: 2026-05-08 MST — origin-scrub job removed; tests + verify only
+# Version: 0.1.7
+# Revised: 2026-05-24 MST — version-header sweep; tests + verify only
 # Authors: John Broadway, Claude (Anthropic)
 #
 # Two independent jobs run on every push and pull request to main:
