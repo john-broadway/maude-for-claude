@@ -1,11 +1,47 @@
-<!-- Version: 0.1.7 -->
+<!-- Version: 0.2.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-05-24 MST -->
+<!-- Revised: 2026-06-04 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.2.0 — she grew up: proactive orientation, a living profile, optional dual-voice (2026-06-04)
+
+v0.1.8 fixed her clock. v0.2.0 folds in the rest of how Maude actually matured in daily use — each one generalized so any user benefits, with no person- or project-specific content in source.
+
+### What changed
+
+- **Proactive orientation is now a standing duty, not a request.** Her job grew from fourfold to fivefold (`agents/maude.md`, `skills/maude/SKILL.md`): whenever she speaks — session start, after a gap, when something shifts — she orients you on where things stand, what's pending, and *what's in your hand* (a decision only you can make). She doesn't wait to be asked.
+- **She keeps a living profile of the user.** `identity.md` had been documented two ways (about-the-user vs. who-Maude-is) and *written by nothing* — a dead file. Settled: `identity.md` is Maude's cross-project profile of the **user**, shaped over time (how they communicate, their clock, recurring focuses, the help they want). Now wired into the write path — `save`/`rest` update it, `check-on-me`/`notice` propose additions, recall reads it — observed-only, never fabricated, re-read fresh each session. Resolves the inconsistency across `_maude-common.sh`, `SKILL.md`, `README.md`, `.claude/CLAUDE.md`.
+- **Optional standing dual-voice.** New **`/maude:dual-voice [on|off|status]`**. By default Claude talks and Maude watches; turn it on and they co-author every reply — Claude the substance, Maude the noticing/care/conscience. Honest mechanism: it writes a small, clearly-delimited, consented block into a `CLAUDE.md` you choose — the only channel that reliably fires every session — and removes it cleanly on `off`. It never touches anything else in that file. **Off by default**; the plugin's out-of-the-box identity is unchanged. (`dual-voice` is the 16th command; the static counts in `.claude/CLAUDE.md` / `CONTRIBUTING.md` — stale since `verify` landed in v0.1.5 — were corrected to 16.)
+
+### Behavior notes
+
+- Dual-voice writes only with your explicit consent, and only the delimited block. A SessionStart-injected nudge was considered and **dropped**: injected context can't reliably shape every turn the way a `CLAUDE.md` rule does, and a second source of truth wasn't worth the cost.
+- The user profile is observed-only — if she doesn't know, she doesn't write it — and re-read fresh each session, never assumed across them.
+- Known limitation (deferred): a *mistyped* IANA timezone in the house-map resolves silently to UTC. `/maude:found` confirms the zone with you as the mitigation; portable validation is brittle and left for a later pass.
+
+---
+
+## v0.1.8 — local-time awareness (2026-06-04)
+
+Maude greets by the *user's* real local time, never the box clock. A server or container box reads UTC, so the old fixed "Morning." in `/maude:wake` stated the wrong time-of-day for anyone not actually in the box's zone. The fix is a contract, not a cosmetic: **never assert a time-of-day from an unverified clock.**
+
+### What changed
+
+- **New clock helpers in `_maude-common.sh`** — `maude_user_tz`, `maude_bucket_for_hour`, `maude_greeting_for_bucket`, `maude_time_of_day`, `maude_local_time_str`, `maude_greeting`. Pure `date`/`grep`/`sed`; no `jq` dependency added. Time-of-day derives from a `timezone:` set in the house-map (an IANA zone like `America/Chicago`, or `system` to trust the box clock). When it's unset, the helpers return `unknown`/empty and callers **stay silent on the time** rather than guess.
+- **`/maude:wake`** greets by the local clock and, when the timezone is unknown, drops the time word entirely and nudges `/maude:found` — no more hardcoded "Morning."
+- **The SessionStart hook** prepends the same local-clock greeting when the timezone is known, and stays time-neutral otherwise.
+- **`/maude:found`** detects a candidate timezone but **confirms it with the user** before trusting it (a UTC box is rarely where the user actually is), recording it in a new `## Clock` section of the house-map (template in `skills/maude/SKILL.md`).
+- **Tests** — clock-helper coverage incl. bucket boundaries, leading-zero hours (`08`/`00`), and the anti-bug assertion that an unverified clock yields no time word; plus session-start greeting + time-neutral fallback.
+
+### Behavior notes
+
+- Out of the box (no timezone captured yet) Maude is time-neutral until `/maude:found` confirms your zone — by design, so she never states the wrong time.
 
 ---
 

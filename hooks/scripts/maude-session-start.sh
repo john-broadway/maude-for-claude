@@ -51,7 +51,11 @@ if [ -z "$NOW_LINE" ] && [ -z "$REMEMBER_HANDOFF" ] && [ -z "$PATTERN_HINT" ] &&
 fi
 
 # Compose brief — terse, one stanza per signal that fired.
+# Greet by the user's local clock when the timezone is known (house-map);
+# stay time-neutral otherwise — never assert a time-of-day from the box clock.
+GREETING="$(maude_greeting)"
 {
+  [ -n "$GREETING" ] && printf '%s ' "$GREETING"
   printf 'Maude here.'
   [ -n "$HAS_MAP" ] && printf ' (house-map ✓)'
   printf '\n'

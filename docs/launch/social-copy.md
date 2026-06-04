@@ -46,7 +46,7 @@ Maude walks your workspace at session start. He writes the code; she notices. Sh
 
 She also watches Claude. `/maude:check-on-claude` reads the turn-by-turn trace and flags repeated tool calls (Claude grepping the same term four times), unread context (CLAUDE.md not opened this session), confabulation risk (claims made without backing reads), and open todos. `/maude:check-on-me` is the care side — pattern-of-life, not absolute thresholds.
 
-Other commands: `wake`, `rest`, `brief`, `save`, `remind-me`, `where-is`, `sweep`, `notice`, `weekly`, `conscience`, `check-setup`. Full list in the repo.
+Other commands: `wake`, `rest`, `brief`, `save`, `remind-me`, `where-is`, `sweep`, `notice`, `weekly`, `conscience`, `check-setup`, `dual-voice`. Full list in the repo.
 
 Recent: v0.1.5 added `/maude:verify` — programmatic project audit (version consistency, JSON validity, link integrity, header dates, watch-list paths) that runs before "ready" gets declared. v0.1.4 wired Maude's whisper layer — drift detection, a pre-irreversible gate that hard-blocks `git push` until cleared via `/maude:conscience`, and a CLAUDE.md-unread check before edits. v0.1.1 added running-services awareness to the arrival walk.
 

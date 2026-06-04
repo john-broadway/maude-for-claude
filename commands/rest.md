@@ -39,7 +39,10 @@ MAP="$SELF/house-map.md"
    (`digest-fanout`, `handoff-only`, `full`; skip `read-only` / `secret-deny`), honoring any
    journal/decisions/vault destinations the map records. Same fallback as save step 4 if the
    map is silent. Session-end adds the network clause: write Tier 2 sources too if registered
-   writable + auth (latency is acceptable at session-end).
+   writable + auth (latency is acceptable at session-end). Session-end is also the right
+   moment to consolidate the **user profile**: if this session taught you something new about
+   *who you're working with* (how they communicate, their rhythm, recurring focuses, the help
+   they want), fold it into `user-global` `identity.md` — observed, never invented.
 
 3. **Close-the-loop check** — for each watched-list entry touched this session:
    - Is the file in a clean state? (no lingering TODO, no half-removed code)

@@ -219,6 +219,94 @@ maude_tier2_reachable() {
   esac
 }
 
+# ─── Local time / clock ───────────────────────────────────────────────────
+# Maude greets by the USER's local time, never the box clock — a server or
+# container box defaults to UTC, so a confident "afternoon" from `date` is how
+# she said the wrong time-of-day before. The contract: only assert a time-of-day
+# when the timezone is KNOWN; otherwise stay silent and let the caller hedge.
+#
+# Source of truth: a `timezone:` line in the house-map, captured (and confirmed)
+# by /maude:found. Value is an IANA tz (e.g. America/Chicago), or the literal
+# `system` meaning "trust this box's clock — the user confirmed it's right".
+# Pure date/grep/sed — no jq dependency.
+# ──────────────────────────────────────────────────────────────────────────
+
+# Echo the user's configured timezone, or nothing if unverified.
+maude_user_tz() {
+  local map val
+  map="$(maude_map_path)"
+  [ -f "$map" ] || return 0
+  val="$(grep -E '^[[:space:]]*timezone:[[:space:]]*' "$map" 2>/dev/null | head -1)"
+  [ -n "$val" ] || return 0
+  val="${val#*:}"
+  # Strip any trailing inline `# comment`, then surrounding whitespace. An
+  # unstripped comment would be passed to `TZ=...` and silently fall back to
+  # UTC — a confident wrong greeting, the exact bug this release prevents.
+  val="$(printf '%s' "$val" | sed -E 's/#.*//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+  case "$val" in
+    ""|"<none>"|none|unknown|unset) return 0 ;;
+  esac
+  printf '%s' "$val"
+}
+
+# Pure: map an hour (0-23, leading zeros ok) to a time-of-day bucket.
+# Non-numeric input defaults to night rather than erroring (10# would emit a
+# base error to stderr); the live path only ever passes `date +%H`, so this is
+# defensive hardening for the helper as a unit.
+maude_bucket_for_hour() {
+  local h
+  case "${1:-}" in
+    ""|*[!0-9]*) h=0 ;;
+    *) h=$((10#$1)) ;;
+  esac
+  if   [ "$h" -ge 5 ]  && [ "$h" -le 11 ]; then printf 'morning'
+  elif [ "$h" -ge 12 ] && [ "$h" -le 16 ]; then printf 'afternoon'
+  elif [ "$h" -ge 17 ] && [ "$h" -le 20 ]; then printf 'evening'
+  else printf 'night'
+  fi
+}
+
+# Pure: map a bucket to a greeting word. Unknown/empty → empty (no time word).
+maude_greeting_for_bucket() {
+  case "$1" in
+    morning)   printf 'Morning.' ;;
+    afternoon) printf 'Afternoon.' ;;
+    evening)   printf 'Evening.' ;;
+    night)     printf "Late, but I'm here." ;;
+    *)         printf '' ;;
+  esac
+}
+
+# Current time-of-day bucket in the user's tz, or 'unknown' if unverified.
+maude_time_of_day() {
+  local tz hour
+  tz="$(maude_user_tz)"
+  [ -n "$tz" ] || { printf 'unknown'; return; }
+  if [ "$tz" = "system" ]; then
+    hour="$(date +%H)"
+  else
+    hour="$(TZ="$tz" date +%H)"
+  fi
+  maude_bucket_for_hour "$hour"
+}
+
+# Formatted local time (HH:MM ZONE) in the user's tz, or empty if unverified.
+maude_local_time_str() {
+  local tz
+  tz="$(maude_user_tz)"
+  [ -n "$tz" ] || return 0
+  if [ "$tz" = "system" ]; then
+    date '+%H:%M %Z'
+  else
+    TZ="$tz" date '+%H:%M %Z'
+  fi
+}
+
+# Time-aware greeting word, or empty when the clock is unverified.
+maude_greeting() {
+  maude_greeting_for_bucket "$(maude_time_of_day)"
+}
+
 # ─── Gate matching helpers (used by maude-gate.sh) ────────────────────────
 # Strip paired quotes from a shell command string so gate patterns don't
 # match user-supplied literal text inside quoted args (e.g. commit messages

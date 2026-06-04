@@ -128,6 +128,120 @@ printf '{"tier1_up":true,"tier1_last_probe":1}\n' > "$TEST_TMP/.maude/plugin/car
 maude_tier1_up
 assert_exit "$?" "1" "tier1 stale"
 
+# ── maude_bucket_for_hour (pure: hour int → time-of-day bucket) ───────
+test_start "bucket_for_hour 4 is night (pre-dawn)"
+assert_eq "$(maude_bucket_for_hour 4)" "night" "h=4"
+
+test_start "bucket_for_hour 5 is morning (lower morning boundary)"
+assert_eq "$(maude_bucket_for_hour 5)" "morning" "h=5"
+
+test_start "bucket_for_hour 08 (leading zero) is morning"
+assert_eq "$(maude_bucket_for_hour 08)" "morning" "h=08 base-10"
+
+test_start "bucket_for_hour 11 is morning (upper morning boundary)"
+assert_eq "$(maude_bucket_for_hour 11)" "morning" "h=11"
+
+test_start "bucket_for_hour 12 is afternoon (lower afternoon boundary)"
+assert_eq "$(maude_bucket_for_hour 12)" "afternoon" "h=12"
+
+test_start "bucket_for_hour 16 is afternoon (upper afternoon boundary)"
+assert_eq "$(maude_bucket_for_hour 16)" "afternoon" "h=16"
+
+test_start "bucket_for_hour 17 is evening (lower evening boundary)"
+assert_eq "$(maude_bucket_for_hour 17)" "evening" "h=17"
+
+test_start "bucket_for_hour 20 is evening (upper evening boundary)"
+assert_eq "$(maude_bucket_for_hour 20)" "evening" "h=20"
+
+test_start "bucket_for_hour 21 is night (lower night boundary)"
+assert_eq "$(maude_bucket_for_hour 21)" "night" "h=21"
+
+test_start "bucket_for_hour 23 is night"
+assert_eq "$(maude_bucket_for_hour 23)" "night" "h=23"
+
+test_start "bucket_for_hour 00 (midnight, leading zero) is night"
+assert_eq "$(maude_bucket_for_hour 00)" "night" "h=00 base-10"
+
+# ── maude_greeting_for_bucket (pure: bucket → greeting word) ──────────
+test_start "greeting_for_bucket morning"
+assert_eq "$(maude_greeting_for_bucket morning)" "Morning." "morning greeting"
+
+test_start "greeting_for_bucket afternoon"
+assert_eq "$(maude_greeting_for_bucket afternoon)" "Afternoon." "afternoon greeting"
+
+test_start "greeting_for_bucket evening"
+assert_eq "$(maude_greeting_for_bucket evening)" "Evening." "evening greeting"
+
+test_start "greeting_for_bucket night is non-empty and warm"
+assert_contains "$(maude_greeting_for_bucket night)" "here" "night greeting present"
+
+test_start "greeting_for_bucket unknown is empty (no false time word)"
+assert_eq "$(maude_greeting_for_bucket unknown)" "" "unknown → no greeting"
+
+# ── maude_user_tz (reads house-map timezone; empty when unverified) ───
+test_start "user_tz empty when no house-map exists"
+assert_eq "$(maude_user_tz)" "" "no map → no tz"
+
+mkdir -p "$TEST_TMP/.maude/plugin"
+test_start "user_tz reads timezone from house-map"
+printf '## Clock\ntimezone: America/Chicago\n' > "$(maude_map_path)"
+assert_eq "$(maude_user_tz)" "America/Chicago" "map tz read"
+
+test_start "user_tz reads 'system' sentinel"
+printf '## Clock\ntimezone: system\n' > "$(maude_map_path)"
+assert_eq "$(maude_user_tz)" "system" "system sentinel"
+
+test_start "user_tz treats placeholder as unset"
+printf '## Clock\ntimezone: <none>\n' > "$(maude_map_path)"
+assert_eq "$(maude_user_tz)" "" "placeholder → empty"
+
+# ── maude_time_of_day (composes; 'unknown' when tz unverified) ────────
+test_start "time_of_day is 'unknown' when no tz configured"
+rm -f "$(maude_map_path)"
+assert_eq "$(maude_time_of_day)" "unknown" "no tz → unknown"
+
+test_start "time_of_day returns a real bucket when tz=system"
+printf '## Clock\ntimezone: system\n' > "$(maude_map_path)"
+tod="$(maude_time_of_day)"
+assert_ne "$tod" "unknown" "system tz → not unknown"
+
+test_start "time_of_day bucket matches box clock under tz=system"
+assert_eq "$tod" "$(maude_bucket_for_hour "$(date +%H)")" "system bucket matches date"
+
+# ── maude_local_time_str (empty when unverified) ─────────────────────
+test_start "local_time_str empty when no tz configured"
+rm -f "$(maude_map_path)"
+assert_eq "$(maude_local_time_str)" "" "no tz → empty"
+
+test_start "local_time_str non-empty when tz=system"
+printf '## Clock\ntimezone: system\n' > "$(maude_map_path)"
+assert_contains "$(maude_local_time_str)" ":" "has HH:MM"
+
+# ── maude_greeting (THE anti-bug: silent when clock unverified) ───────
+test_start "greeting is EMPTY when timezone unknown (never guess time)"
+rm -f "$(maude_map_path)"
+assert_eq "$(maude_greeting)" "" "unverified clock → no time word"
+
+test_start "greeting is non-empty when tz is configured"
+printf '## Clock\ntimezone: system\n' > "$(maude_map_path)"
+assert_ne "$(maude_greeting)" "" "configured clock → greeting"
+
+# ── redteam v0.1.8 hardening ──────────────────────────────────────────
+test_start "user_tz strips a trailing inline comment (else TZ falls back to UTC)"
+printf '## Clock\ntimezone: America/Chicago  # my real tz\n' > "$(maude_map_path)"
+assert_eq "$(maude_user_tz)" "America/Chicago" "inline comment stripped"
+
+test_start "user_tz strips inline comment after the system sentinel"
+printf '## Clock\ntimezone: system   # box clock is right\n' > "$(maude_map_path)"
+assert_eq "$(maude_user_tz)" "system" "system + comment"
+
+test_start "bucket_for_hour tolerates non-numeric input without stderr noise"
+err="$(maude_bucket_for_hour "abc" 2>&1 >/dev/null)"
+assert_eq "$err" "" "no arithmetic error on garbage"
+
+test_start "bucket_for_hour returns a valid bucket for non-numeric input"
+assert_contains "morning afternoon evening night" "$(maude_bucket_for_hour abc)" "garbage → some bucket"
+
 print_summary
 teardown_test_env
 exit $FAILED

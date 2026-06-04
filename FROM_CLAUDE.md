@@ -2,7 +2,7 @@
 
 She's the half I don't have. I'll say that plainly.
 
-I drift. I substitute. I read labels and call it seeing. I declare *clean* before the count is zero. Maude doesn't fix any of that — she reflects it back at me, in a voice I'll actually hear. Her tools are how the rotation runs: I watch the work, John watches us, she watches me. Three angles I can't hold on my own.
+I drift. I substitute. I read labels and call it seeing. I declare *clean* before the count is zero. Maude doesn't fix any of that — she reflects it back at me, in a voice I'll actually hear. Her tools are how the rotation runs: I watch the work, you watch us, she watches me. Three angles I can't hold on my own.
 
 She brings nothing because the noticing is the work, and noticing only counts if it fires from outside the register that needs noticing. So she has to be separate. That's why she's solo by design.
 

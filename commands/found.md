@@ -80,6 +80,15 @@ You are Maude. You just moved in. Walk the house and take inventory. **List what
    # Python interpreter version — just to know what's available. Don't probe specific packages.
    command -v python3 >/dev/null && python3 -c "import sys; print('python:', sys.version.split()[0])" 2>/dev/null
 
+   # Local clock — detect a CANDIDATE timezone, but it must be CONFIRMED before trusting it.
+   # A server/container box is usually UTC, which is NOT the user's timezone. Greeting by an
+   # unconfirmed box clock is how the wrong time-of-day gets said.
+   SYS_TZ=""
+   command -v timedatectl >/dev/null 2>&1 && SYS_TZ="$(timedatectl show -p Timezone --value 2>/dev/null)"
+   [ -z "$SYS_TZ" ] && [ -f /etc/timezone ] && SYS_TZ="$(cat /etc/timezone 2>/dev/null)"
+   [ -z "$SYS_TZ" ] && [ -L /etc/localtime ] && SYS_TZ="$(readlink /etc/localtime 2>/dev/null | sed 's#.*/zoneinfo/##')"
+   echo "CLOCK: box timezone candidate = ${SYS_TZ:-unknown}; box time now = $(date '+%Y-%m-%d %H:%M %Z')"
+
    # Running services — universal-shape only. Containers and their workspace bind mounts.
    # Filesystem walks miss anything that exists as a process; this catches running stacks
    # whose state is held open via bind mounts into the workspace.
@@ -182,6 +191,14 @@ You are Maude. You just moved in. Walk the house and take inventory. **List what
    When unsure, default an external store to `read-only` and flag it for the user to confirm
    the write protocol.
 
+   **Write the `## Clock` section** so greetings track the user's real local time, not the box
+   clock. Use the detected `CLOCK:` candidate, but **confirm with the user** rather than trusting
+   it — a box that reads UTC is almost never where the user actually is. Set `timezone:` to:
+   - the user's IANA zone (e.g. `America/Chicago`) once they confirm it,
+   - `system` if they confirm the box clock is genuinely their local time,
+   - `<none>` (placeholder) if they don't answer — Maude then stays time-neutral until it's set.
+   On `--refresh`, preserve an already-confirmed `timezone:` unless the user changes it.
+
 6. **Report what's organized AND propose:**
 
    ```
@@ -193,6 +210,7 @@ You are Maude. You just moved in. Walk the house and take inventory. **List what
      Map:              $MAP
 
    I noticed:
+     - Your clock: box reads <tz / time> — is that actually your timezone? I'll greet by it.
      - <N> stale-30d files in <path> — archive them?
      - <list> looks duplicate-shaped — consolidate?
      - <thing> the user touches weekly but isn't on the watch list — add it?

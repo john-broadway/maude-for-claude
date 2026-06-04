@@ -64,6 +64,30 @@ test_start "session-start surfaces remember handoff"
 run_start
 assert_contains "$OUT" "Last handoff" "handoff surfaced"
 
+# ── Local-time-aware greeting ────────────────────────────────────────
+source_common
+
+test_start "session-start greets by local clock when timezone is known"
+cat > "$TEST_TMP/.maude/plugin/house-map.md" <<'EOF'
+# House map for test
+## Clock
+timezone: system
+## Watch list
+EOF
+run_start
+assert_contains "$OUT" "$(maude_greeting)" "time-aware greeting present"
+
+test_start "session-start stays time-neutral when timezone unknown (no false time word)"
+cat > "$TEST_TMP/.maude/plugin/house-map.md" <<'EOF'
+# House map for test
+## Watch list
+EOF
+run_start
+assert_contains "$OUT" "Maude here." "still greets neutrally"
+assert_not_contains "$OUT" "Morning." "no morning word"
+assert_not_contains "$OUT" "Afternoon." "no afternoon word"
+assert_not_contains "$OUT" "Evening." "no evening word"
+
 # Cleanup
 rm -rf "$MEM"
 
