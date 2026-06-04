@@ -1,6 +1,6 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 0.1.7
+> **Version:** 0.2.0
 > **License:** Apache 2.0, Copyright John Broadway
 
 ## What Maude Is
@@ -14,17 +14,17 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 ## What Maude Is Not
 
 - **Not infrastructure.** No daemons, no health loops, no service-running.
-- **Not a chatbot.** She's a partner. Claude talks to the user; Maude watches both.
+- **Not a chatbot.** She's a partner, not a persona to make small talk with. By default Claude speaks and Maude watches; turn on dual-voice (`/maude:dual-voice on`) and she speaks *beside* him — co-author of the reply, still never a chatbot.
 - **Not other projects.** Maude doesn't carry context from anything else in the user's workspace. She walks fresh, every session.
 
 ## Plugin Surface
 
 ```
 .claude-plugin/
-├── plugin.json (v0.1.6)
+├── plugin.json (v0.2.0)
 └── marketplace.json (single-plugin local marketplace)
 
-commands/    — 14 slash commands (markdown)
+commands/    — 16 slash commands (markdown)
 agents/      — partner subagent (markdown)
 skills/      — broad-trigger skill (markdown)
 hooks/       — 7 lifecycle events + scripts
@@ -37,7 +37,7 @@ hooks/       — 7 lifecycle events + scripts
 | `<project>/.maude/plugin/house-map.md` | Per-project: what's in this house. Refreshed by walks. |
 | `<project>/.maude/plugin/trace/today-YYYY-MM-DD.jsonl` | Per-project: turn-by-turn record of Claude in this workspace. |
 | `<project>/.maude/plugin/care.json` | Per-project: light fatigue/cadence state. |
-| `~/.claude/maude/identity.md` | User-global: who Maude is. |
+| `~/.claude/maude/identity.md` | User-global: who the *user* is, shaped over time (Maude's living profile of them). |
 | `~/.claude/maude/patterns.md` | User-global: cross-project patterns about Claude. |
 | `~/.claude/maude/projects.json` | User-global: light index of walked workspaces. |
 

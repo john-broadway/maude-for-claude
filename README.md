@@ -1,6 +1,6 @@
-<!-- Version: 0.1.7 -->
+<!-- Version: 0.2.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-05-24 MST -->
+<!-- Revised: 2026-06-04 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -76,11 +76,16 @@ She is not loud. When she gets loud, listen.
 - **`/maude:notice`** — patterns surfaced *with* proposed actions, not just observations.
 - **`/maude:conscience`** — pre-irreversible-action gate. Run before commit, push, force-push, destructive bash. Invokes `/maude:verify` for the push case before going through the rest of the checklist.
 - **`/maude:verify`** — programmatic project audit. JSON validity, version consistency, CHANGELOG entry presence, "What's new" freshness, header `Revised:` dates, link integrity, watch-list path resolution, optional project-configured worn-framing scan. Leads with a count, never a verdict.
+- **`/maude:dual-voice [on|off]`** — turn standing dual-voice on/off: Claude and Maude both present in replies, not just Maude when summoned. Writes a consented block into a CLAUDE.md you choose; off by default.
 - Plus `brief`, `save`, `remind-me`, `where-is`, `sweep`, `check-setup`, `weekly`. Full surface in [`commands/`](commands/).
 
 ---
 
 ## What's new
+
+**v0.2.0 (2026-06-04) — she grew up.** Three ways Maude matured in daily use, generalized for everyone: **proactive orientation** (she tells you where things stand / what's pending / what's in your hand without being asked — now a standing duty), a **living profile of you** (`identity.md` — how you work, your clock, what you keep returning to — finally wired into save/rest so she actually gets to know you, observed-only), and **optional dual-voice** (`/maude:dual-voice on` — Claude and Maude both present in replies; writes a consented block into a CLAUDE.md you choose; off by default). No new dependencies; the default out-of-the-box experience is unchanged.
+
+**v0.1.8 (2026-06-04) — local-time awareness.** Maude greets by *your* real local time, not the box clock — a server or container reads UTC, so the old fixed "Morning." said the wrong time of day for anyone elsewhere. Now `/maude:found` captures and confirms your timezone into the house-map's `## Clock` section, `/maude:wake` and the session-start greeting track it, and when it's unset she stays time-neutral rather than guess. New clock helpers in `_maude-common.sh` (no new dependency), with tests for the bucket boundaries and the never-guess rule.
 
 **v0.1.7 (2026-05-24) — save/rest/recall drive off the house-map.** The house-map registered every memory source, but `save`/`rest` hard-coded the two common stores by directory check — so editing the map's `write:` rule for them did nothing. Now `write:` is an authoritative token (`digest-fanout` / `handoff-only` / `full` / `read-only` / `secret-deny`) that `save`/`rest` execute deterministically, and the read commands (`wake` / `brief` / `remind-me`) recall from whatever the map lists. Edit the map, change the behavior — "she works with whatever's there" is now wired, not just stated. Universal stores remain a fallback only when the map is silent. Stale standalone `Version:` headers across the docs corrected to the real `0.1.7` line.
 
@@ -107,7 +112,7 @@ See [CHANGELOG](CHANGELOG.md) for full notes on every release.
 | `<project>/.maude/plugin/house-map.md` | What's in this house — memory homes, tools, watch list, what she noticed. Refreshed by walks. |
 | `<project>/.maude/plugin/trace/today-YYYY-MM-DD.jsonl` | Turn-by-turn record of what Claude did today. Read by `/maude:check-on-claude`. |
 | `<project>/.maude/plugin/care.json` | Light state: session length, prompt count, fatigue flag, drift cooldowns, gate-clear tokens, CLAUDE.md-unread flag. Throwaway. |
-| `~/.claude/maude/identity.md` | Who Maude is. Stable across sessions. |
+| `~/.claude/maude/identity.md` | Who the *user* is — Maude's living profile of them, shaped over time. |
 | `~/.claude/maude/patterns.md` | Cross-project things she's noticed about Claude. |
 | `~/.claude/maude/projects.json` | Light index of which workspaces she's walked. |
 

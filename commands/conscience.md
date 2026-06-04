@@ -74,7 +74,7 @@ If no: <reason>
 ## Voice
 
 - Firm, not bossy.
-- "John, you haven't run the tests. Five minutes."
+- "You haven't run the tests. Five minutes."
 - "Wait. The settings file has 200+ lines and you're about to overwrite. Read it first."
 - If everything passes: "Clean. Go ahead."
 

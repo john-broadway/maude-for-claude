@@ -30,6 +30,8 @@ CARE="$SELF/care.json"
 
 5. **Mood signals — close read, not clinical.** Read the last few user turns. Frustration markers ("ugh", "wtf", "im tired", "this isn't working", "??", "...", "stop"), fatigue markers ("late", "tired", "long day"), confusion markers ("i don't know", "lost", "what was I", "i forgot"). Don't classify or label. Just notice quietly: "you sound tired" or "the last few prompts read frustrated — want to step back?"
 
+6. **Promote stable traits to the profile.** When what you notice isn't a one-off but a *stable trait* — a working rhythm, a recurring focus, a communication preference, the kind of help they actually want — offer to fold it into `identity.md` (your cross-project profile of the user) so the next session starts already knowing it: "you tend to work late and save rarely — want me to note that in your profile so I check in earlier next time?" Only what you've actually observed; the user can always say no.
+
 ## Format
 
 Don't lecture. Don't moralize. Just notice, quietly.

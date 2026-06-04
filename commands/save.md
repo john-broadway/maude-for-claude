@@ -71,9 +71,12 @@ Report per-tier success/fail in the output.
      Under 20 lines. Specific. Forward-looking.
    - **`full`** — Maude's own store; write the slice appropriate to this source. For
      `user-global` (`~/.claude/maude/`): append to `patterns.md` if a cross-project pattern
-     surfaced, and update `projects.json` with this project's slug + last-seen timestamp.
-     For `maude-self` (`.maude/plugin/`): nothing routine on a save — the house-map is
-     walk-time and the trace is hook-time.
+     surfaced; **update `identity.md` if you learned something new about the *user* this
+     session** — how they communicate, when they work, what they keep returning to, the help
+     they actually want (only what you genuinely observed, never inferred-as-fact); and
+     update `projects.json` with this project's slug + last-seen timestamp. For `maude-self`
+     (`.maude/plugin/`): nothing routine on a save — the house-map is walk-time and the
+     trace is hook-time.
    - **`read-only`** — skip (recall source; never written by save).
    - **`secret-deny`** — skip and never echo contents.
    - **unrecognized/malformed token** — skip the source and name it in the report as a
@@ -99,7 +102,7 @@ Report per-tier success/fail in the output.
 Saved (per house-map).
   anthropic-auto-memory: ✓ digest-fanout — now.md, today-$TODAY.md, recent.md (or — not on map / not present)
   remember-plugin:       ✓ handoff-only — remember.md (or — not on map / not installed)
-  user-global:           ✓ full — projects index touched (+ patterns.md if a pattern surfaced)
+  user-global:           ✓ full — projects index touched (+ patterns.md / identity.md if something surfaced)
   <journal/decisions/vault from map>: ✓ <token> / —
   fallback used:         <none | anthropic-auto-memory | remember-plugin> (only if map was silent)
 
