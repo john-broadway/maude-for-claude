@@ -1,5 +1,5 @@
-<!-- Version: 0.2.0 -->
-<!-- Revised: 2026-06-04 CDT — version-header sweep -->
+<!-- Version: 0.3.0 -->
+<!-- Revised: 2026-06-09 CDT — version-header sweep -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 ---
 name: Bug Report

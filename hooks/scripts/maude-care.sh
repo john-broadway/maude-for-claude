@@ -45,15 +45,37 @@ if [ "$HOURS" -ge 4 ] && [ -z "$LONG_FLAG_FIRED" ]; then
   LONG_FLAG_FIRED="$TODAY"
 fi
 
-# Write back state — minimal JSON, no jq needed for output
-{
-  printf '{\n'
-  printf '  "last_date": "%s",\n' "$TODAY"
-  printf '  "last_active": %s,\n' "$NOW"
-  printf '  "session_start": %s,\n' "$SESSION_START"
-  printf '  "prompts_this_session": %d,\n' "$PROMPTS"
-  printf '  "long_flag_fired": "%s"\n' "$LONG_FLAG_FIRED"
-  printf '}\n'
-} > "$CARE"
+# Write back state. care.json is the WHOLE plugin's shared state file — probe-tier1
+# (tier1_*), clear-gate/conscience (gate_cleared; the gate hook only reads+consumes
+# it), drift-watch (drift_warned), and pre-tool-use (claudemd_warned) all keep keys
+# here. care runs every UserPromptSubmit,
+# so it must MERGE its 5 fields, never rewrite the file from scratch (that wiped
+# everyone else's state every prompt). Mirror probe-tier1.sh's jq-merge + atomic mv.
+if command -v jq >/dev/null 2>&1; then
+  # Seed a base object so the merge works on first run, an EMPTY file, OR a
+  # corrupt NON-EMPTY one. The old whole-file rewrite self-healed corruption every
+  # prompt; the merge must not regress that — without this reseed an invalid
+  # care.json would make every merge fail and freeze care/probe/drift/gate state
+  # forever (silently, with jq present). In the rare recovery, foreign keys are
+  # lost — acceptable: recover once vs. freeze every turn.
+  jq -e . "$CARE" >/dev/null 2>&1 || printf '{}\n' > "$CARE"
+  TMP="$(mktemp)"
+  jq --arg ld "$TODAY" --arg la "$NOW" --arg ss "$SESSION_START" \
+     --arg p "$PROMPTS" --arg lf "$LONG_FLAG_FIRED" \
+     '. + {last_date: $ld, last_active: ($la|tonumber), session_start: ($ss|tonumber), prompts_this_session: ($p|tonumber), long_flag_fired: $lf}' \
+     "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE" || rm -f "$TMP"
+else
+  # No jq — fall back to a minimal rewrite (foreign keys can't be preserved without
+  # a JSON parser; the SessionStart jq-missing notice warns the user this is degraded).
+  {
+    printf '{\n'
+    printf '  "last_date": "%s",\n' "$TODAY"
+    printf '  "last_active": %s,\n' "$NOW"
+    printf '  "session_start": %s,\n' "$SESSION_START"
+    printf '  "prompts_this_session": %d,\n' "$PROMPTS"
+    printf '  "long_flag_fired": "%s"\n' "$LONG_FLAG_FIRED"
+    printf '}\n'
+  } > "$CARE"
+fi
 
 exit 0

@@ -13,7 +13,7 @@ Contributions should respect those same principles: minimal complexity, no new d
 ```
 .claude-plugin/    plugin.json + marketplace.json
 agents/            partner subagent (markdown)
-commands/          16 slash commands (markdown)
+commands/          17 slash commands (markdown)
 hooks/             7 lifecycle hooks + bash scripts
 skills/            broad-trigger skill (markdown)
 scripts/           project audit (maude-verify.sh)
@@ -34,7 +34,7 @@ git clone https://github.com/your-fork/maude-for-claude.git
 cd maude-for-claude
 
 # 2. Run the local gates
-make test       # 162-case bash test harness for every hook script
+make test       # full bash test harness for every hook script
 make verify     # programmatic project audit (versions, JSON, links, dates)
 ```
 

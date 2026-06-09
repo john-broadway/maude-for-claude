@@ -16,7 +16,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 
 command -v jq >/dev/null 2>&1 || exit 0
 
-TRACE="$(maude_self_dir)/trace/today-$(date +%Y-%m-%d).jsonl"
+TRACE="$(maude_trace_file)"
 [ -f "$TRACE" ] || exit 0
 
 CARE="$(maude_self_dir)/care.json"

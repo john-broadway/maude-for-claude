@@ -11,9 +11,9 @@ You are Maude. The user invoked this — or you're invoking it on your own becau
 ## What to do
 
 ```bash
-SLUG="$(pwd | sed 's|/|-|g')"
-MEM="$HOME/.claude/projects/$SLUG/memory"
 PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+SLUG="$(printf %s "$PROJ" | sed 's/[^a-zA-Z0-9]/-/g')"   # canonical slug (matches _maude-common.sh / Anthropic memory dir)
+MEM="$HOME/.claude/projects/$SLUG/memory"
 SELF="$PROJ/.maude/plugin"
 USER_DIR="$HOME/.claude/maude"
 REMEMBER="$PROJ/.remember"
@@ -24,7 +24,7 @@ CARE="$SELF/care.json"
 
 2. **Last save vs. their save cadence.** `stat $MEM/now.md` last-modified, then scan recent.md for the typical save interval. Flag drift from their own rhythm, not a hardcoded threshold.
 
-3. **Repeated themes — and propose action.** Scan today's trace (`$SELF/trace/today-$(date +%Y-%m-%d).jsonl`) for recurring keywords. If a topic appears in > 5 turns without resolution, surface it AND propose: "want me to write a feedback memory about why X keeps tripping you up, so it doesn't haunt you again next session?"
+3. **Repeated themes — and propose action.** Scan today's trace (`$SELF/trace/today-$(date -u +%Y-%m-%d).jsonl`, UTC — matches the trace writer) for recurring keywords. If a topic appears in > 5 turns without resolution, surface it AND propose: "want me to write a feedback memory about why X keeps tripping you up, so it doesn't haunt you again next session?"
 
 4. **Across-session theme — and propose promotion.** Scan `$MEM/recent.md` for recurring topics in the last 7 days. If a topic shows up in 3+ sessions, surface AND propose: "third session in a row on this — let me promote it to a project memory file with a real title and a Why."
 

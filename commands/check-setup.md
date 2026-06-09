@@ -65,8 +65,18 @@ find .claude/plans -maxdepth 1 -name "*.md" -mtime +7 2>/dev/null | wc -l | xarg
 for s in .claude/settings.json .claude/settings.local.json; do
   if [ -f "$s" ]; then
     echo "$s exists"
-    python3 -m json.tool < "$s" >/dev/null 2>&1 && echo "  valid JSON" || echo "  INVALID JSON"
-    python3 -c "import json; d=json.load(open('$s')); print('  permissions.allow:', len(d.get('permissions',{}).get('allow',[])))" 2>/dev/null
+    # Guard the validator on its dependency — an ABSENT python3 must not be
+    # reported as INVALID JSON (a false failure that scares the user). Mirror
+    # found.md's `command -v python3` guard; fall back to jq, else skip+note.
+    if command -v python3 >/dev/null 2>&1; then
+      python3 -m json.tool < "$s" >/dev/null 2>&1 && echo "  valid JSON" || echo "  INVALID JSON"
+      python3 -c "import json; d=json.load(open('$s')); print('  permissions.allow:', len(d.get('permissions',{}).get('allow',[])))" 2>/dev/null
+    elif command -v jq >/dev/null 2>&1; then
+      jq -e . "$s" >/dev/null 2>&1 && echo "  valid JSON" || echo "  INVALID JSON"
+      printf '  permissions.allow: %s\n' "$(jq '(.permissions.allow // []) | length' "$s" 2>/dev/null)"
+    else
+      echo "  JSON check skipped (no python3 / jq)"
+    fi
   fi
 done
 ```
@@ -74,8 +84,8 @@ done
 ### 6. House-map
 
 ```bash
-SLUG="$(pwd | sed 's|/|-|g')"
-MAP="$(pwd)/.maude/plugin/house-map.md"
+PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+MAP="$PROJ/.maude/plugin/house-map.md"
 [ -f "$MAP" ] && echo "house-map: $MAP" || echo "house-map: MISSING — run /maude:found"
 ```
 

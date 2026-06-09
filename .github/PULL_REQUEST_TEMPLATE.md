@@ -1,5 +1,5 @@
-<!-- Version: 0.2.0 -->
-<!-- Revised: 2026-06-04 CDT — version-header sweep; tests + verify are the local gates -->
+<!-- Version: 0.3.0 -->
+<!-- Revised: 2026-06-09 CDT — version-header sweep; tests + verify are the local gates -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 ## What does this PR do?

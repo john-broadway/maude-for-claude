@@ -140,7 +140,9 @@ make_read_tool_input() {
 }
 
 trace_path() {
-  printf '%s/.maude/plugin/trace/today-%s.jsonl' "$TEST_TMP" "$(date +%Y-%m-%d)"
+  # UTC date — matches maude_trace_file()'s single-clock filename so tests stay
+  # correct on non-UTC boxes too.
+  printf '%s/.maude/plugin/trace/today-%s.jsonl' "$TEST_TMP" "$(date -u +%Y-%m-%d)"
 }
 
 care_path() {
@@ -175,4 +177,19 @@ print_summary() {
 # Source common helpers under test (the SUT for unit-style tests).
 source_common() {
   . "$HOOKS_DIR/_maude-common.sh"
+}
+
+# Build a PATH directory containing every common binary EXCEPT jq, so a test can
+# exercise the jq-absent degradation path that the plugin promises to handle.
+# Prints the dir. Usage: NOJQ="$(make_nojq_bin)"; PATH="$NOJQ" bash "$SCRIPT"
+# (jq is deliberately omitted so `command -v jq` fails under this PATH.)
+make_nojq_bin() {
+  local d b src
+  d="$(mktemp -d)"
+  for b in bash sh env cat date grep sed awk tr head tail wc find \
+           mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
+           sort uniq readlink stat sleep chmod printf; do
+    src="$(command -v "$b" 2>/dev/null)" && ln -s "$src" "$d/$b" 2>/dev/null
+  done
+  printf '%s' "$d"
 }

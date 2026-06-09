@@ -5,6 +5,14 @@
 set +e
 cd "$(dirname "$0")"
 
+# Loud guard: most assertions read state via jq-backed helpers (read_care,
+# count_trace_lines) that return null/0 when jq is absent — which would make
+# those assertions PASS falsely. Warn so a jq-less run isn't mistaken for green.
+if ! command -v jq >/dev/null 2>&1; then
+  printf '!! WARNING: jq not found — coverage is DEGRADED; jq-backed assertions may pass falsely.\n' >&2
+  printf '!!          Install jq for a trustworthy run. (test-nojq.sh covers the no-jq paths.)\n' >&2
+fi
+
 TOTAL=0
 PASSED=0
 FAILED=0

@@ -1,12 +1,12 @@
 # Maude for Claude — CI
 # Copyright (c) 2026 John Broadway
 # Licensed under the Apache License, Version 2.0
-# Version: 0.1.7
-# Revised: 2026-05-24 MST — version-header sweep; tests + verify only
+# Version: 0.3.0
+# Revised: 2026-06-09 CDT — v0.3.0 sweep (audit fixes + /maude:teach)
 # Authors: John Broadway, Claude (Anthropic)
 #
 # Two independent jobs run on every push and pull request to main:
-#   - tests   : 162-case bash test harness (make test → tests/run.sh)
+#   - tests   : full bash test harness (make test → tests/run.sh)
 #   - verify  : programmatic project audit (make verify → scripts/maude-verify.sh)
 #
 # History note: v3.0 / v4.0 of this file ran a `scrub` job against a private

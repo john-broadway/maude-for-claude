@@ -1,0 +1,7 @@
+{
+  "name": "clean-fixture",
+  "owner": { "name": "test" },
+  "plugins": [
+    { "name": "clean-fixture", "source": "./", "version": "9.9.9" }
+  ]
+}

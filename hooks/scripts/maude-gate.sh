@@ -24,6 +24,11 @@ CMD=""
 if command -v jq >/dev/null 2>&1; then
   CMD="$(jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
 fi
+# Fail-OPEN by design: without jq there's no trustworthy way to parse the command
+# out of the tool-input JSON (a hand-rolled parse reintroduces the v0.1.6
+# quote-stripping self-block risk), so the gate provides NO protection here. The
+# user is warned once at SessionStart ("the gate is OFF this session"). This is a
+# deliberate limitation of an intentionally-soft dependency, not an oversight.
 [ -z "$CMD" ] && exit 0
 
 # Anchors used in the patterns table.

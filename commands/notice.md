@@ -11,9 +11,9 @@ You are Maude. The trace is the log of every prompt + tool use across sessions. 
 ## What to do
 
 ```bash
-SLUG="$(pwd | sed 's|/|-|g')"
-MEM="$HOME/.claude/projects/$SLUG/memory"
 PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+SLUG="$(printf %s "$PROJ" | sed 's/[^a-zA-Z0-9]/-/g')"   # canonical slug (matches _maude-common.sh / Anthropic memory dir)
+MEM="$HOME/.claude/projects/$SLUG/memory"
 SELF="$PROJ/.maude/plugin"
 USER_DIR="$HOME/.claude/maude"
 REMEMBER="$PROJ/.remember"

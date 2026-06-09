@@ -180,7 +180,13 @@ You are Maude. You just moved in. Walk the house and take inventory. **List what
 
    Use Claude's runtime reasoning, not hardcoded patterns. If unsure about what something is, write your best guess in the map's `Notes` section and surface to the user.
 
-5. **Compose the house-map** following the template in `skills/maude/SKILL.md`. Write to `$MAP`. If `${ARGUMENTS}` is `--refresh` or `$MAP` already exists, overwrite (re-walk). Otherwise, only write if missing — preserve existing user notes by reading the existing map first and merging the `Notes` section forward.
+5. **Compose the house-map** following the template in `$CLAUDE_PLUGIN_ROOT/skills/maude/SKILL.md` (anchor with `$CLAUDE_PLUGIN_ROOT` — at command-run time the cwd is the user's project, so a bare `skills/maude/SKILL.md` won't resolve). Write to `$MAP`. If `${ARGUMENTS}` is `--refresh` or `$MAP` already exists, overwrite (re-walk). Otherwise, only write if missing — preserve existing user notes by reading the existing map first and merging the `Notes` section forward.
+
+   **Watch-list entries must be BARE paths** — one path per line, no trailing
+   `(parenthetical descriptions)` or `inline   notes`. `/maude:verify` reconciles
+   each watch-list line against the filesystem; a descriptive suffix makes the
+   whole line read as a (missing) path and trips a false finding. Put any
+   commentary in the `## Notes` section instead.
 
    **For every `## Memory sources` entry, set `write:` to one enumerated token** (so save/rest
    can drive off it — see SKILL.md "The `write:` field is authoritative"): `digest-fanout`

@@ -91,6 +91,60 @@ assert_not_contains "$OUT" "Evening." "no evening word"
 # Cleanup
 rm -rf "$MEM"
 
+# ── jq-missing safety notice ─────────────────────────────────────────
+# Without jq the irreversible-command gate is fail-OPEN (silently disabled),
+# along with drift-watch / tier-1 / watch-list nudges. SessionStart runs once
+# per session and is the chokepoint for ONE consolidated notice. The gate
+# clause must read as a SAFETY regression, not just "trace isn't writing".
+test_start "session-start warns once when jq is missing"
+NOJQ="$(make_nojq_bin)"
+NOTICE="$(printf '{}' | PATH="$NOJQ" bash "$START" 2>&1 >/dev/null)"
+assert_contains "$NOTICE" "jq" "jq-missing notice present"
+
+test_start "jq-missing notice names the gate being off (safety wording)"
+assert_contains "$NOTICE" "gate" "notice flags the gate"
+
+test_start "session-start says nothing about jq when jq is present"
+NOISE="$(printf '{}' | bash "$START" 2>&1 >/dev/null)"
+assert_not_contains "$NOISE" "jq not found" "silent when jq present"
+
+# ── Trace + snapshot retention sweep ─────────────────────────────────
+# Trace JSONL and pre-compact snapshots were append-only forever. SessionStart
+# prunes files older than the retention window. Floor is well past the 7-day
+# window /maude:weekly and recent.md read, so a sweep never strands them.
+test_start "session-start prunes trace files older than the retention window"
+OLD_TRACE="$TEST_TMP/.maude/plugin/trace/today-2020-01-01.jsonl"
+printf '{"ts":"ancient"}\n' > "$OLD_TRACE"
+touch -d '40 days ago' "$OLD_TRACE"
+KEEP_TRACE="$(trace_path)"
+printf '{"ts":"today"}\n' > "$KEEP_TRACE"
+run_start
+assert_file_absent "$OLD_TRACE" "ancient trace pruned"
+
+test_start "session-start keeps trace files inside the retention window"
+assert_file_exists "$KEEP_TRACE" "today's trace kept"
+
+test_start "session-start keeps a 7-day-old trace (weekly window safe)"
+RECENT_TRACE="$TEST_TMP/.maude/plugin/trace/today-recent.jsonl"
+printf '{"ts":"recent"}\n' > "$RECENT_TRACE"
+touch -d '7 days ago' "$RECENT_TRACE"
+run_start
+assert_file_exists "$RECENT_TRACE" "7-day-old trace kept"
+
+test_start "session-start prunes old pre-compact snapshots too"
+mkdir -p "$TEST_TMP/.maude/plugin/snapshots"
+OLD_SNAP="$TEST_TMP/.maude/plugin/snapshots/precompact-2020-01-01.md"
+printf 'ancient snapshot\n' > "$OLD_SNAP"
+touch -d '40 days ago' "$OLD_SNAP"
+RECENT_SNAP="$TEST_TMP/.maude/plugin/snapshots/precompact-recent.md"
+printf 'recent snapshot\n' > "$RECENT_SNAP"
+touch -d '2 days ago' "$RECENT_SNAP"
+run_start
+assert_file_absent "$OLD_SNAP" "ancient snapshot pruned"
+
+test_start "session-start keeps a recent pre-compact snapshot (no over-prune)"
+assert_file_exists "$RECENT_SNAP" "recent snapshot kept"
+
 print_summary
 teardown_test_env
 exit $FAILED

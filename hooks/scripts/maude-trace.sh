@@ -21,7 +21,8 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 maude_ensure_self_dir
 TRACE_DIR="$(maude_self_dir)/trace"
 mkdir -p "$TRACE_DIR" 2>/dev/null
-TRACE="$TRACE_DIR/today-$(date +%Y-%m-%d).jsonl"
+# Single source of truth for the filename (UTC date, matching each record's ts).
+TRACE="$(maude_trace_file)"
 
 INPUT="$(cat 2>/dev/null)"
 KIND="${1:-event}"

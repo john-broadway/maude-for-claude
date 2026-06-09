@@ -143,7 +143,10 @@ if [ -f "$MAP" ]; then
   if [ -n "$WATCH" ]; then
     MISSING=0
     while IFS= read -r line; do
-      TERM=$(printf '%s' "$line" | sed -E 's/^[-* ]+//; s/[[:space:]]*$//; s/^[`]//; s/[`]$//')
+      # Take the FIRST whitespace-delimited field: a watch-list entry is one path,
+      # and any trailing "(description)" or inline note must not be glued onto the
+      # path (else the whole line reads as a missing path — a false finding).
+      TERM=$(printf '%s' "$line" | sed -E 's/^[-* `]+//; s/`+$//' | awk '{print $1}')
       [ -z "$TERM" ] && continue
       # Try as relative path; if not found, skip silently (terms can be tags too)
       case "$TERM" in

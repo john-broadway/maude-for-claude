@@ -47,6 +47,22 @@ assert_contains "$last" '"kind":"test-kind"' "kind field"
 test_start "trace payload preserved"
 assert_contains "$last" '"payload":"test-payload"' "payload field"
 
+# ── single-clock invariant (characterization — NOT a deterministic regression
+# guard) ── maude_trace_file() and `ts` both use UTC, so a record's ts-day always
+# equals its filename day. This documents the contract that fixed the v0.1.8
+# local-vs-UTC midnight split; it holds BY CONSTRUCTION (one UTC helper). It does
+# NOT catch a local-date regression on a normal run — local==UTC except in the
+# brief near-midnight window of a non-UTC zone, and CI boxes are UTC — so the
+# failing branch is unreachable without an injected clock. The real safety is the
+# single source (maude_trace_file), not this assertion's ability to fail.
+test_start "trace filename date == the record's UTC ts date"
+file_day="$(basename "$(maude_trace_file)" .jsonl)"; file_day="${file_day#today-}"
+ts_day="$(printf '%s' "$last" | sed -E 's/.*"ts":"([0-9]{4}-[0-9]{2}-[0-9]{2})T.*/\1/')"
+assert_eq "$ts_day" "$file_day" "ts-day matches filename-day"
+
+test_start "maude_trace_file uses the UTC date"
+assert_contains "$(maude_trace_file)" "today-$(date -u +%Y-%m-%d).jsonl" "UTC-dated filename"
+
 # ── maude_strip_quotes ───────────────────────────────────────────────
 test_start "strip_quotes removes single-quoted span"
 got="$(maude_strip_quotes "echo 'git push' done")"
@@ -241,6 +257,71 @@ assert_eq "$err" "" "no arithmetic error on garbage"
 
 test_start "bucket_for_hour returns a valid bucket for non-numeric input"
 assert_contains "morning afternoon evening night" "$(maude_bucket_for_hour abc)" "garbage → some bucket"
+
+# ── tz typo guard (a mistyped IANA zone must NOT silently become UTC) ──
+# date accepts a bogus TZ and falls back to UTC → a confident wrong greeting,
+# the exact failure v0.1.8 exists to prevent. The guard rejects a value ONLY
+# when the zoneinfo DB is present AND has no such zone (provably bad). On a box
+# without the DB it can't prove bad, so a valid zone is passed through.
+test_start "user_tz rejects a typo zone when zoneinfo proves it bad"
+printf '## Clock\ntimezone: America/Chigago\n' > "$(maude_map_path)"
+if [ -d /usr/share/zoneinfo ]; then
+  assert_eq "$(maude_user_tz)" "" "typo zone → empty (never UTC fallback)"
+else
+  assert_eq "$(maude_user_tz)" "America/Chigago" "no zoneinfo DB → can't prove bad, pass through"
+fi
+
+test_start "user_tz still returns a valid zone the DB confirms"
+printf '## Clock\ntimezone: America/Chicago\n' > "$(maude_map_path)"
+assert_eq "$(maude_user_tz)" "America/Chicago" "valid zone survives the guard"
+
+# ── TZ-conversion branch (was untested — only `system` was exercised) ──
+test_start "non-system tz actually converts vs UTC (not a silent UTC fallback)"
+if [ -f /usr/share/zoneinfo/Etc/GMT-5 ]; then
+  printf '## Clock\ntimezone: Etc/GMT-5\n' > "$(maude_map_path)"
+  loc_h="$(maude_local_time_str)"; loc_h="${loc_h%%:*}"
+  utc_h="$(date -u +%H)"
+  exp_h="$(printf '%02d' $(( (10#$utc_h + 5) % 24 )))"   # Etc/GMT-5 is UTC+5
+  assert_eq "$loc_h" "$exp_h" "Etc/GMT-5 = UTC+5 applied by maude_local_time_str"
+else
+  assert_eq "skip" "skip" "Etc/GMT-5 unavailable — conversion test skipped"
+fi
+
+# ── maude_redact: every secret-shape branch masks (regression guard) ──
+# Each sed alternative breaks independently; pin them all. Secret prefixes are
+# split in source ("sk" "-") so no scanner-matchable token literal is committed.
+redact_one() { printf '%s\n' "$1" | maude_redact; }
+
+test_start "redact masks sk- API keys"
+SK="sk""-abcdefgh12345678ABCDEF"
+assert_contains "$(redact_one "key $SK end")" "[redacted-secret]" "sk- masked"
+test_start "redact removes the raw sk- token"
+assert_not_contains "$(redact_one "key $SK end")" "$SK" "raw sk- gone"
+
+test_start "redact masks github_pat_ tokens"
+GP="github_pat_""abcdefgh12345678ABCDEF"
+assert_contains "$(redact_one "t $GP end")" "[redacted-secret]" "github_pat_ masked"
+
+test_start "redact masks xoxb- slack tokens"
+XO="xoxb""-abcdefgh12345678ABCDEF"
+assert_contains "$(redact_one "t $XO end")" "[redacted-secret]" "xoxb- masked"
+
+test_start "redact masks AWS AKIA access-key ids"
+AK="AKIA""ABCDEFGH12345678IJKL"
+assert_contains "$(redact_one "id $AK end")" "[redacted-secret]" "AKIA masked"
+
+test_start "redact masks Google AIza keys"
+AZ="AIza""abcdefgh12345678ABCDEF"
+assert_contains "$(redact_one "k $AZ end")" "[redacted-secret]" "AIza masked"
+
+test_start "redact masks JWTs"
+JWT="eyJ""abcDEF123.eyJpayload456.sigGHI789"
+assert_contains "$(redact_one "tok $JWT end")" "[redacted-jwt]" "JWT masked"
+test_start "redact removes the raw JWT"
+assert_not_contains "$(redact_one "tok $JWT end")" "$JWT" "raw JWT gone"
+
+test_start "redact leaves ordinary prose untouched"
+assert_eq "$(redact_one "just a normal sentence about keys and tokens")" "just a normal sentence about keys and tokens" "no over-redaction"
 
 print_summary
 teardown_test_env
