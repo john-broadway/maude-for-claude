@@ -17,7 +17,7 @@ MEM="$HOME/.claude/projects/$SLUG/memory"
 SELF="$PROJ/.maude/plugin"
 USER_DIR="$HOME/.claude/maude"
 REMEMBER="$PROJ/.remember"
-TRACE="$SELF/trace/today-$(date +%Y-%m-%d).jsonl"
+TRACE="$SELF/trace/today-$(date -u +%Y-%m-%d).jsonl"   # UTC — matches the trace writer's filename clock
 ```
 
 1. **Repeated tool calls** — read the trace. Bucket by tool + arguments. Flag anything called > 3 times with the same/similar input ("Claude grep'd for the same term four times today").

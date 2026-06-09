@@ -1,6 +1,6 @@
-<!-- Version: 0.2.0 -->
+<!-- Version: 0.3.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-04 CDT -->
+<!-- Revised: 2026-06-09 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -82,6 +82,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.3.0 (2026-06-09) — she gets looked after.** A team-of-subagents audit swept Maude's own house and turned up bugs the punch list didn't know about; v0.3.0 fixes them all, test-first, and adds **`/maude:teach <fact>`** — tell her something about yourself directly ("I work mountain time") and she records it under a `## Told by the user` section in her profile, kept distinct from what she *observed*. Headline fixes: the shared `care.json` was being clobbered every prompt (wiping tier-1 state, gate-clear tokens, cooldowns); the irreversible-command gate failed *open* without `jq` with no warning (now a once-per-session safety notice); the memory-dir slug was miscomputed for dotted paths; `/maude:sweep` always reported the house-map missing; and `test-verify` was non-hermetic. Plus retention pruning for the trace, a timezone-typo guard, best-effort redaction in pre-compact, and a tightened skill-trigger description. Suite: 162 → **269 cases, all green** (and the diff was put through two agent-review passes — an adversarial sweep and the specialized pr-review toolkit — whose confirmed findings are folded into this release). No new dependencies.
 
 **v0.2.0 (2026-06-04) — she grew up.** Three ways Maude matured in daily use, generalized for everyone: **proactive orientation** (she tells you where things stand / what's pending / what's in your hand without being asked — now a standing duty), a **living profile of you** (`identity.md` — how you work, your clock, what you keep returning to — finally wired into save/rest so she actually gets to know you, observed-only), and **optional dual-voice** (`/maude:dual-voice on` — Claude and Maude both present in replies; writes a consented block into a CLAUDE.md you choose; off by default). No new dependencies; the default out-of-the-box experience is unchanged.
 

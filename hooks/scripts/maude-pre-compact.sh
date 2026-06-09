@@ -8,7 +8,10 @@
 #       Lets the remember plugin's pipeline absorb the handoff.
 #   - JSONL event in <project>/.maude/plugin/trace/today-YYYY-MM-DD.jsonl
 #       Marks that pre-compact happened, references the snapshot path.
-# All content is redaction-filtered before write.
+# Buffer content is passed through maude_redact (best-effort masking of obvious
+# secret shapes — API keys, JWTs, PEM keys, URL basic-auth) before write. This is
+# BEST-EFFORT, not a guarantee of completeness; the snapshot dir is gitignored and
+# should be wiped at session-end as routine hygiene.
 # Never blocks. Idempotent within the same minute.
 
 set +e
@@ -38,11 +41,11 @@ if [ -n "$NOW_FILE" ]; then
   mkdir -p "$SNAPSHOTS_DIR" 2>/dev/null
   SNAPSHOT_PATH="$SNAPSHOTS_DIR/precompact-$STAMP.md"
 
-  # Snapshot content as-is. NOTE: this preserves whatever was in $NOW_FILE.
-  # Snapshots dir is gitignored (.maude/plugin/* is self-ignored). Wipe at
-  # session-end as routine hygiene if the snapshot may carry sensitive content.
+  # Snapshot the buffer through best-effort redaction (maude_redact masks obvious
+  # secret shapes). Best-effort, not a guarantee — the snapshots dir is gitignored
+  # (.maude/plugin/* is self-ignored); wipe at session-end as routine hygiene.
   printf '# Pre-compact snapshot — %s\n\nSource: %s\n\n---\n\n%s\n' \
-    "$STAMP" "$NOW_FILE" "$(head -200 "$NOW_FILE" 2>/dev/null)" \
+    "$STAMP" "$NOW_FILE" "$(head -200 "$NOW_FILE" 2>/dev/null | maude_redact)" \
     > "$SNAPSHOT_PATH" 2>/dev/null
   SOURCED="${SOURCED}snapshot "
 fi
@@ -57,7 +60,7 @@ if [ -d "$REMEMBER" ] && [ ! -f "$REMEMBER/tmp/save.lock" ] && [ -n "$NOW_FILE" 
   fi
 
   if [ "$WRITE_HANDOFF" -eq 1 ]; then
-    BUFFER_HEAD="$(head -20 "$NOW_FILE" 2>/dev/null | sed 's/^/  /')"
+    BUFFER_HEAD="$(head -20 "$NOW_FILE" 2>/dev/null | maude_redact | sed 's/^/  /')"
     {
       printf '# Handoff\n\n'
       printf '## State\n'

@@ -133,11 +133,20 @@ maude_is_watched() {
 # metadata strings (flag names, tool names, paths). Do NOT pass file content,
 # bash output, or anything else that could carry user content — that's a leak
 # vector. Trace is for event audit, not content capture.
+# Current trace file path. The filename date is UTC — the SAME clock as each
+# record's `ts` (date -u) — so a record always lands in the file matching its ts
+# day, and a session crossing local midnight doesn't split across two files.
+# Writers AND readers go through this single source so they can't disagree on
+# the name. (Previously each of ~6 sites rebuilt it with local `date`, which
+# split the trace at the UTC/local boundary.)
+maude_trace_file() {
+  printf '%s/trace/today-%s.jsonl' "$(maude_self_dir)" "$(date -u +%Y-%m-%d)"
+}
+
 maude_log_trace() {
-  local kind="$1" payload="$2" trace_dir trace ts
-  trace_dir="$(maude_self_dir)/trace"
-  mkdir -p "$trace_dir" 2>/dev/null
-  trace="$trace_dir/today-$(date +%Y-%m-%d).jsonl"
+  local kind="$1" payload="$2" trace ts
+  trace="$(maude_trace_file)"
+  mkdir -p "$(dirname "$trace")" 2>/dev/null
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   if command -v jq >/dev/null 2>&1; then
@@ -150,6 +159,18 @@ maude_log_trace() {
     printf '{"ts":"%s","kind":"%s","payload":"%s"}\n' \
       "$ts" "$kind" "$esc" >> "$trace"
   fi
+}
+
+# Best-effort redaction for content written to disk (the pre-compact snapshot and
+# the .remember/ handoff). Masks a few HIGH-signal secret shapes from stdin → stdout.
+# BEST-EFFORT, NOT a guarantee — it cannot catch every secret, so callers must
+# still treat the output as sensitive (the snapshot is gitignored + session-wiped).
+maude_redact() {
+  sed -E \
+    -e 's#(https?://)[^/:@[:space:]]+:[^/@[:space:]]+@#\1[redacted-creds]@#g' \
+    -e 's#(sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[abprs]-|AKIA|AIza)[A-Za-z0-9_-]{8,}#[redacted-secret]#g' \
+    -e 's#eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#[redacted-jwt]#g' \
+    -e '/-----BEGIN[A-Z ]*PRIVATE KEY-----/,/-----END[A-Z ]*PRIVATE KEY-----/c\[redacted-key]'
 }
 
 # Ensure her project closet exists, including the auto-gitignore.
@@ -168,6 +189,72 @@ maude_ensure_self_dir() {
 # Ensure her user-global home base exists.
 maude_ensure_user_dir() {
   mkdir -p "$(maude_user_dir)" 2>/dev/null
+}
+
+# Append a user-STATED fact to the cross-project profile (the testable core of
+# /maude:teach). Distinct from the observed-only writers (save/rest/check-on-me/
+# notice): those record what Maude inferred; this records what the user asserted,
+# kept under a dedicated "## Told by the user" section so told stays separate from
+# observed and the no-fabrication rule holds. Never touches the persona preamble
+# or existing observed blocks. Returns non-zero (no write) on an empty fact.
+# Usage: maude_identity_append "<fact>" ["<YYYY-MM-DD>"]
+maude_identity_append() {
+  local fact="$1" date_str entry id tmp
+  # Trim surrounding whitespace; reject empty OR whitespace-only (a space-only
+  # arg would otherwise record a dated entry with no content).
+  fact="$(printf '%s' "$fact" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  [ -n "$fact" ] || return 1
+  date_str="${2:-$(date +%Y-%m-%d)}"
+  maude_ensure_user_dir
+  id="$(maude_user_dir)/identity.md"
+  entry="- ${date_str}: ${fact}"
+
+  # Fresh profile: write a minimal skeleton (a stranger's file is empty/absent).
+  if [ ! -f "$id" ]; then
+    {
+      printf "# Who the user is (Maude's living profile)\n\n"
+      printf 'Shaped over time, observed-only and never fabricated. Facts the user states\n'
+      printf 'directly are recorded below, kept distinct from what Maude infers.\n\n'
+      printf '## Told by the user\n\n'
+      printf '%s\n' "$entry"
+    } > "$id" 2>/dev/null
+    return $?
+  fi
+
+  # Section missing: append it (with the entry) at end of file. Anchor the test
+  # to EXACTLY match the awk insertion pattern below — a prefix-only grep could
+  # match a variant heading the awk then never inserts into (silent drop).
+  if ! grep -qE '^## Told by the user[[:space:]]*$' "$id" 2>/dev/null; then
+    printf '\n## Told by the user\n\n%s\n' "$entry" >> "$id" 2>/dev/null
+    return $?
+  fi
+
+  # Section present: insert the entry right after its header (robust to whatever
+  # sections follow — never appends blindly at EOF under the wrong heading).
+  tmp="$(mktemp)" || return 1
+  # Pass the entry via the ENVIRONMENT, not `awk -v`: awk applies C-style escape
+  # processing to -v/command-line assignments (a fact containing "C:\notes" or
+  # "\t" would be mangled into a newline/tab), but does NOT escape-process
+  # ENVIRON[] values — so the fact round-trips literally.
+  entry="$entry" awk 'BEGIN { e = ENVIRON["entry"] }
+    { print }
+    /^## Told by the user[[:space:]]*$/ && !ins { print e; ins=1 }
+  ' "$id" > "$tmp" 2>/dev/null && mv "$tmp" "$id" || { rm -f "$tmp"; return 1; }
+}
+
+# Retention window (days) for the append-only artifacts in her closet: trace
+# JSONL and pre-compact snapshots. Default 30 — well past the 7-day window that
+# /maude:weekly and recent.md read, so a sweep never strands a recent read.
+# Override via the MAUDE_RETENTION_DAYS env var.
+maude_retention_sweep() {
+  local self days
+  self="$(maude_self_dir)"
+  days="${MAUDE_RETENTION_DAYS:-30}"
+  # mtime-based, fail-silent. Only removes files strictly older than the window.
+  [ -d "$self/trace" ] && \
+    find "$self/trace" -maxdepth 1 -type f -name 'today-*.jsonl' -mtime +"$days" -delete 2>/dev/null
+  [ -d "$self/snapshots" ] && \
+    find "$self/snapshots" -maxdepth 1 -type f -name 'precompact-*.md' -mtime +"$days" -delete 2>/dev/null
 }
 
 # ─── Tier model ───────────────────────────────────────────────────────────
@@ -246,6 +333,14 @@ maude_user_tz() {
   case "$val" in
     ""|"<none>"|none|unknown|unset) return 0 ;;
   esac
+  # Reject a value ONLY when it is provably bad: the zoneinfo DB exists but has
+  # no such zone (a typo like America/Chigago, which `date` would silently turn
+  # into UTC — a confident wrong greeting). On a box without the DB we can't
+  # prove anything, so pass the value through rather than regress a valid zone
+  # to time-neutral. `system` is a sentinel, never a zone file — never checked.
+  if [ "$val" != "system" ] && [ -d /usr/share/zoneinfo ] && [ ! -f "/usr/share/zoneinfo/$val" ]; then
+    return 0
+  fi
   printf '%s' "$val"
 }
 

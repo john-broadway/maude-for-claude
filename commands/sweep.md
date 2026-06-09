@@ -47,10 +47,12 @@ Walk the target and check, using only Read/Grep/Glob/Bash:
 
 6. **House-map presence** — does Maude already have a map for this project?
    ```bash
-   SLUG="$(pwd | sed 's|/|-|g')"
-   ls -la ~/.claude/maude/$SLUG/house-map.md 2>/dev/null
+   PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+   ls -la "$PROJ/.maude/plugin/house-map.md" 2>/dev/null
    ```
-   If no map: recommend running `/maude:found` first.
+   The map lives in her per-project closet (`<project>/.maude/plugin/`), like every
+   other command resolves it — never under `~/.claude/maude/` (that's her cross-project
+   home, not the per-project map). If no map: recommend running `/maude:found` first.
 
 7. **OPTIONAL upgrade**: if the house-map has registered a python config-audit API for this project, call it via the recipe stored there. Skip silently if no such recipe is registered. The plugin doesn't ship a hardcoded API name; whatever the user has imported is what she uses.
 

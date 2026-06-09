@@ -1,11 +1,114 @@
-<!-- Version: 0.2.0 -->
+<!-- Version: 0.3.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-04 CDT -->
+<!-- Revised: 2026-06-09 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.3.0 — she gets looked after: an agent-audit hardening pass + `/maude:teach` (2026-06-09)
+
+A comprehensive read-only audit (a team of subagents) swept her own house and found
+more than the punch list knew about — including bugs no one had logged. v0.3.0 fixes
+all of them, test-first, and adds the one path her profile was missing: a way for you
+to *tell* her about yourself instead of waiting for her to infer it.
+
+### New
+
+- **`/maude:teach <fact>`** — the user-initiated counterpart to her observed-only
+  profiling. You state a fact ("I work mountain time", "I prefer terse answers") and
+  she records it in `~/.claude/maude/identity.md` under a dedicated `## Told by the
+  user` section, dated — kept **distinct from what she observed**, so a self-reported
+  assertion is never laundered into the observed-only stream. The durable write goes
+  through a tested helper (`maude_identity_append` in `_maude-common.sh`): it creates
+  the file + section if missing, never touches the persona preamble or observed blocks,
+  appends (never overwrites), and rejects an empty fact. The command reads first to
+  dedupe and to surface a conflict rather than overwrite. `identity.md` is cross-project,
+  so a fact taught here shapes her in every workspace — by design.
+
+### Fixed — high-severity (found by the audit, verified in source, test-first)
+
+- **`care.json` was clobbered every prompt.** `maude-care.sh` rewrote the whole shared
+  state file from its own 5 fields on every `UserPromptSubmit`, silently wiping
+  `tier1_*`, pending `gate_cleared` tokens, and the once-per-day `drift_warned` /
+  `claudemd_warned` cooldowns. Now an atomic `jq`-merge (mirroring `probe-tier1.sh`)
+  preserves foreign keys — which also closes the non-atomic truncation race.
+- **The irreversible-command gate failed OPEN, silently.** Without `jq`, `maude-gate.sh`
+  parsed no command and exited 0 — the entire hard-block list disabled with no signal.
+  The fail-open is kept (a jq-free parse can't be trusted as a safety gate, and would
+  reintroduce the v0.1.6 self-block), but `SessionStart` now emits a **once-per-session
+  safety notice** — "the gate is OFF this session" — and the contract is locked by test.
+- **SLUG was computed two ways.** `check-on-me` / `notice` / `weekly` built the
+  Anthropic-memory slug from `pwd` (slashes only), so for any path with a dot/underscore
+  (e.g. `john-broadway.github.io`) they pointed at a non-existent dir and silently read
+  nothing. Canonicalized to match `_maude-common.sh`.
+- **`/maude:sweep` always reported the house-map "missing"** — it looked under
+  `~/.claude/maude/$SLUG/` instead of `<project>/.maude/plugin/`. Fixed to match every
+  other command.
+- **`test-verify.sh` was non-hermetic** — it asserted 0 findings against the live repo,
+  so it passed on a clean CI checkout but failed in local dogfooding. Now runs against a
+  committed, time-stable fixture (`tests/fixtures/clean-project/`); the watch-list parser
+  was also hardened to ignore trailing inline descriptions.
+- **The jq-absent degradation path had zero test coverage** (and `lib.sh` helpers masked
+  it). New `tests/test-nojq.sh` exercises every hook without `jq`; `tests/run.sh` warns
+  loudly when a run is jq-less so it can't be mistaken for green.
+
+### Fixed — documented opens + correctness
+
+- **Trace & snapshot retention.** `today-*.jsonl` and pre-compact snapshots grew forever;
+  `SessionStart` now prunes past a 30-day floor (well past the 7-day window `weekly` and
+  `recent.md` read).
+- **Mistyped timezone no longer falls back to UTC.** `maude_user_tz` rejects a zone only
+  when the zoneinfo DB proves it bad, so a typo goes time-neutral instead of asserting a
+  wrong time-of-day — while a valid zone on a zoneinfo-less box still passes.
+- **Trace clock unified.** Filename and `ts` now derive from one UTC helper
+  (`maude_trace_file`), removing the local/UTC midnight split across the ~6 sites that
+  rebuilt the path.
+- **`pre-compact` no longer over-claims.** It dumped the live buffer verbatim while the
+  header said "redaction-filtered." Now it runs the buffer through a best-effort
+  `maude_redact` (API keys, JWTs, PEM keys, URL basic-auth) and the header states exactly
+  that — best-effort, not a guarantee; the snapshot stays gitignored + session-wiped.
+- **`check-setup` JSON check** no longer reports valid settings as INVALID when `python3`
+  is absent (guards the dependency, falls back to `jq`).
+- **`found` template path** is anchored with `$CLAUDE_PLUGIN_ROOT`, and watch-list entries
+  are emitted as bare paths so `verify` can reconcile them.
+
+### Docs / skill / agent
+
+- **Skill triggering description tightened** to prompt-shaped triggers only; the hook-only
+  behavioral conditions (drift, the gate, fatigue) it can't detect from a prompt are
+  removed, with a clarifying note that hooks handle them. Proactive orientation is now an
+  enumerated mechanic in `SKILL.md`, and `/maude:verify` and `/maude:teach` are listed in
+  Workflows.
+- **`agents/maude.md`** no longer claims "only six tools" while its frontmatter grants
+  twelve; adds a dual-voice line.
+- Drift swept: `ci.yml` version/date, the `162`→non-numeric test-count phrasing,
+  `SECURITY.md` supported version, `.claude/CLAUDE.md` / `CONTRIBUTING.md` command count
+  (16→17). The suite went from 162 to **269 cases across 18 files**, all green.
+
+### Reviewed
+
+A second agent team adversarially reviewed the whole diff (correctness, redaction, the
+teach helper, test quality, doc-accuracy + a leak-audit, consistency) and verified each
+finding. Six were confirmed and fixed in this same release: the `teach` helper mangled
+backslash escapes via `awk -v` (now passed through `ENVIRON`) and accepted whitespace-only
+facts (now trimmed + rejected); `maude_redact` masked only the PEM *marker* while the key
+body landed on disk (now range-masks the whole block); the `verify` watch-list parser test
+was hollow (now a real RED/GREEN guard via a slash path); the trace-clock test was
+relabelled as the characterization check it is; and this test-count figure was corrected.
+Two findings were verified as non-issues and dismissed.
+
+A third pass with the specialized pr-review toolkit (code / tests / comments / silent-failures)
+then caught items the first pass missed, also fixed here: the new `care.json` jq-merge had
+dropped the old self-heal, so a corrupt-non-empty `care.json` would freeze plugin state
+silently — now it reseeds on invalid OR empty; the `care.sh` comment misattributed the
+`gate_cleared` writer (it's the conscience/clear-gate helper, not the gate, which only
+reads+consumes it); `/maude:teach` now gates its confirm-back on the helper's exit status
+(no false "saved" on a failed write); and `maude_redact`'s nine previously-untested
+secret-shape branches (JWT + the API-key prefixes) gained direct unit coverage.
 
 ---
 

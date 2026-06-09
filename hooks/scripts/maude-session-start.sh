@@ -15,6 +15,20 @@ USER_DIR="$(maude_user_dir)"
 REMEMBER="$PROJ/.remember"
 MAP="$(maude_map_path)"
 
+# ── Once-per-session housekeeping ────────────────────────────────────────────
+# SessionStart is the once-per-start hook (it fires at each start/resume/clear/
+# compact, not per turn), so it's the natural chokepoint for:
+#   1. Pruning append-only artifacts (trace JSONL, pre-compact snapshots) past
+#      the retention window — they grew unbounded before.
+#   2. A single jq-missing notice. Without jq the irreversible-command gate is
+#      fail-OPEN (silently disabled), and drift-watch / tier-1 / watch-list
+#      nudges are off too. This is a SAFETY notice, not cosmetic — so it must
+#      fire even when there's no memory to brief (i.e. before the early-exit).
+maude_retention_sweep
+if ! command -v jq >/dev/null 2>&1; then
+  printf 'Maude: jq not found — the irreversible-command gate is OFF this session (fail-open), and drift-watch, tier-1, and watch-list nudges are disabled. Install jq to restore them.\n' >&2
+fi
+
 # Collect signals across every available tier — degradative, each independent.
 NOW_LINE=""
 REMEMBER_HANDOFF=""

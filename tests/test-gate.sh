@@ -183,6 +183,17 @@ run_gate "git push origin main --force"
 # stderr should mention force-push, not generic git-push key
 assert_contains "$ERR" "force-push" "force-push specificity"
 
+# ── jq-absent contract: the gate is fail-OPEN by design ──────────────
+# A jq-free parse of the tool-input JSON is too fragile to trust as a SAFETY gate
+# (it would reintroduce the v0.1.6 quote-stripping self-block risk), so with jq
+# gone the gate passes everything. The user is told via the SessionStart
+# jq-missing notice. This locks the contract so a future change can't silently
+# flip it to fail-closed (block-everything) or make it crash.
+test_start "gate fails OPEN (exit 0) on a would-be-blocked command when jq is absent"
+NOJQ="$(make_nojq_bin)"
+make_bash_tool_input "git push origin main" | PATH="$NOJQ" bash "$GATE" >/dev/null 2>&1
+assert_exit "$?" "0" "no-jq gate exit"
+
 print_summary
 teardown_test_env
 exit $FAILED

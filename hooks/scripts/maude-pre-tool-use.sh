@@ -71,7 +71,7 @@ if command -v jq >/dev/null 2>&1; then
     USER_CLAUDEMD="$HOME/.claude/CLAUDE.md"
     NESTED_CLAUDEMD="$PROJ_DIR/.claude/CLAUDE.md"
     if [ -f "$PROJ_CLAUDEMD" ] || [ -f "$USER_CLAUDEMD" ] || [ -f "$NESTED_CLAUDEMD" ]; then
-      TRACE="$(maude_self_dir)/trace/today-$(date +%Y-%m-%d).jsonl"
+      TRACE="$(maude_trace_file)"
       READ_HIT=""
       if [ -f "$TRACE" ]; then
         READ_HIT="$(jq -r 'select(.tool == "Read" and (.target // "" | endswith("CLAUDE.md"))) | .target' "$TRACE" 2>/dev/null | head -1)"

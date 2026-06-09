@@ -1,6 +1,6 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 0.2.0
+> **Version:** 0.3.0
 > **License:** Apache 2.0, Copyright John Broadway
 
 ## What Maude Is
@@ -21,10 +21,10 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 
 ```
 .claude-plugin/
-├── plugin.json (v0.2.0)
+├── plugin.json (v0.3.0)
 └── marketplace.json (single-plugin local marketplace)
 
-commands/    — 16 slash commands (markdown)
+commands/    — 17 slash commands (markdown)
 agents/      — partner subagent (markdown)
 skills/      — broad-trigger skill (markdown)
 hooks/       — 7 lifecycle events + scripts

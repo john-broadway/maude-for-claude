@@ -1,5 +1,5 @@
-<!-- Version: 0.2.0 -->
-<!-- Revised: 2026-06-04 CDT — version-header sweep -->
+<!-- Version: 0.3.0 -->
+<!-- Revised: 2026-06-09 CDT — version-header sweep -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Security Policy
@@ -25,7 +25,7 @@ We will acknowledge receipt within 48 hours and provide a timeline for resolutio
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes       |
+| 0.3.x   | Yes       |
 
 ## In Scope
 
