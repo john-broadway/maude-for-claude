@@ -1,4 +1,4 @@
-<!-- Version: 0.3.2 -->
+<!-- Version: 0.3.3 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-11 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,32 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.3.3 — full cold-audit pass (2026-06-11)
+
+Maude got a full fresh-eyes multi-team audit — 69 cold agents, no inherited context:
+three outsider personas, 40 doc claims source-verified, a full-history leak sweep, every finding
+adversarially refuted. All three personas judged it ready-to-publish and would-use, with no hard
+blockers; 27/40 claims true, 12 mostly-true, 1 false. This closes the real findings.
+
+### Fixed
+- **Gate bypass via command substitution.** A gated command wrapped in backticks
+  (`` out=`git push` ``) slipped the hard gate — the backtick wasn't in the leading-separator class,
+  and a trailing backtick after `rm -rf /` also defeated the end anchor. Both separator classes now
+  include the backtick / closing paren, closing the bypass. Fail-closed bias documented (a commit
+  message literally containing a backtick-wrapped gated command may now false-block — recoverable via
+  `/maude:conscience`). +3 tests; all prior false-positive guards still pass.
+- **Doc accuracy: the memory dir is not strictly read-only.** The README said Maude "reads — never
+  writes" `~/.claude/projects/<slug>/memory/`. True for the **hooks**, but `/maude:save` and
+  `/maude:rest` do write the session digest there. Reworded to scope the read-only invariant to the
+  hooks and state plainly that the save/rest commands write the fan-out.
+- **Workspace-structure bleed removed.** A v0.3.1 edit had referenced another of the author's
+  projects by name in `.claude/CLAUDE.md` and used cross-project phrasing in the README/CHANGELOG
+  — internal-voice that leaks workspace structure to a public reader. Made self-contained.
+- **`.gitignore` now covers `.remember/` and `.scratch/`** — workspace runtime dirs that were
+  untracked but unignored, so a stray `git add -A` couldn't accidentally commit them.
 
 ---
 
@@ -39,7 +65,7 @@ This release closes them, test-first.
 
 ## v0.3.1 — held to her own bar: a post-release review pass (2026-06-10)
 
-v0.3.0 shipped without the pre-release multi-agent review its sibling projects get — so it got
+v0.3.0 shipped without a pre-release multi-agent review — so it got
 one after the fact (silent-failure / code / test lenses, each mutation-tested). The review found
 real issues; this release fixes them, test-first.
 

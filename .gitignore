@@ -21,3 +21,7 @@ credentials.yaml
 # Local Claude Code settings + co-installed plugin working dirs
 .claude/settings.local.json
 .superpowers/
+
+# Workspace runtime dirs — never part of the plugin (guard against an accidental `git add -A`)
+.remember/
+.scratch/

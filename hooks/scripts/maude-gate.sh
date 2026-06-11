@@ -35,9 +35,17 @@ fi
 # CMD_START   = start of input or after a shell separator (;, &, |, ()
 # FLAG_BEFORE = preceded by start-of-input or whitespace
 # FLAG_AFTER  = followed by whitespace or end-of-input
-CMD_START='(^|[;&|(])[[:space:]]*'
+# Separators a gated command can sit right after: line start, shell separators
+# (;&|), an opening paren — incl. $( — and a backtick (command substitution). The
+# backtick closes the `result=`git push`` bypass. Residual: a commit message that
+# literally contains a backtick-wrapped gated command (e.g. -m "...`git push`...")
+# can false-block after quote-stripping — fail-CLOSED is the right bias for an
+# irreversible-command gate, and /maude:conscience clears it one-shot.
+CMD_START='(^|[;&|(`])[[:space:]]*'
 FLAG_BEFORE='(^|[[:space:]])'
-FLAG_AFTER='([[:space:]]|$)'
+# Followed by whitespace, end-of-input, or a CLOSING separator (so `rm -rf /` still
+# matches when wrapped: `…/` then a backtick / ) / ; etc.). Mirrors CMD_START.
+FLAG_AFTER='([[:space:]]|[;&|)`]|$)'
 # GIT = "git" + any global options (-C <dir>, -c <cfg>, --git-dir=<dir>) + the
 # whitespace before the subcommand. Lets `git -C /repo push` / `git  push` (extra
 # whitespace) match the same as `git push` — closing the v0.3.0 interior-space and

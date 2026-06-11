@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "maude",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "description": "Claude's partner inside Claude Code. He writes the code; she notices. She walks your workspace each session, whispers when Claude drifts, gates irreversible actions before they fire, and verifies project state before he says ready. No daemon, no database, no backend — she's in your plugin folder, that's all of her. Beta.",
       "author": {
         "name": "John Broadway"
