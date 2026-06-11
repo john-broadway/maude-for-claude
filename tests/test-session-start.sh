@@ -104,6 +104,16 @@ assert_contains "$NOTICE" "jq" "jq-missing notice present"
 test_start "jq-missing notice names the gate being off (safety wording)"
 assert_contains "$NOTICE" "gate" "notice flags the gate"
 
+# Pins the ORDERING the script comment calls load-bearing: the safety notice must
+# fire BEFORE the early-exit, so it still shows on a PRISTINE project with no memory
+# or house-map to brief. (The test above runs after earlier cases seeded memory, so
+# it can't catch a regression that moved the notice below the brief's early-exit.)
+test_start "jq-missing notice fires even on a pristine project (nothing to brief)"
+PRISTINE="$(mktemp -d)"
+NOTICE_BARE="$(printf '{}' | CLAUDE_PROJECT_DIR="$PRISTINE" HOME="$PRISTINE/home" PATH="$NOJQ" bash "$START" 2>&1 >/dev/null)"
+assert_contains "$NOTICE_BARE" "gate" "notice fires with no memory/house-map present"
+rm -rf "$PRISTINE"
+
 test_start "session-start says nothing about jq when jq is present"
 NOISE="$(printf '{}' | bash "$START" 2>&1 >/dev/null)"
 assert_not_contains "$NOISE" "jq not found" "silent when jq present"

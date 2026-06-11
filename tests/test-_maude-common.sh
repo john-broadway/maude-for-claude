@@ -323,6 +323,33 @@ assert_not_contains "$(redact_one "tok $JWT end")" "$JWT" "raw JWT gone"
 test_start "redact leaves ordinary prose untouched"
 assert_eq "$(redact_one "just a normal sentence about keys and tokens")" "just a normal sentence about keys and tokens" "no over-redaction"
 
+# ── Slug consistency: the memory-dir slug is INLINED into ~13 command .md files
+# rather than calling maude_slug(). The root cause of the v0.3.0 "computed two ways"
+# bug (dotted paths reading nothing) is that duplication — the fix synced the copies
+# but left them as copies. This guard fails if any command's inline transform drifts
+# from the canonical one in _maude-common.sh, so a future edit can't desync silently.
+test_start "the canonical slug transform is found in _maude-common.sh"
+CANON="$(sed -n "s/.*| sed '\([^']*\)'.*/\1/p" "$HOOKS_DIR/_maude-common.sh" | grep 'a-zA-Z0-9' | head -1)"
+[ -n "$CANON" ]
+assert_exit "$?" "0" "canonical transform present"
+
+bad=""
+for f in "$MAUDE_ROOT"/commands/*.md; do
+  while IFS= read -r line; do
+    case "$line" in
+      *SLUG=*sed*)
+        expr="$(printf '%s' "$line" | sed -n "s/.*sed '\([^']*\)'.*/\1/p")"
+        if [ -n "$expr" ] && [ "$expr" != "$CANON" ]; then
+          bad="$bad $(basename "$f")[$expr]"
+        fi
+        ;;
+    esac
+  done < "$f"
+done
+test_start "no command inlines a non-canonical slug transform"
+[ -z "$bad" ]
+assert_exit "$?" "0" "all command slugs canonical${bad:+ — DRIFT:$bad}"
+
 print_summary
 teardown_test_env
 exit $FAILED

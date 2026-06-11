@@ -50,15 +50,24 @@ test_start "session-start still surfaces the jq-missing notice without jq"
 NOTICE="$(printf '{}' | PATH="$NOJQ" bash "$HOOKS_DIR/maude-session-start.sh" 2>&1 >/dev/null)"
 assert_contains "$NOTICE" "jq" "notice present under no-jq"
 
-# The no-jq care fallback writes valid content (its own 5 fields) — a malformed
-# printf in that branch would otherwise pass unnoticed (exit 0 only).
-test_start "care no-jq fallback writes its own fields as parseable JSON"
+# v0.3.2: without jq, care is a NO-OP — it must not touch care.json. care can't
+# read/merge its own fields without a JSON parser anyway, and a scratch rewrite
+# would clobber the foreign keys other hooks keep in the shared file every prompt.
+test_start "care no-jq run exits 0"
 printf '{}' | PATH="$NOJQ" bash "$HOOKS_DIR/maude-care.sh" >/dev/null 2>&1
-CARE_OUT="$(cat "$(care_path)" 2>/dev/null)"
-assert_contains "$CARE_OUT" '"last_date"' "last_date key written"
-test_start "care no-jq fallback output is valid JSON"
-jq -e . "$(care_path)" >/dev/null 2>&1   # parent shell HAS jq; validate the bytes the no-jq branch wrote
-assert_exit "$?" "0" "no-jq care.json parses"
+assert_exit "$?" "0" "care exits 0 without jq"
+
+test_start "care without jq does NOT create care.json from scratch"
+rm -f "$(care_path)"   # clean slate (an earlier hook in this file may have created it)
+printf '{}' | PATH="$NOJQ" bash "$HOOKS_DIR/maude-care.sh" >/dev/null 2>&1
+[ ! -f "$(care_path)" ]
+assert_exit "$?" "0" "no care.json created under no-jq"
+
+test_start "care without jq leaves an existing care.json (with foreign keys) untouched"
+printf '{"tier1_up":true,"gate_cleared":{"git-push":{"until":9999999999}}}\n' > "$(care_path)"
+before="$(cat "$(care_path)")"
+printf '{}' | PATH="$NOJQ" bash "$HOOKS_DIR/maude-care.sh" >/dev/null 2>&1
+assert_eq "$(cat "$(care_path)")" "$before" "care.json byte-identical after no-jq run"
 
 print_summary
 teardown_test_env

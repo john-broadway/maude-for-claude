@@ -1,4 +1,4 @@
-<!-- Version: 0.3.1 -->
+<!-- Version: 0.3.2 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-09 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -82,6 +82,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.3.2 (2026-06-11) — closing the review's last opens.** The v0.3.1 review flagged a MEDIUM and three coverage gaps it didn't fix; this closes them, test-first. Headline: without `jq`, `care.sh` was rewriting the shared `care.json` from its own fields every prompt — silently wiping the state other hooks keep there (tier-1, gate-clear tokens, cooldowns). Since care can't read or merge without a JSON parser anyway, the no-jq path is now a **no-op** — inert without `jq`, but no longer destructive. Plus three test-only hardenings: the `drift_warned` merge test now seeds the *real* nested shape (it was asserting a value the code never writes), a guard fails if any command's inlined memory-slug drifts from the canonical one (the root cause of the v0.3.0 "computed two ways" bug), and the no-jq safety notice is now pinned on a pristine project so a reorder below the early-exit can't slip through. No new dependencies.
 
 **v0.3.1 (2026-06-10) — held to her own bar.** v0.3.0 shipped without the pre-release multi-agent review its sibling projects get, so it got one *after* the fact — and it found real bugs. Fixed, test-first: **`/maude:teach`** mangled the profile on the 2nd-and-later fact (entries landed newest-first and a stray blank line split the told list in two — now a clean, contiguous, oldest-first append, with multi-line facts collapsed so they can't inject a duplicate header); and the **hard-block gate** was slipped by ordinary command forms — `git  push` (extra spaces), `git -C <dir> push`, `rm  -rf /` — now matched via whitespace-tolerant patterns that also understand `git` global options and reversed `rm` flags, with the soft `bash-watch` reminder brought to parity. Claude is now credited as **co-author** (`plugin.json` contributors). No new dependencies.
 

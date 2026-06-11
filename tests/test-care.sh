@@ -69,7 +69,7 @@ seed_full_care() {
   "tier1_up": true,
   "tier1_probed": "127.0.0.1:6379=up ",
   "gate_cleared": {"git-push": {"until": 9999999999}},
-  "drift_warned": "$(date +%Y-%m-%d)",
+  "drift_warned": {"grep": "$(date +%Y-%m-%d)", "read_targets": {"/x/CLAUDE.md": "$(date +%Y-%m-%d)"}},
   "claudemd_warned": "$(date +%Y-%m-%d)"
 }
 EOF
@@ -86,8 +86,11 @@ assert_eq "$(read_care '.tier1_probed')" "127.0.0.1:6379=up " "tier1_probed surv
 test_start "care preserves a pending gate_cleared token across a prompt"
 assert_eq "$(read_care '.gate_cleared["git-push"].until')" "9999999999" "gate_cleared survived"
 
-test_start "care preserves drift_warned cooldown across a prompt"
-assert_eq "$(read_care '.drift_warned')" "$(date +%Y-%m-%d)" "drift_warned survived"
+test_start "care preserves the NESTED drift_warned cooldown across a prompt"
+# drift-watch writes drift_warned as an OBJECT (.grep + .read_targets[path]), not a
+# flat string — seed + assert the real shape so this guards what the code writes.
+assert_eq "$(read_care '.drift_warned.grep')" "$(date +%Y-%m-%d)" "drift_warned.grep survived"
+assert_eq "$(read_care '.drift_warned.read_targets["/x/CLAUDE.md"]')" "$(date +%Y-%m-%d)" "drift_warned.read_targets survived"
 
 test_start "care preserves claudemd_warned cooldown across a prompt"
 assert_eq "$(read_care '.claudemd_warned')" "$(date +%Y-%m-%d)" "claudemd_warned survived"
@@ -109,6 +112,23 @@ assert_eq "$(read_care '.prompts_this_session')" "1" "own field written after re
 test_start "recovered care.json is valid JSON"
 jq -e . "$(care_path)" >/dev/null 2>&1
 assert_exit "$?" "0" "valid JSON after recovery"
+
+# ── No-jq: care must LEAVE care.json untouched (not clobber foreign keys) ──
+# Without jq, care can't read/merge its own fields anyway; a scratch rewrite would
+# wipe tier1_*, gate_cleared, drift_warned, claudemd_warned every prompt. v0.3.2:
+# the no-jq branch is now a no-op, so the shared file survives intact.
+test_start "care does NOT clobber foreign keys when jq is absent"
+seed_full_care
+NOJQ="$(make_nojq_bin)"
+before="$(cat "$(care_path)")"
+printf '{"prompt":"hi"}' | PATH="$NOJQ" bash "$CARE" >/dev/null 2>&1
+after="$(cat "$(care_path)")"
+assert_eq "$after" "$before" "care.json untouched without jq"
+
+test_start "the foreign keys are still present after a no-jq care run"
+assert_eq "$(read_care '.tier1_up')" "true" "tier1_up intact after no-jq run"
+assert_eq "$(read_care '.gate_cleared["git-push"].until')" "9999999999" "gate_cleared intact after no-jq run"
+assert_eq "$(read_care '.drift_warned.grep')" "$(date +%Y-%m-%d)" "nested drift_warned intact after no-jq run"
 
 print_summary
 teardown_test_env

@@ -1,11 +1,39 @@
-<!-- Version: 0.3.1 -->
+<!-- Version: 0.3.2 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-10 CDT -->
+<!-- Revised: 2026-06-11 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.3.2 — closing the review's last opens (2026-06-11)
+
+The v0.3.1 review surfaced one MEDIUM and three coverage gaps beyond the two bugs it fixed.
+This release closes them, test-first.
+
+### Fixed
+- **Without `jq`, `care.sh` clobbered foreign state every prompt.** The no-jq fallback rewrote
+  `care.json` from care's own 5 fields, silently wiping the keys other hooks keep there
+  (`tier1_*`, `gate_cleared`, `drift_warned`, `claudemd_warned`) on every `UserPromptSubmit`. Since
+  care can neither read nor merge its fields without a JSON parser anyway (its read path is jq-gated,
+  so the long-session nudge can't fire), the no-jq branch is now a **no-op** — care is inert without
+  `jq` (the SessionStart notice already says the hooks are degraded) but no longer destroys shared
+  state. +3 no-clobber tests.
+
+### Tests (closing review-flagged coverage gaps)
+- **`drift_warned` was seeded with the wrong shape.** `test-care.sh` seeded a flat string, but
+  `drift-watch` writes a nested object (`.grep` + `.read_targets[path]`) — the merge test passed
+  against a value the code never writes. Reseeded with the real shape; asserts a nested path survives.
+- **Slug-drift guard.** The memory-dir slug is inlined into ~13 command files rather than calling
+  `maude_slug` — the root cause of the v0.3.0 "computed two ways" bug. A new guard fails if any
+  command's inline transform drifts from the canonical one in `_maude-common.sh`.
+- **No-jq notice ordering, pinned on a pristine project.** The existing no-jq notice test ran after
+  earlier cases had seeded memory, so it couldn't catch a regression that moved the safety notice
+  below the brief's early-exit. A new case runs against a pristine project (nothing to brief) and
+  asserts the notice still fires.
 
 ---
 
