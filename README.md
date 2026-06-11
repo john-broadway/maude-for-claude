@@ -1,4 +1,4 @@
-<!-- Version: 0.3.0 -->
+<!-- Version: 0.3.1 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-09 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -82,6 +82,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.3.1 (2026-06-10) — held to her own bar.** v0.3.0 shipped without the pre-release multi-agent review its sibling projects get, so it got one *after* the fact — and it found real bugs. Fixed, test-first: **`/maude:teach`** mangled the profile on the 2nd-and-later fact (entries landed newest-first and a stray blank line split the told list in two — now a clean, contiguous, oldest-first append, with multi-line facts collapsed so they can't inject a duplicate header); and the **hard-block gate** was slipped by ordinary command forms — `git  push` (extra spaces), `git -C <dir> push`, `rm  -rf /` — now matched via whitespace-tolerant patterns that also understand `git` global options and reversed `rm` flags, with the soft `bash-watch` reminder brought to parity. Claude is now credited as **co-author** (`plugin.json` contributors). No new dependencies.
 
 **v0.3.0 (2026-06-09) — she gets looked after.** A team-of-subagents audit swept Maude's own house and turned up bugs the punch list didn't know about; v0.3.0 fixes them all, test-first, and adds **`/maude:teach <fact>`** — tell her something about yourself directly ("I work mountain time") and she records it under a `## Told by the user` section in her profile, kept distinct from what she *observed*. Headline fixes: the shared `care.json` was being clobbered every prompt (wiping tier-1 state, gate-clear tokens, cooldowns); the irreversible-command gate failed *open* without `jq` with no warning (now a once-per-session safety notice); the memory-dir slug was miscomputed for dotted paths; `/maude:sweep` always reported the house-map missing; and `test-verify` was non-hermetic. Plus retention pruning for the trace, a timezone-typo guard, best-effort redaction in pre-compact, and a tightened skill-trigger description. Suite: 162 → **269 cases, all green** (and the diff was put through two agent-review passes — an adversarial sweep and the specialized pr-review toolkit — whose confirmed findings are folded into this release). No new dependencies.
 

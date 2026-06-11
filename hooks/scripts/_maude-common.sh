@@ -200,9 +200,10 @@ maude_ensure_user_dir() {
 # Usage: maude_identity_append "<fact>" ["<YYYY-MM-DD>"]
 maude_identity_append() {
   local fact="$1" date_str entry id tmp
-  # Trim surrounding whitespace; reject empty OR whitespace-only (a space-only
-  # arg would otherwise record a dated entry with no content).
-  fact="$(printf '%s' "$fact" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+  # Collapse newlines/whitespace runs to single spaces (one fact = one line, so a
+  # multi-line fact can't inject a second '## Told by the user' header or split the
+  # list), then trim; reject empty OR whitespace-only.
+  fact="$(printf '%s' "$fact" | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g; s/^[[:space:]]+//; s/[[:space:]]+$//')"
   [ -n "$fact" ] || return 1
   date_str="${2:-$(date +%Y-%m-%d)}"
   maude_ensure_user_dir
@@ -229,16 +230,28 @@ maude_identity_append() {
     return $?
   fi
 
-  # Section present: insert the entry right after its header (robust to whatever
-  # sections follow — never appends blindly at EOF under the wrong heading).
-  tmp="$(mktemp)" || return 1
+  # Section present: APPEND the entry at the END of the Told section (after the
+  # last existing bullet, before the next '## ' header or EOF) — one contiguous,
+  # oldest-first list, never prepended after the header (which orphaned the
+  # header's spacer blank and split the list). Robust to whatever sections follow.
+  # mktemp in the destination dir so the final mv is a true atomic rename.
+  tmp="$(mktemp "$(maude_user_dir)/.identity.XXXXXX")" || return 1
   # Pass the entry via the ENVIRONMENT, not `awk -v`: awk applies C-style escape
   # processing to -v/command-line assignments (a fact containing "C:\notes" or
   # "\t" would be mangled into a newline/tab), but does NOT escape-process
   # ENVIRON[] values — so the fact round-trips literally.
-  entry="$entry" awk 'BEGIN { e = ENVIRON["entry"] }
-    { print }
-    /^## Told by the user[[:space:]]*$/ && !ins { print e; ins=1 }
+  entry="$entry" awk '
+    BEGIN { e = ENVIRON["entry"] }
+    { lines[NR] = $0 }
+    /^## Told by the user[[:space:]]*$/ { start = NR }
+    END {
+      endline = NR
+      for (i = start + 1; i <= NR; i++) if (lines[i] ~ /^## /) { endline = i - 1; break }
+      ins_after = start
+      if (start + 1 <= endline && lines[start + 1] ~ /^[[:space:]]*$/) ins_after = start + 1
+      for (i = start + 1; i <= endline; i++) if (lines[i] !~ /^[[:space:]]*$/) ins_after = i
+      for (i = 1; i <= NR; i++) { print lines[i]; if (i == ins_after) print e }
+    }
   ' "$id" > "$tmp" 2>/dev/null && mv "$tmp" "$id" || { rm -f "$tmp"; return 1; }
 }
 

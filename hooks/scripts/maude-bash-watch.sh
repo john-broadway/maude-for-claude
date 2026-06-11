@@ -14,14 +14,19 @@ if command -v jq >/dev/null 2>&1; then
 fi
 [ -z "$CMD" ] && exit 0
 
+# Whitespace-/option-tolerant building blocks (mirror maude-gate.sh) so ordinary
+# forms — extra spaces, `git -C <dir> push`, reversed `rm -fr` — aren't missed.
+GITW='git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)*[[:space:]]+'
+RMRFW='rm[[:space:]]+(-[[:alnum:]]*r[[:alnum:]]*f[[:alnum:]]*|-[[:alnum:]]*f[[:alnum:]]*r[[:alnum:]]*)'
+
 # Define the watch patterns. Order matters — most specific first.
 # Each line: PATTERN ||| MESSAGE
 PATTERNS=(
-  'rm -rf / ||| "rm -rf /" — that wipes the system. STOP.'
-  'rm -rf \* ||| "rm -rf *" — wide blast. Be specific.'
-  'git push.*--force ||| force-push. Sure? Have you checked branch protection?'
-  'git push.*-f( |$) ||| force-push (-f). Sure?'
-  'git reset --hard ||| hard reset. Have you stashed first?'
+  "${RMRFW}[[:space:]]+/([[:space:]]|$) ||| \"rm -rf /\" — that wipes the system. STOP."
+  "${RMRFW}[[:space:]]+\\*([[:space:]]|$) ||| \"rm -rf *\" — wide blast. Be specific."
+  "${GITW}push.*--force ||| force-push. Sure? Have you checked branch protection?"
+  "${GITW}push.*-f( |$) ||| force-push (-f). Sure?"
+  'git[[:space:]]+reset[[:space:]]+--hard ||| hard reset. Have you stashed first?'
   'git checkout -- \. ||| checkout-discard. You will lose uncommitted work.'
   'git restore \. ||| restore-discard. You will lose uncommitted work.'
   'git clean -f ||| force-clean. You will lose untracked files.'
@@ -31,7 +36,7 @@ PATTERNS=(
   '> *~?/.claude/settings ||| editing settings.json. Use the update-config skill?'
   'pip uninstall ||| pip uninstall — make sure you mean it.'
   'DROP TABLE ||| SQL DROP TABLE. Have you backed up?'
-  'sudo rm ||| sudo rm. Path right?'
+  'sudo[[:space:]]+rm ||| sudo rm. Path right?'
   'curl .*\| *(bash|sh) ||| curl-pipe-shell. Inspect the script first.'
 )
 

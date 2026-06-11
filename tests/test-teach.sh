@@ -85,6 +85,47 @@ maude_identity_append "   spaced out fact   " "2026-06-09"
 content="$(cat "$ID" 2>/dev/null)"
 assert_contains "$content" "- 2026-06-09: spaced out fact" "trimmed entry"
 
+# --- v0.3.1: layout + survival on the section-PRESENT (awk) path, the common case ---
+# A profile that already has a Told section + an entry, plus a preamble and an
+# observed block AFTER the Told section (so the section isn't last in the file).
+cat > "$ID" <<'EOF'
+# Maude — persona preamble
+She knows where things are.
+
+## Told by the user
+
+- 2026-06-01: first fact
+
+## Observed 2026-06-02 — works late
+- works late
+EOF
+
+test_start "a new fact appends AFTER the existing told entry (oldest-first), one contiguous list"
+maude_identity_append "second fact" "2026-06-02"
+content="$(cat "$ID" 2>/dev/null)"
+assert_contains "$content" "2026-06-01: first fact" "first fact kept"
+assert_contains "$content" "2026-06-02: second fact" "second fact added"
+first_ln="$(grep -n 'first fact' "$ID" | head -1 | cut -d: -f1)"
+second_ln="$(grep -n 'second fact' "$ID" | head -1 | cut -d: -f1)"
+[ -n "$first_ln" ] && [ -n "$second_ln" ] && [ "$first_ln" -lt "$second_ln" ]
+assert_exit "$?" "0" "appended after (not prepended before) the existing entry"
+between="$(sed -n "$((first_ln+1)),$((second_ln-1))p" "$ID" | grep -c '^[[:space:]]*$')"
+assert_eq "$between" "0" "no blank line splits the told list into two"
+
+test_start "the section-present (awk) path preserves preamble AND a later observed block"
+assert_contains "$content" "persona preamble" "preamble preserved on awk path"
+assert_contains "$content" "## Observed 2026-06-02" "observed block preserved on awk path"
+assert_contains "$content" "- works late" "observed body preserved on awk path"
+
+test_start "still exactly one told header after the awk-path append"
+assert_eq "$(grep -c '^## Told by the user' "$ID")" "1" "single section header"
+
+test_start "a multi-line fact is collapsed to one line (no injected duplicate header)"
+maude_identity_append "$(printf 'line one\n## Told by the user\nline two')" "2026-06-03"
+assert_eq "$(grep -c '^## Told by the user' "$ID")" "1" "no duplicate header from a multi-line fact"
+content="$(cat "$ID" 2>/dev/null)"
+assert_contains "$content" "line one ## Told by the user line two" "multi-line fact collapsed to a single spaced line"
+
 export HOME="$OLD_HOME"
 print_summary
 teardown_test_env
