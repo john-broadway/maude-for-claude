@@ -1,11 +1,40 @@
-<!-- Version: 0.3.0 -->
+<!-- Version: 0.3.1 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-09 CDT -->
+<!-- Revised: 2026-06-10 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.3.1 — held to her own bar: a post-release review pass (2026-06-10)
+
+v0.3.0 shipped without the pre-release multi-agent review its sibling projects get — so it got
+one after the fact (silent-failure / code / test lenses, each mutation-tested). The review found
+real issues; this release fixes them, test-first.
+
+### Fixed
+- **`/maude:teach` mangled the profile on the 2nd+ fact.** On the section-present path,
+  `maude_identity_append` inserted each new entry *right after the header* — orphaning the header's
+  spacer blank line *between* the bullets (splitting the told list into two markdown lists) and
+  recording newest-first, contradicting the documented "append." Now it appends at the **end of the
+  Told section** as one contiguous, oldest-first list. A multi-line fact is collapsed to a single
+  spaced line, so it can no longer inject a duplicate `## Told by the user` header. The temp file is
+  created in the destination dir so the final `mv` is a true atomic rename. +4 tests pinning order,
+  contiguity, preamble/observed survival on the awk path, and the multi-line collapse.
+- **The hard-block gate was bypassed by ordinary command forms.** Interior single-space patterns and
+  a rigid `git push` shape let `git  push` (extra whitespace), `git -C <dir> push`, and `rm  -rf /`
+  through silently. Patterns now use `[[:space:]]+` between tokens, tolerate `git` global options
+  (`-C`/`-c`/`--git-dir`), and match `rm` flags in either order (`-rf`/`-fr`). The same loosening was
+  mirrored to the soft `bash-watch` reminder. +6 gate tests for the bypass forms; all v0.1.5/v0.1.6
+  false-positive guards still pass.
+
+### Changed
+- **Claude is now credited as co-author** (John's call, reversing the prior "acknowledge but keep out
+  of the authors list" decision): added to `plugin.json` `contributors`, already in the README/CHANGELOG
+  `Authors:` line and commit trailers. Copyright ownership stays John Broadway.
 
 ---
 

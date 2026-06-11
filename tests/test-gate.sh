@@ -140,6 +140,34 @@ test_start "gate blocks git push after ;"
 run_gate "echo done; git push"
 assert_exit "$RC" "2" "; git push"
 
+# ── Bypass coverage (v0.3.1): ordinary command forms must NOT slip the gate ──
+# These are everyday ways to write the same command — a routine whitespace or
+# `git -C <dir>` variation must not defeat a hard-block.
+
+test_start "gate blocks git push with extra interior whitespace"
+run_gate "git  push origin main"
+assert_exit "$RC" "2" "double-space git push"
+
+test_start "gate blocks git -C <dir> push"
+run_gate "git -C /tmp/repo push origin main"
+assert_exit "$RC" "2" "git -C push"
+
+test_start "gate blocks git -C <dir> push --force"
+run_gate "git -C /repo push --force"
+assert_exit "$RC" "2" "git -C force-push"
+
+test_start "gate blocks rm -rf / with extra whitespace"
+run_gate "rm  -rf /"
+assert_exit "$RC" "2" "double-space rm -rf /"
+
+test_start "gate blocks rm -fr / (reversed flags)"
+run_gate "rm -fr /"
+assert_exit "$RC" "2" "rm -fr /"
+
+test_start "gate still passes git -C <dir> pull (not a push)"
+run_gate "git -C /repo pull origin main"
+assert_exit "$RC" "0" "git -C pull passes"
+
 # ── Trace events ─────────────────────────────────────────────────────
 
 test_start "gate logs 'blocked' trace event on block"
