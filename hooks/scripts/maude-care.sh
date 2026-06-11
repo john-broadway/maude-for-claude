@@ -65,17 +65,13 @@ if command -v jq >/dev/null 2>&1; then
      '. + {last_date: $ld, last_active: ($la|tonumber), session_start: ($ss|tonumber), prompts_this_session: ($p|tonumber), long_flag_fired: $lf}' \
      "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE" || rm -f "$TMP"
 else
-  # No jq — fall back to a minimal rewrite (foreign keys can't be preserved without
-  # a JSON parser; the SessionStart jq-missing notice warns the user this is degraded).
-  {
-    printf '{\n'
-    printf '  "last_date": "%s",\n' "$TODAY"
-    printf '  "last_active": %s,\n' "$NOW"
-    printf '  "session_start": %s,\n' "$SESSION_START"
-    printf '  "prompts_this_session": %d,\n' "$PROMPTS"
-    printf '  "long_flag_fired": "%s"\n' "$LONG_FLAG_FIRED"
-    printf '}\n'
-  } > "$CARE"
+  # No jq — leave care.json UNTOUCHED. Without a JSON parser, care can neither read
+  # its own fields (the read block above is jq-gated, so the long-session nudge can
+  # never fire) nor merge — and a scratch rewrite would CLOBBER every foreign key
+  # that other hooks keep here (tier1_*, gate_cleared, drift_warned, claudemd_warned)
+  # on every prompt. care is simply inert without jq (the SessionStart notice already
+  # tells the user the hooks are degraded); it must not destroy shared state to be so.
+  :
 fi
 
 exit 0
