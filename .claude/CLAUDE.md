@@ -1,6 +1,6 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 0.3.2
+> **Version:** 0.3.3
 > **License:** Apache 2.0, Copyright John Broadway
 
 ## What Maude Is
@@ -21,7 +21,7 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 
 ```
 .claude-plugin/
-├── plugin.json (v0.3.2)
+├── plugin.json (v0.3.3)
 └── marketplace.json (single-plugin local marketplace)
 
 commands/    — 17 slash commands (markdown)
@@ -47,7 +47,7 @@ These are NOT up for debate — decided by John Broadway:
 
 1. **Maude is the name** — Claude and Maude. Husband and wife at work.
 2. **John Broadway owns copyright** — independent creator, disabled veteran.
-3. **Claude is credited as co-author** — John insists on it (2026-06-10, reversing the prior "acknowledge but keep out of the authors list" call). Claude appears in the README/CHANGELOG `Authors:` line, in `plugin.json` `contributors`, and in commit `Co-Authored-By` trailers. Copyright *ownership* stays John Broadway (US law: an AI can't hold copyright) — but the work is a genuine partnership and is credited as co-authored, same structure as Proximo (© John, authored by both).
+3. **Claude is credited as co-author** — John insists on it (2026-06-10, reversing the prior "acknowledge but keep out of the authors list" call). Claude appears in the README/CHANGELOG `Authors:` line, in `plugin.json` `contributors`, and in commit `Co-Authored-By` trailers. Copyright *ownership* stays John Broadway (US law: an AI can't hold copyright) — but the work is a genuine partnership and is credited as co-authored.
 4. **The plugin is the whole product.** Nothing imported, nothing installed via `pip`, no daemons, no services. Markdown, JSON, and bash — that's it.
 5. **No baggage** — no bundled databases, no required external services, no proper-noun references to specific apps.
 6. **She walks fresh** — each session re-reads the workspace; doesn't carry assumptions across sessions.

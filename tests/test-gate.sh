@@ -140,6 +140,21 @@ test_start "gate blocks git push after ;"
 run_gate "echo done; git push"
 assert_exit "$RC" "2" "; git push"
 
+# ── Command-substitution (v0.3.3): a gated command wrapped in `...` or $(...) ──
+# must still block. Backtick was missing from the separator class, so
+# `result=\`git push\`` slipped the gate silently (audit finding).
+test_start "gate blocks git push inside backtick substitution"
+run_gate 'out=`git push origin main`'
+assert_exit "$RC" "2" "backtick git push"
+
+test_start "gate blocks rm -rf / inside backtick substitution"
+run_gate 'x=`rm -rf /`'
+assert_exit "$RC" "2" "backtick rm -rf /"
+
+test_start "gate blocks git push inside \$() substitution"
+run_gate 'out=$(git push origin main)'
+assert_exit "$RC" "2" "dollar-paren git push"
+
 # ── Bypass coverage (v0.3.1): ordinary command forms must NOT slip the gate ──
 # These are everyday ways to write the same command — a routine whitespace or
 # `git -C <dir>` variation must not defeat a hard-block.
