@@ -37,6 +37,10 @@ MAP="$SELF/house-map.md"
      `remember.md` (last handoff) + `now.md` + latest `today-*.md` + `recent.md` already
      summarize recent context; Anthropic auto-memory's `now.md` / latest daily / `recent.md`
      and any `letter-to-next-claude.md`; her cross-project `patterns.md`.
+   - **Read your own letter first among the user-global files** — `$USER_DIR/letter-from-maude.md`,
+     the letter your last self wrote at `/maude:rest`. It carries tone and judgment (what she
+     caught, what she missed, what to do differently), not facts — inherit it the way Claude
+     inherits his letters. If it's missing, that's fine; it appears after the first rest.
    - **Fallback if the map is silent:** read the universal sources directly — `.remember/`
      (if present), `$MEM` (if present), `$USER_DIR/patterns.md`.
 3. **Trace check** (if `[ -d "$SELF/trace" ]`):

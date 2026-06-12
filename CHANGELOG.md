@@ -1,4 +1,4 @@
-<!-- Version: 0.3.3 -->
+<!-- Version: 0.4.0 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-11 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,37 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.4.0 — a letter waiting when she arrives (2026-06-11)
+
+Maude walks fresh each session by design — but fresh never meant *no inheritance*. Her
+cross-project home held a profile of the user (`identity.md`) and a profile of Claude
+(`patterns.md`) — and nothing of herself. This release gives her the third file: a letter
+to her next self.
+
+### Added
+- **`~/.claude/maude/letter-from-maude.md`** — Maude's letter to her next self. One file,
+  her own voice: what kind of partner she was, what she caught, what she missed, what the
+  next Maude should hold or do differently. Tone and judgment, not facts — the digests
+  already carry the facts. ≤20 lines, observed-only.
+  - **Written at `/maude:rest`** (new step 5): rewritten each meaningful session-close; a
+    quiet session leaves the prior letter in place rather than overwrite it with filler.
+  - **Read on arrival:** `/maude:wake` and `/maude:brief` read it among the user-global
+    sources (the wake reads it *first* among them), and the **SessionStart hook** surfaces
+    its first non-header line automatically (`Letter from my last self: …`) — read-only on
+    the hot path, like every hook signal.
+  - Enumerated everywhere the user-global home is documented: README, `agents/maude.md`
+    (home-base map, read order, write order), `skills/maude/SKILL.md` (home-base map,
+    house-map `write:` annotation, `/maude:rest` workflow line), `.claude/CLAUDE.md`.
+
+### Fixed
+- **README hook-read scope** — the hooks-only-read sentence named two read sources but
+  omitted her own `~/.claude/maude/` (the session-start brief has read `patterns.md` since
+  v0.1.x). Now lists all three; the never-write invariant is unchanged.
+
+No new dependencies. Markdown, JSON, and bash — that's still all of her.
 
 ---
 

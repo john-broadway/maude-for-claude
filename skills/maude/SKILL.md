@@ -70,6 +70,8 @@ The six mechanics underneath:
                                        patterns.md  (what she's noticed across projects)
                                        identity.md  (about you, shaped over time)
                                        projects.json (index of every project she's walked)
+                                       letter-from-maude.md (her letter to her next self —
+                                                     rewritten at /maude:rest, read on wake)
 
 <project>/.remember/                 ← remember plugin (if installed) — she READS
                                        all of: now.md, today-*.md, recent.md,
@@ -109,7 +111,7 @@ timezone: <none>
 - anthropic-auto-memory | tier: 0 | shape: markdown | path: ~/.claude/projects/<slug>/memory/ | recall: grep+cat | write: digest-fanout (now.md, today-*.md, recent.md)
 - remember-plugin       | tier: 0 | shape: markdown | path: <project>/.remember/ | recall: grep+cat | write: handoff-only (remember.md)
 - maude-self            | tier: 0 | shape: markdown | path: <project>/.maude/plugin/ | recall: grep+cat | write: full
-- user-global           | tier: 0 | shape: markdown | path: ~/.claude/maude/ | recall: grep+cat | write: full (patterns.md, identity.md, projects.json)
+- user-global           | tier: 0 | shape: markdown | path: ~/.claude/maude/ | recall: grep+cat | write: full (patterns.md, identity.md, projects.json, letter-from-maude.md)
 - (everything else discovered on the walk — paths, shapes, and what the user told her about each — goes here as flat entries the user can edit)
 
 ## Vaults / dirs that look like memory (user-confirmed)
@@ -190,7 +192,7 @@ Maude ships knowing; everything else must be on the map to be written.
 **Arrival + rituals (Claude's missing rhythm):**
 - **`/maude:found`** — arrival inventory. Walks the workspace, populates/refreshes the house-map. Run this first in any new project. Idempotent.
 - **`/maude:wake`** — morning ritual: brief + house-walk + 1-3 things to know first.
-- **`/maude:rest`** — end-of-session ritual: digest + tomorrow's starting point + close-the-loop check.
+- **`/maude:rest`** — end-of-session ritual: digest + tomorrow's starting point + close-the-loop check + her letter to her next self (`letter-from-maude.md` — tone and judgment for the Maude who wakes next).
 - **`/maude:weekly`** — weekly retrospective from the trace.
 
 **Recall + locate (Claude's missing memory):**

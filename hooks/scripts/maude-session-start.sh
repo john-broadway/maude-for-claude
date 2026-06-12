@@ -33,6 +33,7 @@ fi
 NOW_LINE=""
 REMEMBER_HANDOFF=""
 PATTERN_HINT=""
+LETTER_LINE=""
 HAS_MAP=""
 TOPIC_COUNT=0
 
@@ -53,6 +54,14 @@ if [ -s "$USER_DIR/patterns.md" ]; then
   PATTERN_HINT="$(grep -m1 -i "$(basename "$PROJ")" "$USER_DIR/patterns.md" 2>/dev/null | head -c 160)"
 fi
 
+# Tier 3b: her letter to her next self (written at /maude:rest — read-only here,
+# like every hook). First non-header, non-blank line is the essence; the wake/brief
+# commands read the whole letter.
+LETTER_LINE=""
+if [ -s "$USER_DIR/letter-from-maude.md" ]; then
+  LETTER_LINE="$(grep -m1 -v -E '^#|^[[:space:]]*$' "$USER_DIR/letter-from-maude.md" 2>/dev/null | head -c 160)"
+fi
+
 # Tier 4: house-map status
 [ -f "$MAP" ] && HAS_MAP="✓"
 
@@ -60,7 +69,7 @@ fi
 [ -d "$MEM" ] && TOPIC_COUNT="$(find "$MEM" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')"
 
 # If nothing meaningful to surface, stay quiet.
-if [ -z "$NOW_LINE" ] && [ -z "$REMEMBER_HANDOFF" ] && [ -z "$PATTERN_HINT" ] && [ -z "$HAS_MAP" ] && [ "$TOPIC_COUNT" -eq 0 ]; then
+if [ -z "$NOW_LINE" ] && [ -z "$REMEMBER_HANDOFF" ] && [ -z "$PATTERN_HINT" ] && [ -z "$LETTER_LINE" ] && [ -z "$HAS_MAP" ] && [ "$TOPIC_COUNT" -eq 0 ]; then
   exit 0
 fi
 
@@ -76,6 +85,7 @@ GREETING="$(maude_greeting)"
   [ -n "$REMEMBER_HANDOFF" ] && printf '  Last handoff (.remember): %s\n' "$REMEMBER_HANDOFF"
   [ -n "$NOW_LINE" ]          && printf '  Anthropic now: %s\n' "$NOW_LINE"
   [ -n "$PATTERN_HINT" ]      && printf '  Cross-project pattern: %s\n' "$PATTERN_HINT"
+  [ -n "$LETTER_LINE" ]       && printf '  Letter from my last self: %s\n' "$LETTER_LINE"
   [ "$TOPIC_COUNT" -gt 0 ]    && printf '  %s memory file(s) on hand.\n' "$TOPIC_COUNT"
   [ -z "$HAS_MAP" ] && [ -d "$REMEMBER" -o -d "$MEM" ] && printf '  No house-map yet — run /maude:found.\n'
 } 2>/dev/null
