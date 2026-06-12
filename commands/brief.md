@@ -37,7 +37,8 @@ MAP="$SELF/house-map.md"
    (`now.md`, latest `today-*.md`, `recent.md`, `archive.md`, `core-memories.md`,
    `remember.md`) freely for context; read Anthropic auto-memory's `now.md` / latest daily /
    `recent.md` / `MEMORY.md` / any `letter-to-next-claude.md`; read her cross-project
-   `patterns.md` / `identity.md` / `projects.json`. **Skip any source whose `recall:` says
+   `patterns.md` / `identity.md` / `projects.json` / `letter-from-maude.md` (her last self's
+   letter — tone and judgment, written at rest). **Skip any source whose `recall:` says
    "explicit ask" (`secret-deny` vaults) and never echo secrets.** All reads are read-only —
    a brief never writes.
    - Also read the non-memory locations the map records: project-root `MEMORY.md`,

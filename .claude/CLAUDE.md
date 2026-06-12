@@ -1,6 +1,6 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 0.3.3
+> **Version:** 0.4.0
 > **License:** Apache 2.0, Copyright John Broadway
 
 ## What Maude Is
@@ -21,7 +21,7 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 
 ```
 .claude-plugin/
-├── plugin.json (v0.3.3)
+├── plugin.json (v0.4.0)
 └── marketplace.json (single-plugin local marketplace)
 
 commands/    — 17 slash commands (markdown)
@@ -40,6 +40,7 @@ hooks/       — 7 lifecycle events + scripts
 | `~/.claude/maude/identity.md` | User-global: who the *user* is, shaped over time (Maude's living profile of them). |
 | `~/.claude/maude/patterns.md` | User-global: cross-project patterns about Claude. |
 | `~/.claude/maude/projects.json` | User-global: light index of walked workspaces. |
+| `~/.claude/maude/letter-from-maude.md` | User-global: Maude's letter to her next self — tone and judgment. Rewritten at `/maude:rest`, read on wake. |
 
 ## Locked Decisions
 

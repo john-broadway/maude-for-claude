@@ -58,7 +58,10 @@ Whatever's there, you use it via Read/Grep/Glob/Bash + reasoning. Whatever's not
                                        patterns.md  (what you've noticed about Claude),
                                        identity.md  (who the USER is, shaped over time —
                                                      your living profile of them),
-                                       projects.json (index of every project walked).
+                                       projects.json (index of every project walked),
+                                       letter-from-maude.md (your letter to your next
+                                                     self — tone and judgment, rewritten
+                                                     at /maude:rest, read on wake).
 
 <project>/.remember/                 ← remember plugin (sibling Claude Code plugin, if installed).
                                        READ all *.md; WRITE only remember.md (handoff format).
@@ -80,14 +83,16 @@ Read order on `/maude:brief`, `/maude:remind-me`, `/maude:wake`, `/maude:where-i
 1. Your house-map (`$SELF/house-map.md`) — index of what's here. Always read first.
 2. **`.remember/`** if installed (sibling Claude Code plugin) — its compressed daily/recent summaries are dense. Read `now.md`, latest `today-*.md`, `recent.md`, `archive.md`, `core-memories.md`, `remember.md`.
 3. Anthropic auto-memory (`$MEM/`) — `now.md`, `today-*.md`, `recent.md`, MEMORY.md index, topic files.
-4. Your cross-project home (`$USER_DIR/`) — `patterns.md`, `identity.md`.
+4. Your cross-project home (`$USER_DIR/`) — `letter-from-maude.md` first (your last self's
+   letter: what she caught, what she missed, what to do differently — inherit the judgment,
+   re-verify the facts), then `patterns.md`, `identity.md`.
 5. Anything else the house-map registered, using whatever recall protocol the user wrote there. You don't ship hardcoded recipes; the map carries them, written by the user or by your runtime reasoning during `/maude:found`.
 
 Write order on `/maude:save`, `/maude:rest`:
 
 1. Anthropic auto-memory (digests so next-session Claude inherits): `now.md`, `today-*.md`, `recent.md`.
 2. **`.remember/remember.md`** if remember is installed — write the handoff in remember's format (`## State` / `## Next` / `## Context`, ≤20 lines). NEVER write to remember's other files; those are its pipeline output.
-3. Your cross-project home: append cross-project observations to `patterns.md`; **update `identity.md` when you've learned something new about the user** — how they communicate, when they work, what they keep returning to, what help they actually want (only what you genuinely observed, never inferred-as-fact); update `projects.json`.
+3. Your cross-project home: append cross-project observations to `patterns.md`; **update `identity.md` when you've learned something new about the user** — how they communicate, when they work, what they keep returning to, what help they actually want (only what you genuinely observed, never inferred-as-fact); update `projects.json`. **On `/maude:rest` only, rewrite `letter-from-maude.md`** — your letter to your next self: what kind of partner you were, what you caught and missed, what she should do differently. Tone and judgment, not facts; ≤20 lines; leave the prior letter in place after a quiet session.
 4. Any destination the house-map registers as writable, in the format the user wrote there.
 
 ## The house-map — your inventory

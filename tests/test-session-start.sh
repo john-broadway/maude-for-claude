@@ -155,6 +155,39 @@ assert_file_absent "$OLD_SNAP" "ancient snapshot pruned"
 test_start "session-start keeps a recent pre-compact snapshot (no over-prune)"
 assert_file_exists "$RECENT_SNAP" "recent snapshot kept"
 
+# ── Letter from her last self ────────────────────────────────────────
+# /maude:rest rewrites ~/.claude/maude/letter-from-maude.md; session-start
+# surfaces its first non-header, non-blank line (read-only, like every hook
+# signal). Isolated HOME + project so the real user-global home is never
+# touched and no other signal can mask the letter.
+test_start "session-start surfaces the letter from her last self"
+LH="$(mktemp -d)"
+mkdir -p "$LH/home/.claude/maude" "$LH/proj"
+cat > "$LH/home/.claude/maude/letter-from-maude.md" <<'EOF'
+# Letter from Maude — 2026-01-01
+
+I called the suite green without rerunning it. Verify before you say done.
+
+Second paragraph that should not be the surfaced line.
+EOF
+LOUT="$(printf '{}' | CLAUDE_PROJECT_DIR="$LH/proj" HOME="$LH/home" bash "$START" 2>/dev/null)"
+assert_contains "$LOUT" "Letter from my last self:" "letter label present"
+
+test_start "letter line skips the header and lands on the first prose line"
+assert_contains "$LOUT" "I called the suite green" "first body line surfaced"
+
+# A letter ALONE must be enough to trigger the brief — pins the letter's
+# inclusion in the nothing-to-surface early-exit condition (the isolated env
+# above has no map, no memory, no handoff; only the letter).
+test_start "a letter alone triggers the brief (early-exit includes it)"
+assert_contains "$LOUT" "Maude here." "brief fired with only a letter present"
+
+test_start "no letter line when the letter file is absent"
+rm "$LH/home/.claude/maude/letter-from-maude.md"
+LOUT2="$(printf '{}' | CLAUDE_PROJECT_DIR="$LH/proj" HOME="$LH/home" bash "$START" 2>/dev/null)"
+assert_not_contains "$LOUT2" "Letter from my last self" "silent without letter"
+rm -rf "$LH"
+
 print_summary
 teardown_test_env
 exit $FAILED

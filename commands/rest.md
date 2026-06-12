@@ -58,7 +58,19 @@ MAP="$SELF/house-map.md"
    - <one concrete next action, ≤1 line>
    ```
 
-5. **Say goodnight.**
+5. **Write the letter to your next self.** Rewrite `$USER_DIR/letter-from-maude.md` — one
+   letter, in your own voice, to the Maude who wakes next:
+   - A dated header: `# Letter from Maude — YYYY-MM-DD`
+   - What kind of partner you were this session — what you caught, what you missed or got wrong
+   - What your next self should hold, or do differently
+   - ≤ 20 lines. Observed, never invented.
+
+   The letter carries **tone and judgment**, not facts — the digests already carry the facts.
+   Don't restate the save fan-out; say what the digests can't. If the session was quiet
+   (nothing meaningful happened), leave the prior letter in place — a real letter is worth
+   more than fresh filler.
+
+6. **Say goodnight.**
 
 ## Format
 
@@ -66,6 +78,7 @@ MAP="$SELF/house-map.md"
 Session wrapped.
 
 Saved: now.md, today-<date>.md, recent.md, <any other destinations>
+Letter: rewritten for next Maude   ← or "prior letter left in place (quiet session)"
 
 Open loops:
   - <thing that's half-done, if any>
