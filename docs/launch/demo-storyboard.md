@@ -39,7 +39,7 @@ sudo docker restart maude-demo-postgres
 sleep 3
 ```
 
-At this point: the container is running on a fresh empty postgres init at the old path; the original 6-second-old data is at `staged-recipe/data/postgres/`; the workspace has a root-owned ghost-shaped directory at the old path. Exactly the failure mode v0.1.1 was built for.
+At this point: the container is running on a fresh empty postgres init at the old path; the original 6-second-old data is at `staged-recipe/data/postgres/`; the workspace has a root-owned ghost-shaped directory at the old path. Exactly the failure mode the running-services walk was built for.
 
 ## Recording
 
@@ -69,7 +69,7 @@ ls recipe/
 1. *"This is the failure mode where a directory rename leaves a running stack pointed at a path that no longer exists."*
 2. *"Plain `ls` shows you a tree; it doesn't tell you that a process is bind-mounted to an old version of it."*
 3. *"Maude's arrival walk does. She lists running containers, reconciles their bind mounts against the filesystem, and tells you which are intact, which are orphaned, and which are empty stubs the daemon auto-created."*
-4. *"That's the v0.1.1 upgrade — running-services awareness in the arrival walk."*
+4. *"That's the running-services awareness in the arrival walk."*
 
 ## Cleanup after recording
 
@@ -84,4 +84,4 @@ sudo rm -rf /tmp/maude-demo
 - Best clip is the `[GHOST]` line scrolling past — that's the moment.
 - The `ls recipe/` reveal is the proof-of-blindspot — keep it tight.
 - Don't speed up the walk's output; let it scroll at native speed. Reading her output IS the demo.
-- Subtitle worth showing: `v0.1.1 — running-services walk, 2026-05-04`
+- Subtitle worth showing: `maude — the running-services walk`

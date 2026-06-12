@@ -1,6 +1,6 @@
-<!-- Version: 0.3.3 -->
+<!-- Version: 0.4.1 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-09 CDT -->
+<!-- Revised: 2026-06-11 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -82,6 +82,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.4.1 (2026-06-11) — doc-sync pass.** v0.4.0 missed seven `<!-- Version: -->` headers (including this README's own) and the `docs/launch/` drafts still spoke as of v0.1.5 — nine CHANGELOG releases back. All fixed — and `maude-verify` now has a **version-header sync check**, so a stale header is a counted finding instead of something a human has to feel. The release convention was always bump-all-headers; now it's enforced, not remembered.
 
 **v0.4.0 (2026-06-11) — a letter waiting when she arrives.** Maude walks fresh each session by design — but fresh never meant *no inheritance*. Until now her cross-project home held a profile of the user (`identity.md`) and a profile of Claude (`patterns.md`) — and nothing of herself. New: **`letter-from-maude.md`**, her letter to her next self. `/maude:rest` rewrites it (what kind of partner she was, what she caught, what she missed, what to do differently — tone and judgment, ≤20 lines; a quiet session leaves the prior letter in place rather than overwrite it with filler). `/maude:wake` and `/maude:brief` read it on arrival, and the SessionStart brief surfaces its first line automatically — so the inheritance fires even when nobody asks. One markdown file; no new dependencies; the facts still live in the digests — the letter carries what they can't.
 

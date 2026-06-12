@@ -55,6 +55,20 @@ if [ -f .claude-plugin/plugin.json ] && command -v jq >/dev/null 2>&1; then
     fi
   fi
 
+  # Header sync: the release convention bumps EVERY `<!-- Version: -->` header
+  # to the canonical version each release. A stale one means the release sweep
+  # missed that file (the v0.4.0 release missed seven, including the README's own).
+  if [ -n "$CANONICAL" ]; then
+    HDR_FILES=$(grep -rl "<!-- Version:" . --include="*.md" \
+      --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
+    for f in $HDR_FILES; do
+      HV=$(grep -m1 -o "<!-- Version: [0-9][0-9a-zA-Z.-]*" "$f" 2>/dev/null | awk '{print $3}')
+      if [ -n "$HV" ] && [ "$HV" != "$CANONICAL" ]; then
+        emit "STALE HEADER: $f says Version: $HV (expected $CANONICAL)"
+      fi
+    done
+  fi
+
   # Find any version-string mentions in markdown/json/sh and group
   if [ -n "$CANONICAL" ]; then
     # Pull all v0.X.Y references
