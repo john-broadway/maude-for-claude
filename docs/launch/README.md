@@ -12,5 +12,5 @@ Internal-facing prep material for the public showing. Not user docs; not part of
 ## House rules
 
 - **Personal-space rule** still applies. Don't link to anything that points back into the development workspace. The public repo is the front door.
-- **3-team push rule** still applies. None of these artifacts should be published until John explicitly says go.
+- **Independent-review rule** still applies. None of these artifacts should be published until John explicitly says go.
 - **Don't claim what isn't tested.** Fresh-machine install on someone else's box is unverified at scale; don't promise it as a feature in launch copy.

@@ -56,6 +56,30 @@ assert_exit "$?" "1" "no false missing-path finding for sub/realfile.md"
 
 rm -rf "$PMAP"
 
+# ── Version-header sync: a stale <!-- Version: --> header is a finding ─
+# The release convention bumps EVERY markdown version header to the canonical
+# plugin.json version; v0.4.0 missed seven (including the README's own) and
+# nothing caught it. This pins the check that now does.
+HSYNC="$(mktemp -d)"
+mkdir -p "$HSYNC/.claude-plugin"
+printf '{"name":"x","version":"2.0.0"}\n' > "$HSYNC/.claude-plugin/plugin.json"
+printf '<!-- Version: 2.0.0 -->\ncurrent file\n' > "$HSYNC/current.md"
+printf '<!-- Version: 1.0.0 -->\nstale file\n' > "$HSYNC/stale.md"
+OUT_H="$(bash "$VERIFY" "$HSYNC" 2>&1)"
+cd "$MAUDE_ROOT"
+
+test_start "verify flags a markdown version header behind plugin.json"
+assert_contains "$OUT_H" "STALE HEADER" "stale header finding present"
+
+test_start "stale-header finding names the file and both versions"
+assert_contains "$OUT_H" "stale.md says Version: 1.0.0 (expected 2.0.0)" "specific finding"
+
+test_start "a header matching the canonical version is not flagged"
+printf '%s' "$OUT_H" | grep -q "current.md says"
+assert_exit "$?" "1" "no finding for the in-sync header"
+
+rm -rf "$HSYNC"
+
 # ── Failing case: a broken plugin.json must produce a finding ────────
 TMP_PLUGIN="$(mktemp -d)"
 mkdir -p "$TMP_PLUGIN/.claude-plugin"

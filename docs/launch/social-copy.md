@@ -30,9 +30,11 @@ A short thread on what that means. 🧵
 - `/maude:check-on-me` — care side, pattern-of-life
 - `/maude:conscience` — pre-irreversible-action gate
 
-**4/** v0.1.4 wired her whisper layer. Drift detection: she notes when Claude reads the same file repeatedly or hammers Grep. Pre-irreversible gate: hard-blocks `git push` and other destructive commands until cleared via `/maude:conscience`. CLAUDE.md unread check: she reminds you before an edit if Claude hasn't read the rules. Both Claude and you hear her.
+**4/** Her whisper layer runs on hooks. Drift detection: she notes when Claude reads the same file repeatedly or hammers Grep. Pre-irreversible gate: hard-blocks `git push` and other destructive commands until cleared via `/maude:conscience`. CLAUDE.md unread check: she reminds you before an edit if Claude hasn't read the rules. Both Claude and you hear her.
 
-**5/** Apache-2.0. Beta. github.com/john-broadway/maude-for-claude
+**5/** She gets to know you, too. A living profile (`identity.md`) shaped from what she observes — plus `/maude:teach` to tell her directly. She greets by YOUR local clock, not the box's. And she walks fresh each session — but a letter from her last self is waiting when she arrives.
+
+**6/** Apache-2.0. Beta. github.com/john-broadway/maude-for-claude
 
 ---
 
@@ -46,9 +48,9 @@ Maude walks your workspace at session start. He writes the code; she notices. Sh
 
 She also watches Claude. `/maude:check-on-claude` reads the turn-by-turn trace and flags repeated tool calls (Claude grepping the same term four times), unread context (CLAUDE.md not opened this session), confabulation risk (claims made without backing reads), and open todos. `/maude:check-on-me` is the care side — pattern-of-life, not absolute thresholds.
 
-Other commands: `wake`, `rest`, `brief`, `save`, `remind-me`, `where-is`, `sweep`, `notice`, `weekly`, `conscience`, `check-setup`, `dual-voice`. Full list in the repo.
+Other commands: `wake`, `rest`, `brief`, `save`, `remind-me`, `where-is`, `sweep`, `notice`, `weekly`, `conscience`, `verify`, `teach`, `check-setup`, `dual-voice`. Full list in the repo.
 
-Recent: v0.1.5 added `/maude:verify` — programmatic project audit (version consistency, JSON validity, link integrity, header dates, watch-list paths) that runs before "ready" gets declared. v0.1.4 wired Maude's whisper layer — drift detection, a pre-irreversible gate that hard-blocks `git push` until cleared via `/maude:conscience`, and a CLAUDE.md-unread check before edits. v0.1.1 added running-services awareness to the arrival walk.
+Recent: v0.4.0 gave her a letter to her next self — she walks fresh each session by design, but `/maude:rest` writes what kind of partner she was (what she caught, what she missed) and the next session's wake reads it, so judgment inherits even though assumptions don't. The v0.3.x line was a hardening arc: a 69-agent cold audit, gate-bypass fixes (whitespace tricks, command substitution), and `/maude:teach` so you can tell her facts about yourself directly. v0.2.0 added her living profile of you and optional dual-voice. `/maude:verify` runs the programmatic audit (version consistency, JSON validity, link integrity, header dates, watch-list paths) before "ready" gets declared.
 
 Apache-2.0. Beta. Built by [@john-broadway].
 
@@ -67,7 +69,7 @@ Repo: `github.com/john-broadway/maude-for-claude`.
 
 When you're ready:
 
-- [ ] Push commits + `v0.1.5` tag to GitHub (3-team rule — your call)
+- [ ] Confirm the latest release tag is pushed and the GitHub release notes render (independent review pass first — your call)
 - [ ] Verify the repo's README renders cleanly on github.com
 - [ ] Run the demo recording per `docs/launch/demo-storyboard.md`
 - [ ] Pick the post(s) above; rewrite to your voice; post

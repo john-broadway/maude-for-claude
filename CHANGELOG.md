@@ -1,4 +1,4 @@
-<!-- Version: 0.4.0 -->
+<!-- Version: 0.4.1 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-11 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,33 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.4.1 — doc-sync pass (2026-06-11)
+
+The v0.4.0 release bumped the canonical version but missed **seven** `<!-- Version: -->`
+headers — including the README's own — and the `docs/launch/` drafts still spoke as of
+v0.1.5, nine CHANGELOG releases back. The user felt the drift between the docs before any
+tool measured it. This release fixes every instance and, more importantly, gives the verifier
+the check that was missing.
+
+### Added
+- **`maude-verify`: version-header sync check.** Every markdown `<!-- Version: -->` header
+  must match the canonical `plugin.json` version; each stale file is its own finding
+  (`STALE HEADER: <file> says Version: X (expected Y)`). The release convention was always
+  bump-all-headers — now it's enforced, not remembered. +3 tests.
+
+### Fixed
+- **Seven stale version headers** bumped to current: `README.md`, `SECURITY.md`,
+  `CODE_OF_CONDUCT.md`, `skills/README.md`, both issue templates, and the PR template.
+- **`docs/launch/` refreshed from the v0.1.5 era to the current surface.** The social-copy
+  thread and Show-HN draft now describe what she actually is today (teach, verify,
+  dual-voice, local-time greeting, the letter to her next self); the posting checklist no
+  longer instructs pushing a v0.1.5 tag; the demo storyboard is de-versioned so it can't
+  rot the same way again.
+
+No new dependencies.
 
 ---
 
