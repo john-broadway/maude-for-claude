@@ -1,4 +1,4 @@
-<!-- Version: 0.5.0 -->
+<!-- Version: 0.5.1 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -83,7 +83,9 @@ She is not loud. When she gets loud, listen.
 
 ## What's new
 
-**v0.5.0 (2026-06-13) — the verify tripwire.** The gate stops irreversible *actions*; nothing stopped a confident *claim* committed without checking. New `maude-verify-watch`: it stamps when a real test / lint / typecheck / smoke run **exits 0** — recognized at command position *and* quote-stripped, so neither `pip install pytest` nor a commit message that merely *names* a tool can fake a pass — and whispers once before `git commit` when **code** changed since the last verify: *"did you check this, or are you asserting it?"* Docs-only commits are suppressed; whisper-only, never blocks; timestamps only, no content on disk. Vetted by a three-lens adversarial review before merge.
+**v0.5.1 (2026-06-13) — the tripwire actually fires.** A post-merge review caught that v0.5.0's stamp gated on a Bash `exit_code` the runtime never sends — so it never recorded a verify and the whisper fired on *every* commit, green run or not. Fixed with a pass signal that exists: stamp when a verify runs to **completion** with no failure signature in its output (belt-and-suspenders, both erring fail-loud — a missed signal is an extra whisper, never a false *"you're covered"*). The promise is now honest: *"you ran a verify since editing,"* not *"it passed."* Plus: a malformed trace line no longer silently blinds the whisper (per-line parse), and `care_set` reports a write failure instead of claiming a stamp it dropped. Tests rebuilt on the real payload schema; `make test` 19/19, `make verify` 0.
+
+**v0.5.0 (2026-06-13) — the verify tripwire.** The gate stops irreversible *actions*; nothing stopped a confident *claim* committed without checking. New `maude-verify-watch`: it stamps when a real test / lint / typecheck / smoke run **completes** — recognized at command position *and* quote-stripped, so neither `pip install pytest` nor a commit message that merely *names* a tool can fake a pass — and whispers once before `git commit` when **code** changed since the last verify: *"did you check this, or are you asserting it?"* Docs-only commits are suppressed; whisper-only, never blocks; timestamps only, no content on disk. Vetted by a three-lens adversarial review before merge. *(The stamp's pass-detection was non-functional as shipped — see v0.5.1.)*
 
 **v0.4.1 (2026-06-11) — doc-sync pass.** v0.4.0 missed seven `<!-- Version: -->` headers (including this README's own) and the `docs/launch/` drafts still spoke as of v0.1.5 — nine CHANGELOG releases back. All fixed — and `maude-verify` now has a **version-header sync check**, so a stale header is a counted finding instead of something a human has to feel. The release convention was always bump-all-headers; now it's enforced, not remembered.
 

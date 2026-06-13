@@ -8,28 +8,33 @@
 # Two modes (dispatched by $1, mirroring maude-trace.sh):
 #
 #   stamp   (PostToolUse · Bash) — if the command that just ran was a verify
-#           (test / lint / typecheck / smoke) AND it exited 0, record an ISO
-#           timestamp in care.json `.last_verify_iso`. A failed run, or one whose
-#           exit code the runtime doesn't surface, is NOT stamped. Silent. Never blocks.
+#           (test / lint / typecheck / smoke) that ran to COMPLETION with no visible
+#           failure, record an ISO timestamp in care.json `.last_verify_iso`. The
+#           Bash tool_response carries no exit code, so completion + clean output is
+#           the pass signal (see the stamp case). Silent. Never blocks.
 #
 #   commit  (PreToolUse · Bash) — if the command is `git commit`, look at the two
-#           most recent trace files (today + the one before, so a session that
-#           crosses UTC midnight isn't blind) for file edits made *since* the last
-#           verify. If at least one such edit was a CODE file (docs/config-only
+#           most recent trace files (so an edit made just before UTC midnight is
+#           still seen by a post-midnight commit) for file edits made *since* the
+#           last verify. If at least one such edit was a CODE file (docs/config-only
 #           commits are suppressed), whisper one line. Once per edit-batch.
 #
 # Design notes / v1 limits:
 #   * Quote-stripped before matching (like gate/bash-watch) so a commit message
-#     or `echo` that merely NAMES a tool can't be mistaken for running it.
+#     that merely NAMES a tool in a quoted string can't be mistaken for running it.
+#     (An UNQUOTED mention like `echo pytest` is stopped separately by the
+#     command-position anchoring below — `echo` is not a run-wrapper.)
 #   * Verify tokens must sit at COMMAND position (line start / after a shell
 #     separator / after a known run-wrapper) — so `pip install pytest`,
 #     `cat pytest.ini`, `which tsc` do NOT count as a verify.
 #   * Timestamps are compared as ISO-8601 UTC strings (lexical == chronological),
 #     so there is NO `date -d` dependency — portable to macOS/BSD.
-#   * A verify is stamped only on a CONFIRMED exit 0 (the Bash tool_response's
-#     `exit_code`). If the exit code isn't surfaced, the run is treated as
-#     unproven and not stamped — the failure direction is fail-loud (an extra
-#     advisory whisper), never a false "you're covered".
+#   * The Bash tool_response surfaces NO exit code — only {stdout, stderr,
+#     interrupted}. So the pass signal is belt-and-suspenders: stamp a run that ran
+#     to COMPLETION (not interrupted) AND whose output shows no failure signature
+#     (FAIL_RE). Both checks err fail-loud — a miss is an extra advisory whisper,
+#     never a false "you're covered". (A failing run whose output we don't recognise
+#     still stamps; that residual gap is inherent without an exit code.)
 #   * Custom/unknown test runners (project-specific names) won't be recognized and
 #     will produce a (one-per-batch) advisory whisper — inherent to static matching.
 #
@@ -58,10 +63,10 @@ CMD="$(maude_strip_quotes "$CMD")"
 
 # --- pattern building blocks ------------------------------------------------
 # Command position: line start, after a shell separator, optionally after a run-
-# wrapper (env/sudo/time/nice/xvfb-run, a VAR= assignment, uv|poetry|pipenv|pdm
-# run, npx, pnpm exec|dlx, bunx).
+# wrapper (e.g. env/sudo/time/nice/xvfb-run, a VAR= assignment, a `<tool> run`
+# form, npx/pnpm/bunx). The WRAP regex below is the authoritative list.
 SEP='(^|[;&|]|&&|\|\|)[[:space:]]*'
-WRAP='((env|sudo|time|nice|xvfb-run)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|(uv|poetry|pipenv|pdm)[[:space:]]+run[[:space:]]+|npx[[:space:]]+|pnpm[[:space:]]+(exec|dlx)[[:space:]]+|bunx[[:space:]]+)*'
+WRAP='((env|sudo|time|nice|xvfb-run)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|(uv|poetry|pipenv|pdm)[[:space:]]+run[[:space:]]+|bundle[[:space:]]+exec[[:space:]]+|npx[[:space:]]+|pnpm[[:space:]]+(exec|dlx)[[:space:]]+|bunx[[:space:]]+)*'
 # Recognized test/lint/typecheck runners (each at command position via SEP+WRAP).
 RUNNER='(pytest|py\.test|tox|nox|bats|phpunit|rspec|jest|vitest|mocha|ctest|mypy|pyright|tsc|flake8|pylint|eslint|cargo[[:space:]]+(test|check|clippy)|go[[:space:]]+test|gradlew?[[:space:]]+(test|check)|mvn[[:space:]]+(test|verify)|dotnet[[:space:]]+test|bazel[[:space:]]+test|rake[[:space:]]+(spec|test)|mix[[:space:]]+test|ruff[[:space:]]+check|black[[:space:]]+--check|pre-commit[[:space:]]+run|python[0-9.]*[[:space:]]+(-m[[:space:]]+(pytest|unittest)|manage\.py[[:space:]]+test)|(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?(test|lint|typecheck|check)|make[[:space:]]+(test|check|lint|verify))'
 # smoke/verify/run-tests scripts invoked at command position (bash/sh/./). The
@@ -77,6 +82,18 @@ COMMIT_RE="${SEP}git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)*[[:space:]]+com
 # docs-only commits. Anything NOT matching this is treated as code (safe default).
 DOC_RE='\.(md|markdown|txt|rst|adoc|json|ya?ml|toml|cfg|conf|ini|lock|csv|tsv|svg|png|jpe?g|gif|pdf)$|(^|/)(LICENSE|COPYING|NOTICE|CHANGELOG[^/]*|AUTHORS|\.gitignore|\.gitattributes|\.editorconfig)$'
 
+# High-confidence FAILURE signatures in a verify's OUTPUT (the "suspenders" — see
+# the stamp case). Deliberately conservative: match only an unambiguous failure so a
+# clean pass still stamps. Both count forms require a NON-ZERO count (a "0" is a pass,
+# never matched), covering the two conventions runners use:
+#   count-before — "1 failed" / "1 failing" / "1 failure" / "2 errors"  (pytest, jest,
+#                  mocha, rspec, mix, …)
+#   count-after  — "Failed: 3" / "Failures: 2" / "Errors: 1"            (dotnet/MSTest,
+#                  JUnit/surefire, …)
+# Plus literal markers runners print only on failure. Any miss is fail-loud (an extra
+# whisper), never a false pass.
+FAIL_RE='[1-9][0-9]*[[:space:]]+(failed|failing|failures?|errors?)|([Ff]ailed|[Ff]ailures?|[Ee]rrors?):[[:space:]]*[1-9]|FAILED|--- FAIL|Traceback \(most recent call last\)|panicked at|npm ERR!|AssertionError|BUILD FAILURE|BUILD FAILED'
+
 maude_ensure_self_dir
 CARE="$(maude_self_dir)/care.json"
 [ -s "$CARE" ] || printf '{}\n' > "$CARE" 2>/dev/null
@@ -86,42 +103,60 @@ jq -e . "$CARE" >/dev/null 2>&1 || printf '{}\n' > "$CARE" 2>/dev/null
 # rename is a true atomic rename, not a cross-fs cp; rm the temp on any failure).
 care_set() {
   local tmp
-  tmp="$(mktemp "$(dirname "$CARE")/.care.XXXXXX" 2>/dev/null)" || return 0
-  if jq "$@" "$CARE" > "$tmp" 2>/dev/null; then
-    mv "$tmp" "$CARE" 2>/dev/null || rm -f "$tmp" 2>/dev/null
-  else
-    rm -f "$tmp" 2>/dev/null
+  tmp="$(mktemp "$(dirname "$CARE")/.care.XXXXXX" 2>/dev/null)" || return 1
+  if jq "$@" "$CARE" > "$tmp" 2>/dev/null && mv "$tmp" "$CARE" 2>/dev/null; then
+    return 0
   fi
+  rm -f "$tmp" 2>/dev/null
+  return 1
 }
 
 case "$MODE" in
   stamp)
     printf '%s' "$CMD" | grep -qE -- "$VERIFY_RE" || exit 0
-    # Count only a CONFIRMED pass. The Bash tool_response carries `exit_code`
-    # when available; require it to be 0. A failed run, or one whose exit code the
-    # runtime doesn't surface, is NOT stamped — worst case is an extra advisory
-    # whisper (fail-loud), never a false "you're covered".
-    EXIT="$(printf '%s' "$INPUT" | jq -r '.tool_response.exit_code // .tool_response.exitCode // .tool_response.code // .tool_response.returncode // ""' 2>/dev/null)"
-    [ "$EXIT" = "0" ] || exit 0
-    care_set --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.last_verify_iso = $ts'
-    maude_log_trace "verify" "stamped last_verify_iso"
+    # The Bash tool_response surfaces {stdout, stderr, interrupted} — there is NO
+    # exit code (verified against the runtime), so "did it pass?" isn't directly
+    # knowable. Belt-and-suspenders, both erring fail-loud:
+    #   belt       — only stamp a run that ran to COMPLETION (interrupted != true).
+    #   suspenders — and whose output shows no high-confidence FAILURE signature.
+    # A failure-sniff can only ever SUPPRESS a stamp (→ an extra advisory whisper),
+    # never manufacture a false "you're covered" — that asymmetry is what makes a
+    # best-effort output signal safe to layer on. Output is scanned IN MEMORY only
+    # and never written to disk (the privacy invariant).
+    [ "$(printf '%s' "$INPUT" | jq -r '.tool_response.interrupted // false' 2>/dev/null)" = "true" ] && exit 0
+    OUT="$(printf '%s' "$INPUT" | jq -r '[.tool_response.stdout // "", .tool_response.stderr // ""] | join("\n")' 2>/dev/null)"
+    printf '%s' "$OUT" | grep -qE -- "$FAIL_RE" && exit 0
+    # care_set reports its own success; don't claim a stamp the write dropped.
+    if care_set --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.last_verify_iso = $ts'; then
+      maude_log_trace "verify" "stamped last_verify_iso"
+    else
+      maude_log_trace "verify" "could not stamp last_verify_iso (care.json unwritable)"
+    fi
     ;;
 
   commit)
     printf '%s' "$CMD" | grep -qE -- "$COMMIT_RE" || exit 0
 
     TRACE_DIR="$(maude_self_dir)/trace"
-    # Two most-recent trace files (today + the prior day) so an edit made before
-    # UTC midnight is still seen by a post-midnight commit. No date arithmetic.
+    # The two most-recent trace files (so an edit made just before UTC midnight is
+    # still seen by a post-midnight commit). Lexical filename sort == chronological;
+    # no date arithmetic. After an idle gap these are the two most recent ACTIVE
+    # days, not strictly yesterday/today — still correct (edits since the last
+    # verify are matched by their own ts, not by the filename).
     FILES="$(ls -1 "$TRACE_DIR"/today-*.jsonl 2>/dev/null | sort | tail -2)"
     [ -z "$FILES" ] && exit 0
 
     LAST_VERIFY_ISO="$(jq -r '.last_verify_iso // ""' "$CARE" 2>/dev/null)"
 
     # Edits since the last verify: "ts<TAB>target" lines (ISO ts string compare).
+    # Parse per-line with `fromjson?` (-R reads raw lines): a half-flushed or corrupt
+    # JSONL line is SKIPPED, not fatal. A single bad line must never abort the stream
+    # and silently blind the whisper — that would fail the WRONG way (a false "you're
+    # covered" instead of the fail-loud extra whisper this hook promises).
     EDITS="$(printf '%s\n' "$FILES" | while IFS= read -r f; do [ -n "$f" ] && cat -- "$f"; done \
-      | jq -r --arg vts "$LAST_VERIFY_ISO" '
-      select(.kind=="tool"
+      | jq -rR --arg vts "$LAST_VERIFY_ISO" '
+      fromjson?
+      | select(.kind=="tool"
              and (.tool=="Write" or .tool=="Edit" or .tool=="MultiEdit")
              and .target != null
              and (.ts > $vts))
