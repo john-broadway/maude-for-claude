@@ -1,11 +1,42 @@
-<!-- Version: 0.4.1 -->
+<!-- Version: 0.5.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-11 CDT -->
+<!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.5.0 — the verify tripwire (2026-06-13)
+
+The gate hard-blocks irreversible *actions*. Nothing caught a confident *claim* committed
+without checking — the assert-without-verify miss, the most expensive one. This release adds
+the tripwire for it.
+
+### Added
+- **`maude-verify-watch`: a commit-time verify check.** Two hooks on Bash, whisper-only,
+  never blocks:
+  - `stamp` (PostToolUse) records an ISO timestamp when a real test / lint / typecheck /
+    smoke run **exits 0** — recognized at **command position** (so `pip install pytest`,
+    `cat pytest.ini` don't count) and **quote-stripped** (so a commit message that merely
+    *names* a tool can't fake a pass). A failed run, or one whose exit code isn't surfaced,
+    isn't counted.
+  - `commit` (PreToolUse) whispers once — *"files changed since the last verify — did you
+    check this, or are you asserting it?"* — when **code** files were edited since the last
+    verify. Docs/config-only commits are suppressed; one whisper per edit-batch; the two most
+    recent trace files are read so a session crossing UTC midnight isn't blind.
+  - Timestamps only to `care.json`; no command or output content on disk. Portable (ISO
+    string compare, no `date -d`). Vetted by a three-lens adversarial review before merge.
+
+### Notes / v1 limits
+- A verify counts only on a **confirmed exit 0**; a run whose exit code the runtime doesn't
+  surface is treated as unproven and not stamped (→ a fail-loud advisory whisper).
+- Unknown/custom test-runner names aren't recognized and will draw a (one-per-batch) advisory
+  whisper. Common runners across Python / JS / Rust / Go / Java / .NET / Ruby / Elixir are covered.
+
+No new dependencies.
 
 ---
 
