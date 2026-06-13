@@ -1,4 +1,4 @@
-<!-- Version: 0.5.3 -->
+<!-- Version: 0.5.4 -->
 <!-- Revised: 2026-06-09 CDT — version-header sweep -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 ---
@@ -25,7 +25,7 @@ What should have happened instead.
 
 ## Environment
 
-- **Plugin version:** (e.g., 0.1.1 — see `.claude-plugin/plugin.json`)
+- **Plugin version:** (see `.claude-plugin/plugin.json`)
 - **Claude Code version:** (run `/doctor` to find it)
 - **OS:** (e.g., Ubuntu 24.04, macOS 15, etc.)
 - **Surface:** which slash command, hook, or agent triggered it
