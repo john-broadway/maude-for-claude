@@ -174,6 +174,12 @@ printf 'still not json {{{\n' > "$CARE_E"
 maude_care_ensure "$CARE_E"
 assert_contains "$(cat "$(trace_path)" 2>/dev/null)" '"kind":"care"' "loss traced"
 
+test_start "care_ensure stays silent on stderr when it cannot write (no redirect leak)"
+rm -rf "$CARE_E"; mkdir -p "$CARE_E"   # an unwritable path (a directory) — reseed can't write
+err="$(maude_care_ensure "$CARE_E" 2>&1 >/dev/null)"
+rm -rf "$CARE_E"
+assert_eq "$err" "" "no stderr leak on write failure"
+
 # ── maude_bucket_for_hour (pure: hour int → time-of-day bucket) ───────
 test_start "bucket_for_hour 4 is night (pre-dawn)"
 assert_eq "$(maude_bucket_for_hour 4)" "night" "h=4"

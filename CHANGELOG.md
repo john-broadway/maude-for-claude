@@ -1,4 +1,4 @@
-<!-- Version: 0.5.2 -->
+<!-- Version: 0.5.3 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,38 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.5.3 — the gate-clear no longer claims a clearance it didn't write (2026-06-13)
+
+The second of the two follow-ups flagged in v0.5.2. `maude-clear-gate.sh` (run by
+`/maude:conscience` to write a one-shot `gate_cleared` token) printed *"Maude: gate
+cleared for X"* and logged a `gate-cleared` trace **unconditionally** — even when the
+`jq` write failed (e.g. an empty or corrupt `care.json`, which it only guarded with
+`[ -f ]`, not validity). So it could tell the user the gate was open while writing
+nothing — the exact assert-without-verify pattern Maude's own tripwire exists to catch.
+Fail-safe in direction (no token written → the gate still blocks), but a false claim.
+
+### Fixed
+- `clear-gate` now heals `care.json` through the shared `maude_care_ensure` (so an
+  empty/corrupt file is repaired and the write can actually succeed), and it claims
+  success **only if the token was persisted**. On a write failure it says so on stderr
+  (*"could NOT clear the gate … the gate still stands"*), exits non-zero, and logs **no**
+  `gate-cleared` trace.
+- Hardened `maude_care_ensure` (introduced v0.5.2) to stay **silent on a reseed write
+  failure**: `printf > x 2>/dev/null` still leaks bash's redirection error (the `>` is
+  set up before `2>` applies), so an unwritable `care.json` printed a "cannot write" line
+  from a hook that must be quiet. Group-redirect (`{ …; } 2>/dev/null`) suppresses it.
+
+### Tests
+- Four failure-path tests, forcing the write to fail deterministically (even under root)
+  by making `care.json` a directory: no false "gate cleared", non-zero exit, honest
+  stderr, and no false trace. `test-clear-gate.sh` 13/13; `make test` 19/19;
+  `make verify` 0 findings.
+
+This closes both R2-adjacent follow-ups (the freeze-on-corrupt half is now moot for
+`clear-gate`, since it routes through the healing helper). No new dependencies.
 
 ---
 

@@ -208,14 +208,17 @@ maude_ensure_user_dir() {
 maude_care_ensure() {
   local care="$1"
   [ -n "$care" ] || return 0
+  # Group-redirect the seed so a FAILED redirection (e.g. unwritable path) is
+  # suppressed too — `printf > x 2>/dev/null` still leaks bash's redirect error
+  # because `>` is set up before `2>` applies; `{ …; } 2>/dev/null` covers it.
   if [ ! -s "$care" ]; then
-    printf '{}\n' > "$care" 2>/dev/null
+    { printf '{}\n' > "$care"; } 2>/dev/null
     return 0
   fi
   command -v jq >/dev/null 2>&1 || return 0
   jq -e . "$care" >/dev/null 2>&1 && return 0
   maude_log_trace "care" "care.json was invalid JSON — reseeded {} (transient shared state reset)"
-  printf '{}\n' > "$care" 2>/dev/null
+  { printf '{}\n' > "$care"; } 2>/dev/null
 }
 
 # Append a user-STATED fact to the cross-project profile (the testable core of

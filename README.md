@@ -1,4 +1,4 @@
-<!-- Version: 0.5.2 -->
+<!-- Version: 0.5.3 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -82,6 +82,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.5.3 (2026-06-13) — the gate-clear no longer claims a clearance it didn't write.** The second v0.5.2 follow-up: `/maude:conscience`'s gate-clear printed *"gate cleared"* and logged the trace **unconditionally** — even when the `care.json` write failed (empty/corrupt file) — telling the user the gate was open while writing nothing. The exact assert-without-verify pattern Maude's tripwire exists to catch. Now it heals `care.json` via the shared helper and claims success **only if the token was actually persisted**; otherwise it says so on stderr, exits non-zero, and logs no trace. Fail-safe throughout (no token → the gate still blocks).
 
 **v0.5.2 (2026-06-13) — a wiped state file no longer goes unrecorded.** Follow-up to the v0.5.1 review (R2): when the shared `care.json` was corrupt, hooks silently reset the whole file to `{}` — wiping every hook's state (incl. a live `/maude:conscience` clearance) with no record. Now a shared `maude_care_ensure` helper *traces* the loss before reseeding (the state is all transient/fail-safe, so reseed-not-salvage is right — but it's **recorded**, not silent), and routing init/reset through one helper stops the lossy pattern being re-copied. Two related findings (freeze-on-corrupt in drift/clear-gate; clear-gate claiming success without verifying its write) are flagged as deferred follow-ups.
 
