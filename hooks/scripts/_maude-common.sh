@@ -191,6 +191,33 @@ maude_ensure_user_dir() {
   mkdir -p "$(maude_user_dir)" 2>/dev/null
 }
 
+# Ensure care.json is present and a valid JSON object, RECORDING any loss.
+# care.json is the plugin's SHARED state (tier1 cache, gate_cleared, cooldowns,
+# session counters); every hook jq-MERGES its own keys into it, which needs a valid
+# base object. So:
+#   * missing or empty        → seed {}.
+#   * present but invalid JSON → TRACE the loss, then reseed {}.
+# All keys here are transient/regenerable (gate_cleared is a minutes-lived, fail-safe
+# token), so a corrupt file is reseeded rather than salvaged — but the reset is now
+# RECORDED in the trace instead of silent. (Hooks used to open-code
+# `jq -e . || printf '{}'`, which wiped the whole shared-state file with no record —
+# the R2 finding. Route care.json init/reset through here so the pattern can't be
+# silently re-copied.) jq is required to DETECT corruption; without it we only handle
+# missing/empty and leave a present file untouched (callers are inert without jq).
+# Usage: maude_care_ensure "<care.json path>"
+maude_care_ensure() {
+  local care="$1"
+  [ -n "$care" ] || return 0
+  if [ ! -s "$care" ]; then
+    printf '{}\n' > "$care" 2>/dev/null
+    return 0
+  fi
+  command -v jq >/dev/null 2>&1 || return 0
+  jq -e . "$care" >/dev/null 2>&1 && return 0
+  maude_log_trace "care" "care.json was invalid JSON — reseeded {} (transient shared state reset)"
+  printf '{}\n' > "$care" 2>/dev/null
+}
+
 # Append a user-STATED fact to the cross-project profile (the testable core of
 # /maude:teach). Distinct from the observed-only writers (save/rest/check-on-me/
 # notice): those record what Maude inferred; this records what the user asserted,

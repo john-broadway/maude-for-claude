@@ -144,6 +144,36 @@ printf '{"tier1_up":true,"tier1_last_probe":1}\n' > "$TEST_TMP/.maude/plugin/car
 maude_tier1_up
 assert_exit "$?" "1" "tier1 stale"
 
+# ── maude_care_ensure (R2: a corrupt care.json reseed must be RECORDED, not a ──
+# silent wipe of the shared-state file — tier1 cache, gate_cleared, cooldowns) ──
+CARE_E="$TEST_TMP/.maude/plugin/care.json"
+
+test_start "care_ensure seeds {} when care.json is missing"
+rm -f "$CARE_E"
+maude_care_ensure "$CARE_E"
+assert_eq "$(jq -rc . "$CARE_E" 2>/dev/null)" "{}" "missing → {}"
+
+test_start "care_ensure seeds {} when care.json is empty"
+: > "$CARE_E"
+maude_care_ensure "$CARE_E"
+assert_eq "$(jq -rc . "$CARE_E" 2>/dev/null)" "{}" "empty → {}"
+
+test_start "care_ensure PRESERVES a valid care.json (foreign keys survive)"
+printf '{"gate_cleared":{"git-push":{"until":999}},"tier1_up":true}\n' > "$CARE_E"
+maude_care_ensure "$CARE_E"
+assert_eq "$(jq -r '.gate_cleared["git-push"].until' "$CARE_E" 2>/dev/null)" "999" "valid untouched"
+
+test_start "care_ensure reseeds a CORRUPT care.json to {}"
+printf 'this is not json {{{\n' > "$CARE_E"
+maude_care_ensure "$CARE_E"
+assert_eq "$(jq -rc . "$CARE_E" 2>/dev/null)" "{}" "corrupt → {}"
+
+test_start "care_ensure RECORDS the corrupt reseed in the trace (not silent)"
+: > "$(trace_path)"
+printf 'still not json {{{\n' > "$CARE_E"
+maude_care_ensure "$CARE_E"
+assert_contains "$(cat "$(trace_path)" 2>/dev/null)" '"kind":"care"' "loss traced"
+
 # ── maude_bucket_for_hour (pure: hour int → time-of-day bucket) ───────
 test_start "bucket_for_hour 4 is night (pre-dawn)"
 assert_eq "$(maude_bucket_for_hour 4)" "night" "h=4"
