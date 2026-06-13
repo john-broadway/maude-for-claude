@@ -1,4 +1,4 @@
-<!-- Version: 0.5.0 -->
+<!-- Version: 0.5.1 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,43 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.5.1 — the tripwire actually fires (2026-06-13)
+
+A post-merge multi-agent review of v0.5.0 found the verify tripwire was **non-functional**: the
+`stamp` hook gated on `tool_response.exit_code`, but a Bash tool result carries no exit code —
+only `{stdout, stderr, interrupted}`. So `last_verify_iso` was never written and the commit
+whisper fired on *every* code-edit commit, even right after a green run — defeating the feature.
+The miss was fail-loud (it over-nagged, never falsely reassured), so this is a signal-vs-noise
+fix, not a safety hole.
+
+### Fixed
+- **The stamp now uses a pass signal that actually exists — belt-and-suspenders.** A verify is
+  stamped when it ran to **completion** (`interrupted != true`) **and** its output shows no
+  high-confidence failure signature (`N failed`, `FAILED`, `--- FAIL`, `Traceback`, `panicked at`,
+  `npm ERR!`, …). Both checks err fail-loud: an output failure-sniff can only ever *suppress* a
+  stamp (→ an extra advisory whisper), never manufacture a false "you're covered". The promise
+  shifts honestly from *"your tests passed"* to *"you actually ran a verify since editing."*
+  Output is scanned in memory only — never written to disk (privacy invariant unchanged).
+- **A malformed trace line no longer blinds the whisper.** Commit-mode parsed the trace as one
+  jq stream, so a single corrupt JSONL line aborted it and silently suppressed the whisper for
+  all of the day's edits — failing the *wrong* way. Now parsed per-line (`fromjson?`): a bad
+  line is skipped, not fatal.
+- **`care_set` reports write failures honestly.** It returns a real status, and the stamp trace
+  records *"could not stamp … (care.json unwritable)"* instead of claiming a stamp the write
+  dropped.
+
+### Tests
+- Rebuilt the stamp test envelope from the **real** Bash `tool_response` schema (no `exit_code`),
+  so the suite can no longer go green over a payload the runtime never sends. Added coverage for
+  the broadened runner set (npm/go/cargo/mvn/dotnet/mix), command-position anchoring
+  (`which pytest`, `echo pytest`), the interrupted / failing-output skips, the malformed-line
+  resilience, and the two-most-recent-file (UTC-midnight) read. `test-verify-watch.sh`: **32/32**;
+  `make test` **19/19** files; `make verify` **0 findings**.
+
+No new dependencies.
 
 ---
 
@@ -33,6 +70,8 @@ the tripwire for it.
 ### Notes / v1 limits
 - A verify counts only on a **confirmed exit 0**; a run whose exit code the runtime doesn't
   surface is treated as unproven and not stamped (→ a fail-loud advisory whisper).
+  > **Corrected in v0.5.1:** the Bash tool_response surfaces *no* exit code, so this was the
+  > *only* case — the stamp never fired and the whisper was unconditional. See v0.5.1 above.
 - Unknown/custom test-runner names aren't recognized and will draw a (one-per-batch) advisory
   whisper. Common runners across Python / JS / Rust / Go / Java / .NET / Ruby / Elixir are covered.
 
