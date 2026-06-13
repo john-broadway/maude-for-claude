@@ -1,6 +1,6 @@
 <!-- Version: 0.5.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-11 CDT -->
+<!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -83,7 +83,7 @@ She is not loud. When she gets loud, listen.
 
 ## What's new
 
-**v0.5.0 (2026-06-13) — the verify tripwire.** The gate stops irreversible *actions*; nothing stopped a confident *claim* committed without checking. New `maude-verify-watch`: it stamps when a real test / lint / typecheck / smoke run goes by — recognized at command position, so merely *naming* a tool in a commit message can't fake a pass — and whispers once before `git commit` when **code** changed since the last verify: *"did you check this, or are you asserting it?"* Docs-only commits are suppressed; whisper-only, never blocks; timestamps only, no content on disk. Vetted by a three-lens adversarial review before merge.
+**v0.5.0 (2026-06-13) — the verify tripwire.** The gate stops irreversible *actions*; nothing stopped a confident *claim* committed without checking. New `maude-verify-watch`: it stamps when a real test / lint / typecheck / smoke run **exits 0** — recognized at command position *and* quote-stripped, so neither `pip install pytest` nor a commit message that merely *names* a tool can fake a pass — and whispers once before `git commit` when **code** changed since the last verify: *"did you check this, or are you asserting it?"* Docs-only commits are suppressed; whisper-only, never blocks; timestamps only, no content on disk. Vetted by a three-lens adversarial review before merge.
 
 **v0.4.1 (2026-06-11) — doc-sync pass.** v0.4.0 missed seven `<!-- Version: -->` headers (including this README's own) and the `docs/launch/` drafts still spoke as of v0.1.5 — nine CHANGELOG releases back. All fixed — and `maude-verify` now has a **version-header sync check**, so a stale header is a counted finding instead of something a human has to feel. The release convention was always bump-all-headers; now it's enforced, not remembered.
 

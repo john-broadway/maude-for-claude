@@ -8,9 +8,9 @@
 # Two modes (dispatched by $1, mirroring maude-trace.sh):
 #
 #   stamp   (PostToolUse · Bash) — if the command that just ran was a verify
-#           (test / lint / typecheck / smoke), record an ISO timestamp in
-#           care.json `.last_verify_iso`. Best-effort pass detection: skips on a
-#           clearly-failed or interrupted run. Silent. Never blocks.
+#           (test / lint / typecheck / smoke) AND it exited 0, record an ISO
+#           timestamp in care.json `.last_verify_iso`. A failed run, or one whose
+#           exit code the runtime doesn't surface, is NOT stamped. Silent. Never blocks.
 #
 #   commit  (PreToolUse · Bash) — if the command is `git commit`, look at the two
 #           most recent trace files (today + the one before, so a session that
@@ -26,10 +26,10 @@
 #     `cat pytest.ini`, `which tsc` do NOT count as a verify.
 #   * Timestamps are compared as ISO-8601 UTC strings (lexical == chronological),
 #     so there is NO `date -d` dependency — portable to macOS/BSD.
-#   * Pass-detection is best-effort: if the runtime doesn't expose an exit code,
-#     a run is counted as a verify ("ran"), not proven-passed. A failing test in
-#     an unknown response shape could therefore suppress one whisper. v2 = require
-#     a confirmed exit 0. Acceptable for a non-blocking advisory.
+#   * A verify is stamped only on a CONFIRMED exit 0 (the Bash tool_response's
+#     `exit_code`). If the exit code isn't surfaced, the run is treated as
+#     unproven and not stamped — the failure direction is fail-loud (an extra
+#     advisory whisper), never a false "you're covered".
 #   * Custom/unknown test runners (project-specific names) won't be recognized and
 #     will produce a (one-per-batch) advisory whisper — inherent to static matching.
 #
@@ -58,7 +58,8 @@ CMD="$(maude_strip_quotes "$CMD")"
 
 # --- pattern building blocks ------------------------------------------------
 # Command position: line start, after a shell separator, optionally after a run-
-# wrapper (sudo / env VAR= / uv|poetry|pipenv|pdm run / npx / pnpm exec / bunx).
+# wrapper (env/sudo/time/nice/xvfb-run, a VAR= assignment, uv|poetry|pipenv|pdm
+# run, npx, pnpm exec|dlx, bunx).
 SEP='(^|[;&|]|&&|\|\|)[[:space:]]*'
 WRAP='((env|sudo|time|nice|xvfb-run)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|(uv|poetry|pipenv|pdm)[[:space:]]+run[[:space:]]+|npx[[:space:]]+|pnpm[[:space:]]+(exec|dlx)[[:space:]]+|bunx[[:space:]]+)*'
 # Recognized test/lint/typecheck runners (each at command position via SEP+WRAP).
@@ -96,12 +97,12 @@ care_set() {
 case "$MODE" in
   stamp)
     printf '%s' "$CMD" | grep -qE -- "$VERIFY_RE" || exit 0
-    # Best-effort: don't count a FAILED or interrupted verify. Field names vary
-    # across runtimes; if none is present, count it as "ran" (see header note).
-    INTERRUPTED="$(printf '%s' "$INPUT" | jq -r '.tool_response.interrupted // false' 2>/dev/null)"
-    [ "$INTERRUPTED" = "true" ] && exit 0
+    # Count only a CONFIRMED pass. The Bash tool_response carries `exit_code`
+    # when available; require it to be 0. A failed run, or one whose exit code the
+    # runtime doesn't surface, is NOT stamped — worst case is an extra advisory
+    # whisper (fail-loud), never a false "you're covered".
     EXIT="$(printf '%s' "$INPUT" | jq -r '.tool_response.exit_code // .tool_response.exitCode // .tool_response.code // .tool_response.returncode // ""' 2>/dev/null)"
-    if [ -n "$EXIT" ] && [ "$EXIT" != "0" ] && [ "$EXIT" != "null" ]; then exit 0; fi
+    [ "$EXIT" = "0" ] || exit 0
     care_set --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.last_verify_iso = $ts'
     maude_log_trace "verify" "stamped last_verify_iso"
     ;;
@@ -118,7 +119,8 @@ case "$MODE" in
     LAST_VERIFY_ISO="$(jq -r '.last_verify_iso // ""' "$CARE" 2>/dev/null)"
 
     # Edits since the last verify: "ts<TAB>target" lines (ISO ts string compare).
-    EDITS="$(cat $FILES 2>/dev/null | jq -r --arg vts "$LAST_VERIFY_ISO" '
+    EDITS="$(printf '%s\n' "$FILES" | while IFS= read -r f; do [ -n "$f" ] && cat -- "$f"; done \
+      | jq -r --arg vts "$LAST_VERIFY_ISO" '
       select(.kind=="tool"
              and (.tool=="Write" or .tool=="Edit" or .tool=="MultiEdit")
              and .target != null
