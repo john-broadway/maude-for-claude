@@ -69,6 +69,16 @@ test_start "drift silent below threshold"
 run_drift
 assert_eq "$ERR" "" "below threshold"
 
+# ── R2-adjacent: a corrupt care.json must not FREEZE the cooldown write ──
+# drift-watch used to only seed-if-EMPTY, so a corrupt (non-empty) care.json made
+# its merge silently fail — the whisper could never remember it fired. Routing init
+# through maude_care_ensure heals it (and records the loss), so the cooldown persists.
+seed_trace 5 "Grep" ""
+printf 'not valid json {{{\n' > "$(care_path)"
+test_start "drift heals a corrupt care.json and persists its cooldown (no freeze)"
+run_drift
+assert_eq "$(read_care '.drift_warned.grep')" "$TODAY" "cooldown persisted after heal"
+
 print_summary
 teardown_test_env
 exit $FAILED

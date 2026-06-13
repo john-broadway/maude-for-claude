@@ -1,4 +1,4 @@
-<!-- Version: 0.5.3 -->
+<!-- Version: 0.5.4 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,32 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.5.4 — last R2 fragment + doc-staleness sweep (2026-06-13)
+
+Cleanup pass closing the loose ends from the v0.5.2/v0.5.3 reviews.
+
+### Fixed
+- **`maude-drift-watch.sh` no longer freezes on a corrupt `care.json`.** It used to
+  seed only when the file was empty, so a corrupt (non-empty) `care.json` made its
+  cooldown merge silently fail — the repeat-tool whisper could never remember it fired.
+  Now routed through the shared `maude_care_ensure` (heals + records), like the other
+  care.json users. This closes the last fragment of the R2-adjacent freeze class.
+
+### Docs (full-tree staleness sweep)
+- `docs/launch/social-copy.md` "Recent:" arc led with v0.4.0 and omitted the entire
+  v0.5.x verify-tripwire line — refreshed to lead with it.
+- `.github/ISSUE_TEMPLATE/bug_report.md` showed `e.g., 0.1.1` as the version example
+  (nine releases stale) — **de-versioned** to just point at `.claude-plugin/plugin.json`,
+  so it can't drift again (same principle as the v0.5.2 `.claude/CLAUDE.md` fix).
+
+### Tests
+- A corrupt-`care.json` cooldown-persistence test for `drift-watch`. `make test` 19/19;
+  `make verify` 0 findings.
+
+No new dependencies.
 
 ---
 

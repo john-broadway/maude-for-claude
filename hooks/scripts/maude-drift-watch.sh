@@ -22,11 +22,11 @@ TRACE="$(maude_trace_file)"
 CARE="$(maude_self_dir)/care.json"
 TODAY="$(date +%Y-%m-%d)"
 
-# Ensure care.json is a valid JSON object before jq tries to merge into it.
-# If absent or empty (a corrupted-but-existing zero-byte file), seed with {}.
-if [ ! -s "$CARE" ]; then
-  printf '{}\n' > "$CARE" 2>/dev/null
-fi
+# Ensure care.json is a valid JSON object before jq tries to merge into it. The
+# shared helper seeds {} when missing/empty AND heals (with a trace) a corrupt
+# non-empty file — without that, a corrupt care.json froze the cooldown write below
+# (the merge silently failed, so the whisper could never remember it fired).
+maude_care_ensure "$CARE"
 
 # Pull last 30 tool events
 TAIL="$(tail -30 "$TRACE" | jq -c 'select(.kind == "tool")' 2>/dev/null)"

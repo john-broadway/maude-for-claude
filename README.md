@@ -1,4 +1,4 @@
-<!-- Version: 0.5.3 -->
+<!-- Version: 0.5.4 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -82,6 +82,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.5.4 (2026-06-13) — last R2 fragment + doc-staleness sweep.** Closes the loose ends: `maude-drift-watch` no longer *freezes* on a corrupt `care.json` (it now heals via the shared helper like the other state users, so its cooldown can't silently fail to persist), and a full-tree staleness pass refreshed the launch copy's "Recent:" arc to lead with the v0.5.x verify-tripwire line and de-versioned a stale `0.1.1` example in the bug-report template.
 
 **v0.5.3 (2026-06-13) — the gate-clear no longer claims a clearance it didn't write.** The second v0.5.2 follow-up: `/maude:conscience`'s gate-clear printed *"gate cleared"* and logged the trace **unconditionally** — even when the `care.json` write failed (empty/corrupt file) — telling the user the gate was open while writing nothing. The exact assert-without-verify pattern Maude's tripwire exists to catch. Now it heals `care.json` via the shared helper and claims success **only if the token was actually persisted**; otherwise it says so on stderr, exits non-zero, and logs no trace. Fail-safe throughout (no token → the gate still blocks).
 
