@@ -1,4 +1,4 @@
-<!-- Version: 0.5.1 -->
+<!-- Version: 0.5.2 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,45 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.5.2 — a wiped state file no longer goes unrecorded (2026-06-13)
+
+Follow-up to the v0.5.1 review (finding R2). `care.json` is the plugin's SHARED state
+(tier1 cache, the `/maude:conscience` `gate_cleared` token, cooldowns, session
+counters). When it was corrupt, hooks open-coded `jq -e . || printf '{}'` — silently
+resetting the WHOLE file to `{}` with no record. A truncated/half-written `care.json`
+(plausible after a crash) would wipe every hook's state, including a live clearance
+token, and nobody was told.
+
+### Fixed
+- **New shared `maude_care_ensure` helper** (`_maude-common.sh`): seeds `{}` when
+  `care.json` is missing/empty, and on a *corrupt* file **TRACES** the loss
+  (`"kind":"care"`) before reseeding `{}`. The state there is all transient/regenerable
+  (`gate_cleared` is a minutes-lived, fail-safe token), so reseed-not-salvage is the
+  right call — but the reset is now **recorded**, not silent. Routing init/reset through
+  one helper also stops the lossy pattern being re-copied into the next hook.
+- The two sites that did the silent wipe — `maude-care.sh` (every UserPromptSubmit) and
+  `maude-verify-watch.sh` — now call the helper.
+
+### Tests
+- `maude_care_ensure` covered for all four inputs (missing / empty / valid-preserved /
+  corrupt-reseed-and-traced). `make test` **19/19**; `make verify` **0 findings**.
+
+### Known / deferred (surfaced by the same review; intentionally not bundled here)
+- **Freeze-on-corrupt** in `maude-drift-watch.sh` and `maude-clear-gate.sh`: they only
+  init-if-missing, so a corrupt `care.json` makes their merge silently fail (state
+  frozen, not wiped). Largely theoretical — `maude-care.sh` heals the file first every
+  prompt. Routing them through the helper would fix it, but `clear-gate` writes the
+  security-sensitive `gate_cleared` token, so that shouldn't ride under an R2 banner.
+- **`maude-clear-gate.sh` reports success unconditionally**: it prints "gate cleared"
+  regardless of whether the jq write succeeded (and inits on `[ -f ]`, not `[ -s ]`), so
+  an empty/corrupt `care.json` could claim a clearance it never wrote. Fail-safe (the
+  push still blocks), but it's the same assert-without-verify pattern Maude's own
+  tripwire exists to catch — its own follow-up.
+
+No new dependencies.
 
 ---
 

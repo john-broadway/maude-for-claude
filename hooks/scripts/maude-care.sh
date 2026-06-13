@@ -52,13 +52,12 @@ fi
 # so it must MERGE its 5 fields, never rewrite the file from scratch (that wiped
 # everyone else's state every prompt). Mirror probe-tier1.sh's jq-merge + atomic mv.
 if command -v jq >/dev/null 2>&1; then
-  # Seed a base object so the merge works on first run, an EMPTY file, OR a
-  # corrupt NON-EMPTY one. The old whole-file rewrite self-healed corruption every
-  # prompt; the merge must not regress that — without this reseed an invalid
-  # care.json would make every merge fail and freeze care/probe/drift/gate state
-  # forever (silently, with jq present). In the rare recovery, foreign keys are
-  # lost — acceptable: recover once vs. freeze every turn.
-  jq -e . "$CARE" >/dev/null 2>&1 || printf '{}\n' > "$CARE"
+  # Ensure a valid base object so the merge works on first run, an EMPTY file, OR a
+  # corrupt NON-EMPTY one — without this an invalid care.json would make every merge
+  # fail and freeze care/probe/drift/gate state forever (silently, with jq present).
+  # On a corrupt file the transient shared state is reset; maude_care_ensure now
+  # RECORDS that in the trace (it used to be a silent wipe — the R2 finding).
+  maude_care_ensure "$CARE"
   TMP="$(mktemp)"
   jq --arg ld "$TODAY" --arg la "$NOW" --arg ss "$SESSION_START" \
      --arg p "$PROMPTS" --arg lf "$LONG_FLAG_FIRED" \

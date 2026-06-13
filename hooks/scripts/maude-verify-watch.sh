@@ -96,8 +96,9 @@ FAIL_RE='[1-9][0-9]*[[:space:]]+(failed|failing|failures?|errors?)|([Ff]ailed|[F
 
 maude_ensure_self_dir
 CARE="$(maude_self_dir)/care.json"
-[ -s "$CARE" ] || printf '{}\n' > "$CARE" 2>/dev/null
-jq -e . "$CARE" >/dev/null 2>&1 || printf '{}\n' > "$CARE" 2>/dev/null
+# Valid JSON base for the merge below; a corrupt file is reseeded AND traced
+# (shared helper — see maude_care_ensure; replaces the old silent wipe, R2).
+maude_care_ensure "$CARE"
 
 # Atomic same-filesystem merge into care.json (mktemp in CARE's own dir so the
 # rename is a true atomic rename, not a cross-fs cp; rm the temp on any failure).
