@@ -48,7 +48,7 @@ cat > "$PMAP/.maude/plugin/house-map.md" <<'EOF'
 ## Notes
 EOF
 OUT_P="$(bash "$VERIFY" "$PMAP" 2>&1)"
-cd "$MAUDE_ROOT"
+cd "$MAUDE_ROOT" || exit 1
 
 test_start "watch-list parser ignores a trailing inline description"
 printf '%s' "$OUT_P" | grep -q "Watch-list path missing: sub/realfile.md"
@@ -66,7 +66,7 @@ printf '{"name":"x","version":"2.0.0"}\n' > "$HSYNC/.claude-plugin/plugin.json"
 printf '<!-- Version: 2.0.0 -->\ncurrent file\n' > "$HSYNC/current.md"
 printf '<!-- Version: 1.0.0 -->\nstale file\n' > "$HSYNC/stale.md"
 OUT_H="$(bash "$VERIFY" "$HSYNC" 2>&1)"
-cd "$MAUDE_ROOT"
+cd "$MAUDE_ROOT" || exit 1
 
 test_start "verify flags a markdown version header behind plugin.json"
 assert_contains "$OUT_H" "STALE HEADER" "stale header finding present"
@@ -86,9 +86,9 @@ mkdir -p "$TMP_PLUGIN/.claude-plugin"
 cat > "$TMP_PLUGIN/.claude-plugin/plugin.json" <<'EOF'
 { this is not valid JSON
 EOF
-OUT_B="$(bash "$VERIFY" "$TMP_PLUGIN" 2>&1)"
+bash "$VERIFY" "$TMP_PLUGIN" >/dev/null 2>&1
 RC_B=$?
-cd "$MAUDE_ROOT"
+cd "$MAUDE_ROOT" || exit 1
 
 test_start "verify exits non-zero on broken plugin.json"
 [ "$RC_B" -ne 0 ]

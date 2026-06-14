@@ -1,0 +1,13 @@
+# ShellCheck config for the Maude plugin (100% bash + jq).
+# CI gates at --severity=warning (see Makefile `lint` + .github/workflows/ci.yml).
+
+# Follow `. "$DIR/_maude-common.sh"` sources so cross-file definitions resolve
+# (otherwise every hook trips SC1091 for the shared lib it sources).
+external-sources=true
+
+# The test harness asserts on a preceding test's result with the idiom
+#   [ cond ]; assert_exit "$?" ...
+# Here `$?` referring to the condition is INTENTIONAL (that's what we assert),
+# not the bug SC2319 warns about. Disabling it repo-wide keeps the test idiom
+# clean without 22 boilerplate `rc=$?` lines.
+disable=SC2319

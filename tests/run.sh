@@ -3,7 +3,7 @@
 # Exit 0 if all pass, 1 if any fail.
 
 set +e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 
 # Loud guard: most assertions read state via jq-backed helpers (read_care,
 # count_trace_lines) that return null/0 when jq is absent — which would make

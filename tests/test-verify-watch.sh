@@ -28,7 +28,7 @@ set_trace()    { clear_traces; : > "$(trace_path)"; for l in "$@"; do printf '%s
 do_stamp()    { jq -nc --arg c "$1" --arg o "${2:-}" --arg e "${3:-}" --argjson i "${4:-false}" \
                   '{tool_name:"Bash",tool_input:{command:$c},tool_response:{stdout:$o,stderr:$e,interrupted:$i,isImage:false,noOutputExpected:false},hook_event_name:"PostToolUse"}' \
                   | bash "$VW" stamp >/dev/null 2>&1; }
-run_commit()  { make_bash_tool_input "$1" | bash "$VW" commit 2>&1 >/dev/null; }
+run_commit()  { { make_bash_tool_input "$1" | bash "$VW" commit >/dev/null; } 2>&1; }
 
 EDIT='{"ts":"2026-01-01T11:00:00Z","kind":"tool","tool":"Edit","target":"/p/foo.py"}'
 EDIT2='{"ts":"2026-01-01T11:30:00Z","kind":"tool","tool":"Write","target":"/p/bar.py"}'

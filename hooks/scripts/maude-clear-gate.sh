@@ -57,16 +57,14 @@ UNTIL=$((NOW + DURATION))
 maude_care_ensure "$CARE"
 
 MINS=$((DURATION / 60))
-TMP="$(mktemp 2>/dev/null)" || exit 1
 # Claim success ONLY if the token was actually written — never tell the user the gate
 # is open when it isn't (a false clearance is exactly the assert-without-verify bug
 # Maude's tripwire exists to catch). The failure direction stays fail-safe: no token
 # written → the gate still blocks.
-if jq --arg k "$KEY" --argjson until "$UNTIL" '.gate_cleared[$k] = {until: $until}' "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE" 2>/dev/null; then
+if maude_care_set "$CARE" --arg k "$KEY" --argjson until "$UNTIL" '.gate_cleared[$k] = {until: $until}'; then
   printf 'Maude: gate cleared for "%s" — %d minute(s). One matching command will pass, then the token clears.\n' "$KEY" "$MINS"
   maude_log_trace "gate-cleared" "key=$KEY duration=$DURATION"
 else
-  rm -f "$TMP" 2>/dev/null
   printf 'Maude: could NOT clear the gate for "%s" — care.json could not be written. The gate still stands.\n' "$KEY" >&2
   exit 1
 fi

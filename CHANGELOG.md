@@ -1,4 +1,4 @@
-<!-- Version: 0.5.4 -->
+<!-- Version: 0.5.5 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,45 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.5.5 — bash hardening: one care-write path + shellcheck in CI (2026-06-14)
+
+Internal hardening pass from a deep read of the plugin — **no behavior change** to any
+hook, just consolidation and a new lint gate. The v0.5.2–v0.5.4 shared-state findings kept
+turning up the same patterns open-coded in hook after hook; this removes the duplication so
+the next hook can't re-introduce the old footguns.
+
+### Changed
+- **One shared `maude_care_set`** (`_maude-common.sh`): the atomic, status-returning
+  `care.json` write that was open-coded as `jq … > tmp && mv` in six hooks (an SC2015
+  footgun that couldn't report failure). `care.sh`, `drift-watch`, `clear-gate`, `gate`,
+  `pre-tool-use`, and `verify-watch` now all route through it; verify-watch's local
+  `care_set` is removed. Outcomes are preserved (the full suite stays green — incl. the
+  gate's one-shot-token-consume and pre-tool's `claudemd_warned` assertions); the write
+  is now *uniformly* an atomic same-filesystem rename — a small improvement for `gate` /
+  `pre-tool-use`, which previously `mktemp`'d in `$TMPDIR` and `mv`'d cross-filesystem.
+  The "verify the write landed" discipline (v0.5.1 / v0.5.3) now lives in one place.
+- **`drift-watch` dead guards removed**: now that it heals `care.json` via
+  `maude_care_ensure` (v0.5.4), its four `[ -f "$CARE" ]` checks were always-true — gone.
+
+### Added
+- **shellcheck in CI** — `make lint` plus a third CI job, gated at `--severity=warning`
+  with a `.shellcheckrc` (follow `. _maude-common.sh` sources; one documented disable for
+  the tests' `[ cond ]; assert_exit "$?"` idiom). For a 100%-bash plugin this catches the
+  quoting / redirection / word-split class by machine — the v0.5.3 redirect-leak was found
+  by hand; the linter would now catch its kind.
+- Fixed every genuine warning the gate surfaced (declare-and-assign `SC2155`,
+  `cd … || exit` `SC2164`, `[ -o ]` → `[ ] || [ ]` `SC2166`, redirection order `SC2069`,
+  unused-var cleanups, a `source=` directive). `shellcheck --severity=warning` is clean.
+
+### Tests
+- New `maude_care_set` unit tests (write / persist / merge / failure-returns-1).
+- `make test` 19/19 · `make verify` 0 findings · `make lint` clean. The full existing
+  suite staying green is the proof the refactor preserved behavior.
+
+No new dependencies (shellcheck is a CI-runner tool, not a plugin dependency).
 
 ---
 

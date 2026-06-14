@@ -1,13 +1,14 @@
 # Maude for Claude — CI
 # Copyright (c) 2026 John Broadway
 # Licensed under the Apache License, Version 2.0
-# Version: 0.3.0
-# Revised: 2026-06-09 CDT — v0.3.0 sweep (audit fixes + /maude:teach)
+# Version: 0.5.5
+# Revised: 2026-06-14 CDT — v0.5.5: added shellcheck lint job
 # Authors: John Broadway, Claude (Anthropic)
 #
-# Two independent jobs run on every push and pull request to main:
+# Three independent jobs run on every push and pull request to main:
 #   - tests   : full bash test harness (make test → tests/run.sh)
 #   - verify  : programmatic project audit (make verify → scripts/maude-verify.sh)
+#   - lint    : shellcheck the shell, gated at warning severity (make lint)
 #
 # History note: v3.0 / v4.0 of this file ran a `scrub` job against a private
 # SCRUB_PATTERNS repo secret. That gate was specific to literals that no
@@ -43,3 +44,14 @@ jobs:
 
       - name: Run project audit (make verify)
         run: make verify
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Verify shellcheck present
+        run: shellcheck --version
+
+      - name: Lint shell scripts (make lint)
+        run: make lint

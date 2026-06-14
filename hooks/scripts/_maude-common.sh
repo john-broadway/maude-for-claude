@@ -221,6 +221,24 @@ maude_care_ensure() {
   { printf '{}\n' > "$care"; } 2>/dev/null
 }
 
+# Atomic, status-returning merge into care.json — the single write path every hook
+# shares (was open-coded as `jq … > tmp && mv` in ~6 hooks, each an SC2015 footgun
+# that couldn't report failure). mktemp in care.json's OWN dir so the rename is a
+# true same-filesystem atomic mv, never a cross-fs copy; the temp is removed on any
+# failure. Returns 0 only if the new content was persisted, 1 otherwise — so callers
+# can avoid claiming a write that didn't land (see clear-gate / verify-watch).
+# Usage: maude_care_set "<care.json path>" <jq args…> '<filter>'
+maude_care_set() {
+  local care="$1"; shift
+  local tmp
+  tmp="$(mktemp "$(dirname "$care")/.care.XXXXXX" 2>/dev/null)" || return 1
+  if jq "$@" "$care" > "$tmp" 2>/dev/null && mv "$tmp" "$care" 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null
+  return 1
+}
+
 # Append a user-STATED fact to the cross-project profile (the testable core of
 # /maude:teach). Distinct from the observed-only writers (save/rest/check-on-me/
 # notice): those record what Maude inferred; this records what the user asserted,
@@ -324,7 +342,7 @@ maude_tier1_up() {
   last_probe="$(jq -r '.tier1_last_probe // 0' "$care" 2>/dev/null)"
   up="$(jq -r '.tier1_up // false' "$care" 2>/dev/null)"
   [ "$up" = "true" ] || return 1
-  local now=$(date +%s)
+  local now; now=$(date +%s)
   [ $((now - last_probe)) -lt "$ttl" ] && return 0
   return 1
 }

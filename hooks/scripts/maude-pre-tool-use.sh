@@ -80,7 +80,7 @@ if command -v jq >/dev/null 2>&1; then
         printf 'Maude: about to edit %s but CLAUDE.md has not been Read this session. Worth reading the rules first.\n' "$TARGET" >&2
         SURFACED="${SURFACED}claudemd-unread "
         if [ -f "$CARE" ]; then
-          TMP="$(mktemp 2>/dev/null)" && jq --arg t "$TODAY" '.claudemd_warned = $t' "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE"
+          maude_care_set "$CARE" --arg t "$TODAY" '.claudemd_warned = $t'
         fi
       fi
     fi

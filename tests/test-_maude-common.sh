@@ -180,6 +180,26 @@ err="$(maude_care_ensure "$CARE_E" 2>&1 >/dev/null)"
 rm -rf "$CARE_E"
 assert_eq "$err" "" "no stderr leak on write failure"
 
+# ── maude_care_set (shared atomic care.json write; returns status) ──
+test_start "care_set writes a key and returns success"
+printf '{}\n' > "$CARE_E"
+maude_care_set "$CARE_E" --arg v "hi" '.foo = $v'; rc=$?
+assert_eq "$rc" "0" "returns 0 on success"
+
+test_start "care_set persisted the value"
+assert_eq "$(jq -r '.foo' "$CARE_E" 2>/dev/null)" "hi" "value written"
+
+test_start "care_set merges — preserves existing keys"
+printf '{"keep":1}\n' > "$CARE_E"
+maude_care_set "$CARE_E" --arg v "x" '.foo = $v'
+assert_eq "$(jq -r '.keep' "$CARE_E" 2>/dev/null)" "1" "existing key kept"
+
+test_start "care_set returns failure when the write can't happen"
+rm -rf "$CARE_E"; mkdir -p "$CARE_E"   # care.json is a directory → jq can't read/write it
+maude_care_set "$CARE_E" '.foo = 1'; rc=$?
+rm -rf "$CARE_E"
+assert_eq "$rc" "1" "returns 1 on write failure"
+
 # ── maude_bucket_for_hour (pure: hour int → time-of-day bucket) ───────
 test_start "bucket_for_hour 4 is night (pre-dawn)"
 assert_eq "$(maude_bucket_for_hour 4)" "night" "h=4"
