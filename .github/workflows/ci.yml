@@ -1,8 +1,9 @@
 # Maude for Claude — CI
 # Copyright (c) 2026 John Broadway
 # Licensed under the Apache License, Version 2.0
-# Version: 0.5.5
-# Revised: 2026-06-14 CDT — v0.5.5: added shellcheck lint job
+# (De-versioned: this workflow tracks no version of its own — the canonical version
+#  lives in .claude-plugin/plugin.json. This header used to pin a number that drifted.)
+# Last substantive change: 2026-06-14 — added the shellcheck lint job (v0.5.5).
 # Authors: John Broadway, Claude (Anthropic)
 #
 # Three independent jobs run on every push and pull request to main:
