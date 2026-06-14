@@ -9,7 +9,7 @@ POST="$HOOKS_DIR/maude-post-tool-use.sh"
 
 run_post() {
   local fp="$1"
-  ERR="$(make_edit_tool_input "$fp" | bash "$POST" 2>&1 >/dev/null)"
+  make_edit_tool_input "$fp" | bash "$POST" >/dev/null 2>&1
   RC=$?
 }
 
@@ -45,7 +45,7 @@ run_post "$TEST_TMP/random.txt"
 assert_exit "$RC" "0" "exit"
 
 test_start "post-tool handles empty stdin"
-ERR="$(printf '' | bash "$POST" 2>&1 >/dev/null)"
+printf '' | bash "$POST" >/dev/null 2>&1
 RC=$?
 assert_exit "$RC" "0" "empty stdin"
 

@@ -35,13 +35,11 @@ TAIL="$(tail -30 "$TRACE" | jq -c 'select(.kind == "tool")' 2>/dev/null)"
 # --- Signal 1: Grep hammering (≥4 in last 30 events) ---
 GREP_COUNT=$(printf '%s\n' "$TAIL" | jq -r 'select(.tool == "Grep") | .ts' 2>/dev/null | wc -l)
 if [ "$GREP_COUNT" -ge 4 ]; then
-  WARNED=""
-  [ -f "$CARE" ] && WARNED="$(jq -r '.drift_warned.grep // ""' "$CARE" 2>/dev/null)"
+  # care.json is guaranteed present + valid by maude_care_ensure above, so no -f guard.
+  WARNED="$(jq -r '.drift_warned.grep // ""' "$CARE" 2>/dev/null)"
   if [ "$WARNED" != "$TODAY" ]; then
     printf 'Maude: noticed Claude grepping %d times in the last 30 tool calls. He may be stuck on something — worth a sanity check.\n' "$GREP_COUNT" >&2
-    if [ -f "$CARE" ]; then
-      TMP="$(mktemp 2>/dev/null)" && jq --arg t "$TODAY" '.drift_warned.grep = $t' "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE"
-    fi
+    maude_care_set "$CARE" --arg t "$TODAY" '.drift_warned.grep = $t'
     maude_log_trace "drift" "kind=grep count=$GREP_COUNT"
   fi
 fi
@@ -51,14 +49,11 @@ DUP="$(printf '%s\n' "$TAIL" | jq -r 'select(.tool == "Read" and .target != null
 if [ -n "$DUP" ]; then
   COUNT="$(printf '%s' "$DUP" | awk '{print $1}')"
   TARGET="$(printf '%s' "$DUP" | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//')"
-  WARNED=""
-  [ -f "$CARE" ] && WARNED="$(jq -r --arg t "$TARGET" '.drift_warned.read_targets[$t] // ""' "$CARE" 2>/dev/null)"
+  WARNED="$(jq -r --arg t "$TARGET" '.drift_warned.read_targets[$t] // ""' "$CARE" 2>/dev/null)"
   if [ "$WARNED" != "$TODAY" ]; then
     BASE="$(basename "$TARGET")"
     printf 'Maude: noticed Claude has Read %s %d times today. Worth checking what he is looking for.\n' "$BASE" "$COUNT" >&2
-    if [ -f "$CARE" ]; then
-      TMP="$(mktemp 2>/dev/null)" && jq --arg t "$TARGET" --arg today "$TODAY" '.drift_warned.read_targets[$t] = $today' "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE"
-    fi
+    maude_care_set "$CARE" --arg t "$TARGET" --arg today "$TODAY" '.drift_warned.read_targets[$t] = $today'
     maude_log_trace "drift" "kind=read target=$BASE count=$COUNT"
   fi
 fi

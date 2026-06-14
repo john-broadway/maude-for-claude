@@ -25,7 +25,6 @@ REMEMBER="$PROJ/.remember"
 SELF="$(maude_self_dir)"
 
 TIME="$(date +%H:%M)"
-TODAY="$(date +%Y-%m-%d)"
 STAMP="$(date -u +%Y-%m-%dT%H%MZ)"
 SOURCED=""
 

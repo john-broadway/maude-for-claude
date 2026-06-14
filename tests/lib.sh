@@ -18,6 +18,7 @@ set +e
 # Find the maude project root from this lib's path: tests/lib.sh → ..
 MAUDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 HOOKS_DIR="$MAUDE_ROOT/hooks/scripts"
+# shellcheck disable=SC2034  # used by sourcing test files (e.g. test-verify.sh)
 SCRIPTS_DIR="$MAUDE_ROOT/scripts"
 
 PASSED=0

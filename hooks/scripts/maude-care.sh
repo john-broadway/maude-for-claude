@@ -58,11 +58,9 @@ if command -v jq >/dev/null 2>&1; then
   # On a corrupt file the transient shared state is reset; maude_care_ensure now
   # RECORDS that in the trace (it used to be a silent wipe — the R2 finding).
   maude_care_ensure "$CARE"
-  TMP="$(mktemp)"
-  jq --arg ld "$TODAY" --arg la "$NOW" --arg ss "$SESSION_START" \
+  maude_care_set "$CARE" --arg ld "$TODAY" --arg la "$NOW" --arg ss "$SESSION_START" \
      --arg p "$PROMPTS" --arg lf "$LONG_FLAG_FIRED" \
-     '. + {last_date: $ld, last_active: ($la|tonumber), session_start: ($ss|tonumber), prompts_this_session: ($p|tonumber), long_flag_fired: $lf}' \
-     "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE" || rm -f "$TMP"
+     '. + {last_date: $ld, last_active: ($la|tonumber), session_start: ($ss|tonumber), prompts_this_session: ($p|tonumber), long_flag_fired: $lf}'
 else
   # No jq — leave care.json UNTOUCHED. Without a JSON parser, care can neither read
   # its own fields (the read block above is jq-gated, so the long-session nudge can

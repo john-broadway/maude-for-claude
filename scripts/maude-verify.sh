@@ -15,6 +15,7 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 # Source common helpers if present (hooks/scripts/_maude-common.sh)
 COMMON="$DIR/../hooks/scripts/_maude-common.sh"
+# shellcheck disable=SC1090  # $COMMON is computed from $DIR; load is guarded by [ -f ]
 [ -f "$COMMON" ] && . "$COMMON"
 
 PROJ="${1:-${CLAUDE_PROJECT_DIR:-$(pwd)}}"

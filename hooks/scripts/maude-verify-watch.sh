@@ -100,18 +100,6 @@ CARE="$(maude_self_dir)/care.json"
 # (shared helper — see maude_care_ensure; replaces the old silent wipe, R2).
 maude_care_ensure "$CARE"
 
-# Atomic same-filesystem merge into care.json (mktemp in CARE's own dir so the
-# rename is a true atomic rename, not a cross-fs cp; rm the temp on any failure).
-care_set() {
-  local tmp
-  tmp="$(mktemp "$(dirname "$CARE")/.care.XXXXXX" 2>/dev/null)" || return 1
-  if jq "$@" "$CARE" > "$tmp" 2>/dev/null && mv "$tmp" "$CARE" 2>/dev/null; then
-    return 0
-  fi
-  rm -f "$tmp" 2>/dev/null
-  return 1
-}
-
 case "$MODE" in
   stamp)
     printf '%s' "$CMD" | grep -qE -- "$VERIFY_RE" || exit 0
@@ -127,8 +115,8 @@ case "$MODE" in
     [ "$(printf '%s' "$INPUT" | jq -r '.tool_response.interrupted // false' 2>/dev/null)" = "true" ] && exit 0
     OUT="$(printf '%s' "$INPUT" | jq -r '[.tool_response.stdout // "", .tool_response.stderr // ""] | join("\n")' 2>/dev/null)"
     printf '%s' "$OUT" | grep -qE -- "$FAIL_RE" && exit 0
-    # care_set reports its own success; don't claim a stamp the write dropped.
-    if care_set --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.last_verify_iso = $ts'; then
+    # maude_care_set reports its own success; don't claim a stamp the write dropped.
+    if maude_care_set "$CARE" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '.last_verify_iso = $ts'; then
       maude_log_trace "verify" "stamped last_verify_iso"
     else
       maude_log_trace "verify" "could not stamp last_verify_iso (care.json unwritable)"
@@ -173,7 +161,7 @@ case "$MODE" in
 
     if [ "$WARNED_FOR" != "$LAST_EDIT_ISO" ]; then
       printf 'Maude: files changed since the last verify — did you check this, or are you asserting it?\n' >&2
-      care_set --arg e "$LAST_EDIT_ISO" '.verify_warned_for = $e'
+      maude_care_set "$CARE" --arg e "$LAST_EDIT_ISO" '.verify_warned_for = $e'
       maude_log_trace "verify" "commit-without-verify whisper"
     fi
     ;;

@@ -1,4 +1,4 @@
-<!-- Version: 0.5.4 -->
+<!-- Version: 0.5.5 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -82,6 +82,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.5.5 (2026-06-14) — bash hardening: one care-write path + shellcheck in CI.** A deep-read cleanup with no behavior change: the atomic `care.json` write that was copy-pasted across six hooks is now a single shared `maude_care_set` (so the "verify the write landed" discipline lives once and can't be re-forgotten), `drift-watch`'s now-redundant guards are gone, and **shellcheck** runs in CI (`make lint`, gated at warning severity) — for a 100%-bash plugin that's the machine catching the quoting/redirection class the v0.5.x reviews kept finding by hand. The full suite staying green is the proof the refactor changed nothing.
 
 **v0.5.4 (2026-06-13) — last R2 fragment + doc-staleness sweep.** Closes the loose ends: `maude-drift-watch` no longer *freezes* on a corrupt `care.json` (it now heals via the shared helper like the other state users, so its cooldown can't silently fail to persist), and a full-tree staleness pass refreshed the launch copy's "Recent:" arc to lead with the v0.5.x verify-tripwire line and de-versioned a stale `0.1.1` example in the bug-report template.
 

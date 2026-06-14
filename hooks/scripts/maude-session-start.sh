@@ -10,7 +10,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 
 PROJ="$(maude_project_dir)"
 MEM="$(maude_mem_dir)"
-SELF="$(maude_self_dir)"
 USER_DIR="$(maude_user_dir)"
 REMEMBER="$PROJ/.remember"
 MAP="$(maude_map_path)"
@@ -87,7 +86,7 @@ GREETING="$(maude_greeting)"
   [ -n "$PATTERN_HINT" ]      && printf '  Cross-project pattern: %s\n' "$PATTERN_HINT"
   [ -n "$LETTER_LINE" ]       && printf '  Letter from my last self: %s\n' "$LETTER_LINE"
   [ "$TOPIC_COUNT" -gt 0 ]    && printf '  %s memory file(s) on hand.\n' "$TOPIC_COUNT"
-  [ -z "$HAS_MAP" ] && [ -d "$REMEMBER" -o -d "$MEM" ] && printf '  No house-map yet — run /maude:found.\n'
+  [ -z "$HAS_MAP" ] && { [ -d "$REMEMBER" ] || [ -d "$MEM" ]; } && printf '  No house-map yet — run /maude:found.\n'
 } 2>/dev/null
 
 exit 0

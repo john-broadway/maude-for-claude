@@ -96,8 +96,8 @@ CARE="$(maude_self_dir)/care.json"
 if [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
   CLEARED_UNTIL="$(jq -r --arg k "$MATCHED_KEY" '.gate_cleared[$k].until // 0' "$CARE" 2>/dev/null)"
   if [ -n "$CLEARED_UNTIL" ] && [ "$CLEARED_UNTIL" -gt 0 ] && [ "$CLEARED_UNTIL" -gt "$NOW" ] 2>/dev/null; then
-    # Token is live — allow this one through, then clear it
-    TMP="$(mktemp 2>/dev/null)" && jq --arg k "$MATCHED_KEY" 'del(.gate_cleared[$k])' "$CARE" > "$TMP" 2>/dev/null && mv "$TMP" "$CARE"
+    # Token is live — allow this one through, then consume it (atomic, shared helper)
+    maude_care_set "$CARE" --arg k "$MATCHED_KEY" 'del(.gate_cleared[$k])'
     maude_log_trace "gate" "passed=$MATCHED_KEY"
     exit 0
   fi
