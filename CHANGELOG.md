@@ -1,4 +1,4 @@
-<!-- Version: 0.5.5 -->
+<!-- Version: 0.5.6 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,28 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.5.6 — prune stale drift cooldowns (2026-06-14)
+
+A small leak found in the v0.5.5 deep read: `care.json`'s `.drift_warned.read_targets`
+grew **one key per distinct over-read file, forever**. `drift-watch` added a dated key for
+the once-per-day "Claude keeps re-Reading X" cooldown but never removed yesterday's — so
+the shared state file accumulated dead keys over a project's life. The only monotonically-
+growing, never-self-cleaning state in the plugin.
+
+### Fixed
+- `drift-watch` now **prunes stale-dated `read_targets` keys on write**: the same atomic
+  `maude_care_set` that records today's cooldown also drops every entry whose date isn't
+  today (the cooldown only ever checks today). Behavior is unchanged — today's cooldown
+  still holds; only dead keys are reclaimed.
+
+### Tests
+- A `read_targets` prune test (stale entry pruned, same-day entry kept, new target
+  recorded). `make test` 19/19 · `make verify` 0 · `make lint` clean.
+
+No new dependencies.
 
 ---
 

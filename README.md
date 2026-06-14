@@ -1,4 +1,4 @@
-<!-- Version: 0.5.5 -->
+<!-- Version: 0.5.6 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-13 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -82,6 +82,8 @@ She is not loud. When she gets loud, listen.
 ---
 
 ## What's new
+
+**v0.5.6 (2026-06-14) — prune stale drift cooldowns.** A small leak the v0.5.5 deep read turned up: `care.json`'s `drift_warned.read_targets` grew one key per distinct over-read file forever (the once-per-day cooldown added dated keys but never dropped yesterday's). `drift-watch` now prunes stale-dated keys on the same write that records today's — behavior unchanged, dead keys reclaimed. It was the only monotonically-growing state left in the plugin.
 
 **v0.5.5 (2026-06-14) — bash hardening: one care-write path + shellcheck in CI.** A deep-read cleanup with no behavior change: the atomic `care.json` write that was copy-pasted across six hooks is now a single shared `maude_care_set` (so the "verify the write landed" discipline lives once and can't be re-forgotten), `drift-watch`'s now-redundant guards are gone, and **shellcheck** runs in CI (`make lint`, gated at warning severity) — for a 100%-bash plugin that's the machine catching the quoting/redirection class the v0.5.x reviews kept finding by hand. The full suite staying green is the proof the refactor changed nothing.
 

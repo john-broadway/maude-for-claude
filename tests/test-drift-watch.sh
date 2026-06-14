@@ -79,6 +79,26 @@ test_start "drift heals a corrupt care.json and persists its cooldown (no freeze
 run_drift
 assert_eq "$(read_care '.drift_warned.grep')" "$TODAY" "cooldown persisted after heal"
 
+# ── v0.5.6: read_targets prunes STALE-dated keys (no unbounded growth in care.json) ──
+# The cooldown only cares about TODAY's date, so yesterday's keys are pure cruft; a
+# write must drop them, not just append. Seed a stale entry + a same-day entry, then
+# fire a new read-drift: stale gone, today's kept, new recorded.
+clear_traces
+jq -nc --arg today "$TODAY" \
+  '{drift_warned:{read_targets:{"/old/stale.py":"2020-01-01","/today/kept.py":$today}}}' \
+  > "$(care_path)"
+seed_trace 4 "Read" "/p/newfile.md"
+run_drift
+
+test_start "drift records the newly over-read target"
+assert_ne "$(read_care '.drift_warned.read_targets["/p/newfile.md"]')" "null" "new target recorded"
+
+test_start "drift prunes a stale-dated read_targets entry (no unbounded growth)"
+assert_eq "$(read_care '.drift_warned.read_targets["/old/stale.py"]')" "null" "stale entry pruned"
+
+test_start "drift keeps a same-day read_targets entry (prune is date-scoped)"
+assert_eq "$(read_care '.drift_warned.read_targets["/today/kept.py"]')" "$TODAY" "today entry kept"
+
 print_summary
 teardown_test_env
 exit $FAILED
