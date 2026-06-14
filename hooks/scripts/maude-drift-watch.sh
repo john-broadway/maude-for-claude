@@ -53,7 +53,11 @@ if [ -n "$DUP" ]; then
   if [ "$WARNED" != "$TODAY" ]; then
     BASE="$(basename "$TARGET")"
     printf 'Maude: noticed Claude has Read %s %d times today. Worth checking what he is looking for.\n' "$BASE" "$COUNT" >&2
-    maude_care_set "$CARE" --arg t "$TARGET" --arg today "$TODAY" '.drift_warned.read_targets[$t] = $today'
+    # Record this target's cooldown AND prune stale-dated keys in one write — the
+    # cooldown only cares about TODAY, so yesterday's entries are cruft. Without this,
+    # read_targets grew one key per distinct over-read file, forever (care.json bloat).
+    maude_care_set "$CARE" --arg t "$TARGET" --arg today "$TODAY" \
+      '.drift_warned.read_targets = ((.drift_warned.read_targets // {}) | with_entries(select(.value == $today)) + {($t): $today})'
     maude_log_trace "drift" "kind=read target=$BASE count=$COUNT"
   fi
 fi
