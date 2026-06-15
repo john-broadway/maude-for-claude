@@ -9,6 +9,22 @@ The Maude Claude Code plugin.
 
 ---
 
+## Unreleased
+
+### Added
+- **`maude-secret-scan` hook (UserPromptSubmit)** — scans each submitted prompt for
+  credential-shaped strings (PyPI / GitHub / AWS / Slack / OpenAI / Anthropic / Google tokens,
+  private-key blocks) and, on a match, alerts Claude to drive an immediate **revoke** — without
+  ever echoing the secret value. It is **detection + fast-revoke, not prevention**: by the time any
+  hook runs, the text the user typed is already submitted; the win is a much smaller exposure
+  window. Born after a PyPI token leaked twice via a `!` command — the `maude-gate` PreToolUse hook
+  only sees Claude's *tool calls*, not user-typed `!` lines, so this watches the input surface
+  instead. Never blocks; tuned so prose mentions of tokens don't trip it (only real shapes do).
+  Markdown/JSON/bash only — no new deps. Whether it fires for a `!`-prefixed line is
+  environment-dependent (undocumented) and should be confirmed by test after a restart.
+
+---
+
 ## v0.5.6 — prune stale drift cooldowns (2026-06-14)
 
 A small leak found in the v0.5.5 deep read: `care.json`'s `.drift_warned.read_targets`
