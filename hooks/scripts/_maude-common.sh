@@ -463,6 +463,66 @@ maude_greeting() {
   maude_greeting_for_bucket "$(maude_time_of_day)"
 }
 
+# ─── Shared danger-palette (the RoE zones, expressed ONCE) ────────────────
+# Belt (maude-gate), shoes (maude-bash-watch) and suspenders (maude-infra-gate)
+# all read THESE — never their own copy — so the outfit "matches": one
+# definition of what is RED, drawn from the Rules of Engagement.
+
+# ─── Gate config (deployment-specific; NEVER in shipped source) ──────────────
+# The plugin ships the gate MECHANISM. Deployment specifics live in a LOCAL config
+# at $HOME/.claude/maude/gate-config.json (override $MAUDE_GATE_CONFIG), tracked by
+# NO repo. Absent config → generic defaults: belt protects the workspace + ~/.claude
+# + any .git; the infra-gate is INERT (no tools declared → nothing gated).
+maude_gate_config() { printf '%s' "${MAUDE_GATE_CONFIG:-$(maude_user_dir)/gate-config.json}"; }
+
+# Escape ERE metacharacters in a literal path so it can sit inside a gate pattern.
+maude_ere_escape() { printf '%s' "$1" | sed -E 's/[][\*^$()+?{|]/\\&/g'; }
+
+# Sole-copy ERE target fragments — generic defaults (NO deployment literals) +
+# any paths from config. One per line. Belt reads these into its pattern table.
+maude_sole_copy_targets() {
+  local cfg proj
+  proj="$(maude_project_dir)"
+  [ -n "$proj" ] && printf '%s(/[^/[:space:]]+)?\n' "$(maude_ere_escape "$proj")"
+  printf '%s/\\.claude(/[^[:space:]]*)?\n' "$(maude_ere_escape "$HOME")"
+  printf '%s\n' '(\.git|[^[:space:]]*/\.git)(/[^[:space:]]*)?'
+  cfg="$(maude_gate_config)"
+  if [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; then
+    jq -r '.sole_copy_paths[]?' "$cfg" 2>/dev/null | while IFS= read -r p; do
+      [ -n "$p" ] && printf '%s(/[^[:space:]]*)?\n' "$(maude_ere_escape "$p")"
+    done
+  fi
+}
+
+# Public-facing publish commands (RED — pre-public-push checklist).
+maude_public_publish_re() {
+  printf '%s' '(gh[[:space:]]+release[[:space:]]+(create|upload)|twine[[:space:]]+upload|uv[[:space:]]+publish|(hf|huggingface-cli)[[:space:]]+upload)'
+}
+
+# Destructive MCP tool BARE names (space-delimited) from config; empty if none.
+maude_infra_destructive_tools() {
+  local cfg; cfg="$(maude_gate_config)"
+  { [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; } || { printf ''; return; }
+  jq -r '(.infra_destructive_tools // []) | join(" ")' "$cfg" 2>/dev/null
+}
+
+# The MCP server prefix to gate (e.g. mcp__myserver__); empty if unconfigured.
+maude_infra_tool_prefix() {
+  local cfg; cfg="$(maude_gate_config)"
+  { [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; } || { printf ''; return; }
+  jq -r '.infra_tool_prefix // ""' "$cfg" 2>/dev/null
+}
+
+# Co-manage sandbox membership from config. Returns 0 ONLY on a positive match;
+# empty/unknown/no-config → 1 (NOT sandbox) so callers fail CLOSED.
+maude_is_comanage_target() {
+  local node="$1" vmid="$2" cfg; cfg="$(maude_gate_config)"
+  { [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; } || return 1
+  if [ -n "$node" ] && jq -e --arg n "$node" '(.infra_sandbox_nodes // []) | index($n)' "$cfg" >/dev/null 2>&1; then return 0; fi
+  if [ -n "$vmid" ] && jq -e --arg v "$vmid" '(.infra_sandbox_vmids // []) | map(tostring) | index($v)' "$cfg" >/dev/null 2>&1; then return 0; fi
+  return 1
+}
+
 # ─── Gate matching helpers (used by maude-gate.sh) ────────────────────────
 # Strip paired quotes from a shell command string so gate patterns don't
 # match user-supplied literal text inside quoted args (e.g. commit messages
@@ -479,6 +539,16 @@ maude_strip_quotes() {
   cmd="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g")"
   cmd="$(printf '%s' "$cmd" | sed -E 's/"([^"\\]|\\.)*"//g')"
   printf '%s' "$cmd"
+}
+
+# Remove quote CHARACTERS but KEEP their content (newlines flattened). For
+# matching PATH/argument patterns where a quoted path (rm -rf "/srv/data")
+# must still match — unlike maude_strip_quotes which ERASES quoted content
+# (right for command-name patterns like git push, wrong for path args).
+# Fail-closed: keeping content can only ever match MORE, never introduce a
+# new bypass.
+maude_unquote() {
+  printf '%s' "$1" | tr '\n' ' ' | tr -d "\"'"
 }
 
 # Match a gate pattern against a command. Strips paired quotes first to

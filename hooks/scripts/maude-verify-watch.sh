@@ -53,13 +53,15 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 MODE="${1:-}"
 INPUT="$(cat 2>/dev/null)"
-[ -z "$INPUT" ] && exit 0
-
-CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
-[ -z "$CMD" ] && exit 0
-# Strip paired quotes first (same as gate/bash-watch): a commit message or echo
-# that merely names a test tool must not be read as running one.
-CMD="$(maude_strip_quotes "$CMD")"
+CMD=""
+if [ "$MODE" = "stamp" ] || [ "$MODE" = "commit" ]; then
+  [ -z "$INPUT" ] && exit 0
+  CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
+  [ -z "$CMD" ] && exit 0
+  # Strip paired quotes first (same as gate/bash-watch): a commit message or echo
+  # that merely names a test tool must not be read as running one.
+  CMD="$(maude_strip_quotes "$CMD")"
+fi
 
 # --- pattern building blocks ------------------------------------------------
 # Command position: line start, after a shell separator, optionally after a run-
@@ -163,6 +165,35 @@ case "$MODE" in
       printf 'Maude: files changed since the last verify — did you check this, or are you asserting it?\n' >&2
       maude_care_set "$CARE" --arg e "$LAST_EDIT_ISO" '.verify_warned_for = $e'
       maude_log_trace "verify" "commit-without-verify whisper"
+    fi
+    ;;
+
+  stop)
+    # Bowtie: on a Stop, if CODE files changed since the last verify, whisper ONCE
+    # per edit-batch (soft — never blocks). Reuses the commit-mode edits-since-verify
+    # detection; the Stop event fires on every assistant pause, so the .done_warned_for
+    # cooldown is what keeps it from repeating.
+    command -v jq >/dev/null 2>&1 || exit 0
+    TRACE_DIR="$(maude_self_dir)/trace"
+    FILES="$(ls -1 "$TRACE_DIR"/today-*.jsonl 2>/dev/null | sort | tail -2)"
+    [ -z "$FILES" ] && exit 0
+    LAST_VERIFY_ISO="$(jq -r '.last_verify_iso // ""' "$CARE" 2>/dev/null)"
+    EDITS="$(printf '%s\n' "$FILES" | while IFS= read -r f; do [ -n "$f" ] && cat -- "$f"; done \
+      | jq -rR --arg vts "$LAST_VERIFY_ISO" '
+      fromjson?
+      | select(.kind=="tool"
+             and (.tool=="Write" or .tool=="Edit" or .tool=="MultiEdit")
+             and .target != null
+             and (.ts > $vts))
+      | "\(.ts)\t\(.target)"' 2>/dev/null)"
+    [ -z "$EDITS" ] && exit 0
+    printf '%s\n' "$EDITS" | cut -f2 | grep -qvE "$DOC_RE" || exit 0
+    LAST_EDIT_ISO="$(printf '%s\n' "$EDITS" | cut -f1 | sort | tail -1)"
+    WARNED="$(jq -r '.done_warned_for // ""' "$CARE" 2>/dev/null)"
+    if [ "$WARNED" != "$LAST_EDIT_ISO" ]; then
+      printf 'Maude: stopping with code changed since the last verify — did you run the tests, or are you about to call this done unchecked?\n' >&2
+      maude_care_set "$CARE" --arg e "$LAST_EDIT_ISO" '.done_warned_for = $e'
+      maude_log_trace "verify" "stop-without-verify whisper"
     fi
     ;;
 

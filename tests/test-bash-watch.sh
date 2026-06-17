@@ -62,6 +62,20 @@ ERR="$(printf '' | bash "$WATCH" 2>&1 >/dev/null)"
 RC=$?
 assert_exit "$RC" "0" "empty stdin"
 
+# ── Match-parity with the belt: the shoes must warn on the belt's core set ──
+
+test_start "shoes warn on rm -rf / (belt blocks it — shoes must at least warn)"
+run_watch "rm -rf /"
+assert_contains "$ERR" "Maude:" "rm-rf-root warned"
+
+test_start "shoes warn on force-push (belt blocks it — shoes must at least warn)"
+run_watch "git push --force origin main"
+assert_contains "$ERR" "Maude:" "force-push warned"
+
+test_start "shoes warn on sudo rm (belt blocks sudo rm -rf)"
+run_watch "sudo rm -rf /var/x"
+assert_contains "$ERR" "Maude:" "sudo-rm warned"
+
 print_summary
 teardown_test_env
 exit $FAILED

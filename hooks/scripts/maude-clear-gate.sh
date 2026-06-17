@@ -8,7 +8,9 @@
 #
 # Known keys (must match maude-gate.sh's PATTERNS):
 #   force-push, git-push, no-verify, no-gpg-sign, reset-hard, filter-repo,
-#   filter-branch, commit-amend, rm-rf-root, rm-rf-glob, sudo-rm-rf, drop-table
+#   filter-branch, commit-amend, rm-rf-root, rm-rf-glob, sudo-rm-rf,
+#   rm-rf-sole-copy, public-publish, infra-destructive, drop-table,
+#   run-governor
 
 set +e
 
@@ -34,7 +36,11 @@ Known keys:
   rm-rf-root       (rm -rf /)
   rm-rf-glob       (rm -rf *)
   sudo-rm-rf       (sudo rm -rf)
+  rm-rf-sole-copy  (rm -rf of workspace / repo root / .git / .credentials / ~/.claude)
+  public-publish   (gh release / twine upload / uv publish / hf upload)
+  infra-destructive (destructive MCP op on a production target, per gate-config)
   drop-table       (DROP TABLE)
+  run-governor     (run-length governor hard-pause — fresh budget)
 
 Default duration: 300 seconds (5 minutes). Token clears on first matching command.
 EOF
