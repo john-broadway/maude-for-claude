@@ -27,6 +27,11 @@ maude_retention_sweep
 if ! command -v jq >/dev/null 2>&1; then
   printf 'Maude: jq not found — the irreversible-command gate is OFF this session (fail-open), and drift-watch, tier-1, and watch-list nudges are disabled. Install jq to restore them.\n' >&2
 fi
+case "${MAUDE_RUN_GOVERNOR:-on}" in
+  off|OFF|0|false|no|NO)
+    printf 'Maude: run-governor is OFF this session (MAUDE_RUN_GOVERNOR=%s) — no run-length checkpoints or pauses.\n' "$MAUDE_RUN_GOVERNOR" >&2
+    ;;
+esac
 
 # Collect signals across every available tier — degradative, each independent.
 NOW_LINE=""

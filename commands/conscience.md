@@ -105,8 +105,14 @@ Pick `<key>` from this map:
 | `rm -rf /` | `rm-rf-root` |
 | `rm -rf *` | `rm-rf-glob` |
 | `sudo rm -rf …` | `sudo-rm-rf` |
+| `rm -rf` of the workspace / a repo root / `.git` / `.credentials` / `~/.claude` | `rm-rf-sole-copy` |
+| Public publish (`gh release`, `twine upload`, `uv publish`, `hf upload`) | `public-publish` |
+| Destructive MCP op on a production target (delete/rollback/prune, per gate-config) | `infra-destructive` |
 | SQL `DROP TABLE …` | `drop-table` |
+| Run-governor hard-pause (long unattended run) | `run-governor` |
 
 If the user's action isn't in this list, the gate isn't blocking it — no token needed.
 
 If the user wants more than 5 minutes (e.g., a longer release session with multiple pushes), pass a duration override: `bash "$CLAUDE_PLUGIN_ROOT/hooks/scripts/maude-clear-gate.sh" "git-push" 1800` (30 minutes).
+
+For an intentional long/overnight run, stand the governor down for a window: `/maude:conscience run-governor 36000` (10h) — or set `MAUDE_RUN_GOVERNOR=off` to disable it entirely.

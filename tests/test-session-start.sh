@@ -118,6 +118,17 @@ test_start "session-start says nothing about jq when jq is present"
 NOISE="$(printf '{}' | bash "$START" 2>&1 >/dev/null)"
 assert_not_contains "$NOISE" "jq not found" "silent when jq present"
 
+# ── Run-governor off-switch visibility ───────────────────────────────
+# When MAUDE_RUN_GOVERNOR=off the brake is silently disabled per-tool (by design),
+# but SessionStart must surface it ONCE so the user sees it on arrival.
+test_start "session-start announces when the governor is OFF"
+GOV_NOTICE="$(printf '{}' | MAUDE_RUN_GOVERNOR=off bash "$START" 2>&1 >/dev/null)"
+assert_contains "$GOV_NOTICE" "run-governor is OFF" "off notice present"
+
+test_start "session-start is silent about the governor by default (on)"
+GOV_DEFAULT="$(printf '{}' | bash "$START" 2>&1 >/dev/null)"
+assert_not_contains "$GOV_DEFAULT" "run-governor is OFF" "no notice when on"
+
 # ── Trace + snapshot retention sweep ─────────────────────────────────
 # Trace JSONL and pre-compact snapshots were append-only forever. SessionStart
 # prunes files older than the retention window. Floor is well past the 7-day

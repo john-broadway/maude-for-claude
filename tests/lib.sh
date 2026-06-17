@@ -28,6 +28,7 @@ TEST_NAME=""
 setup_test_env() {
   TEST_TMP="$(mktemp -d)"
   export CLAUDE_PROJECT_DIR="$TEST_TMP"
+  export MAUDE_GATE_CONFIG="$TEST_TMP/gate-config.json"
   mkdir -p "$TEST_TMP/.maude/plugin/trace"
   printf '*\n' > "$TEST_TMP/.maude/plugin/.gitignore"
 }
@@ -36,7 +37,7 @@ teardown_test_env() {
   if [ -n "${TEST_TMP:-}" ] && [ -d "$TEST_TMP" ]; then
     rm -rf "$TEST_TMP"
   fi
-  unset CLAUDE_PROJECT_DIR TEST_TMP
+  unset CLAUDE_PROJECT_DIR TEST_TMP MAUDE_GATE_CONFIG
 }
 
 test_start() {
@@ -140,6 +141,16 @@ make_read_tool_input() {
     '{tool_name:"Read", tool_input:{file_path:$fp}, hook_event_name:"PreToolUse"}'
 }
 
+# Build an MCP tool input JSON envelope.
+# Usage: make_mcp_tool_input "<tool_name>" '<tool_input json object>'
+make_mcp_tool_input() {
+  local tool="$1"
+  local args="$2"
+  [ -z "$args" ] && args='{}'
+  jq -nc --arg t "$tool" --argjson a "$args" \
+    '{tool_name:$t, tool_input:$a, hook_event_name:"PreToolUse"}'
+}
+
 trace_path() {
   # UTC date — matches maude_trace_file()'s single-clock filename so tests stay
   # correct on non-UTC boxes too.
@@ -188,6 +199,19 @@ make_nojq_bin() {
   local d b src
   d="$(mktemp -d)"
   for b in bash sh env cat date grep sed awk tr head tail wc find \
+           mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
+           sort uniq readlink stat sleep chmod printf; do
+    src="$(command -v "$b" 2>/dev/null)" && ln -s "$src" "$d/$b" 2>/dev/null
+  done
+  printf '%s' "$d"
+}
+
+# Like make_nojq_bin but ALSO omits grep — exercises the deepest degradation path
+# where the infra-gate cannot identify the tool name at all. Prints the dir.
+make_nojq_nogrep_bin() {
+  local d b src
+  d="$(mktemp -d)"
+  for b in bash sh env cat date sed awk tr head tail wc find \
            mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
            sort uniq readlink stat sleep chmod printf; do
     src="$(command -v "$b" 2>/dev/null)" && ln -s "$src" "$d/$b" 2>/dev/null

@@ -206,6 +206,38 @@ test_start "commit exits 0 on empty stdin"
 printf '' | bash "$VW" commit >/dev/null 2>&1
 assert_exit "$?" "0" "empty commit"
 
+# ── Bowtie: stop mode (verify-before-done) ───────────────────────────────
+VERIFY="$VW"
+
+test_start "stop whispers when code changed since last verify"
+clear_traces; : > "$(trace_path)"
+printf '{"ts":"2026-06-15T10:00:00Z","kind":"tool","tool":"Edit","target":"/p/app.py"}\n' >> "$(trace_path)"
+printf '{"last_verify_iso":"2026-06-15T09:00:00Z"}\n' > "$(care_path)"
+ERR="$(printf '{}' | bash "$VERIFY" stop 2>&1 >/dev/null)"
+assert_contains "$ERR" "verify" "stop whisper present"
+
+test_start "stop does NOT repeat for the same edit-batch"
+ERR="$(printf '{}' | bash "$VERIFY" stop 2>&1 >/dev/null)"
+assert_eq "$ERR" "" "no repeat stop whisper"
+
+test_start "stop is silent when last verify is AFTER the edits"
+clear_traces; : > "$(trace_path)"
+printf '{"ts":"2026-06-15T10:00:00Z","kind":"tool","tool":"Edit","target":"/p/app.py"}\n' >> "$(trace_path)"
+printf '{"last_verify_iso":"2026-06-15T11:00:00Z"}\n' > "$(care_path)"
+ERR="$(printf '{}' | bash "$VERIFY" stop 2>&1 >/dev/null)"
+assert_eq "$ERR" "" "verified-after → silent"
+
+test_start "stop is silent for a docs-only change"
+clear_traces; : > "$(trace_path)"
+printf '{"ts":"2026-06-15T10:00:00Z","kind":"tool","tool":"Edit","target":"/p/README.md"}\n' >> "$(trace_path)"
+printf '{"last_verify_iso":"2026-06-15T09:00:00Z"}\n' > "$(care_path)"
+ERR="$(printf '{}' | bash "$VERIFY" stop 2>&1 >/dev/null)"
+assert_eq "$ERR" "" "docs-only → silent"
+
+test_start "stop exits 0 (never blocks)"
+printf '{}' | bash "$VERIFY" stop >/dev/null 2>&1
+assert_exit "$?" "0" "stop never blocks"
+
 print_summary
 teardown_test_env
 exit $FAILED

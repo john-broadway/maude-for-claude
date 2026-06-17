@@ -1,6 +1,6 @@
-<!-- Version: 0.5.6 -->
+<!-- Version: 0.8.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-13 CDT -->
+<!-- Revised: 2026-06-15 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -9,19 +9,69 @@ The Maude Claude Code plugin.
 
 ---
 
-## Unreleased
+## 0.8.0 — 2026-06-15
+
+**Gates are now config-driven — the plugin carries no deployment specifics.** The gate MECHANISM ships in the plugin; per-deployment specifics (extra sole-copy paths, which MCP tools are destructive, the safe sandbox nodes/vmids) live in a LOCAL `~/.claude/maude/gate-config.json` (override `$MAUDE_GATE_CONFIG`), tracked by no repo.
+- **Belt:** sole-copy `rm -rf` protection now covers generic defaults — the current workspace dir, `~/.claude`, and any `.git` — plus any paths listed in the local gate-config. No hardcoded paths in the source.
+- **Infra-gate:** reads the destructive-tool set, the MCP server prefix, and the sandbox from the local gate-config. With no config it is INERT (nothing gated). Its matcher now covers all MCP tools (`mcp__.*`); the script filters by the configured prefix.
+- **jq note:** the infra-gate needs `jq` to read its config, so without `jq` it is inert (fail-open) rather than fail-closed; the belt keeps its existing fail-open-without-jq contract; the catastrophic backstop for destructive infra remains a harness-level `permissions.deny` (applied separately by the operator).
+- No behavior change for an existing deployment that supplies a gate-config; the defaults make a config-less install protect the workspace + `~/.claude` out of the box.
 
 ### Added
-- **`maude-secret-scan` hook (UserPromptSubmit)** — scans each submitted prompt for
-  credential-shaped strings (PyPI / GitHub / AWS / Slack / OpenAI / Anthropic / Google tokens,
-  private-key blocks) and, on a match, alerts Claude to drive an immediate **revoke** — without
-  ever echoing the secret value. It is **detection + fast-revoke, not prevention**: by the time any
-  hook runs, the text the user typed is already submitted; the win is a much smaller exposure
-  window. Born after a PyPI token leaked twice via a `!` command — the `maude-gate` PreToolUse hook
-  only sees Claude's *tool calls*, not user-typed `!` lines, so this watches the input surface
-  instead. Never blocks; tuned so prose mentions of tokens don't trip it (only real shapes do).
-  Markdown/JSON/bash only — no new deps. Whether it fires for a `!`-prefixed line is
-  environment-dependent (undocumented) and should be confirmed by test after a restart.
+- **`maude-secret-scan` hook (UserPromptSubmit)** — scans each submitted prompt for credential-shaped strings (PyPI / GitHub / AWS / Slack / OpenAI / Anthropic / Google tokens, private-key blocks) and, on a match, alerts Claude to drive an immediate **revoke** — without ever echoing the secret value. Detection + fast-revoke, not prevention (by the time any hook runs the text is already submitted; the win is a much smaller exposure window). Born after a credential leaked twice via a `!` command — the `maude-gate` PreToolUse hook only sees Claude's *tool calls*, not user-typed `!` lines, so this watches the input surface instead. Never blocks; tuned so prose mentions of tokens don't trip it.
+
+---
+
+## 0.7.1 — 2026-06-15
+
+**Run-governor: overnight stand-down + off-switch.** So an intentional long/unattended run isn't blocked by the ceiling.
+- A live `/maude:conscience run-governor <seconds>` token now stands the governor DOWN for its whole window (no soft, no hard) instead of buying a single fresh budget — e.g. `run-governor 36000` = run free for 10h, logged. A human turn still resets; the token rides until it expires.
+- New `MAUDE_RUN_GOVERNOR=off` (also `0`/`false`/`no`) env disables the governor entirely (set in settings.json `env` for a deployment/session that never wants it). Default stays ON.
+- When disabled, the governor now announces itself once at SessionStart (so an off brake is never silent).
+
+---
+
+## 0.7.0 — 2026-06-15
+
+**The gate outfit, Phase 2 — jacket + bowtie.** The layers that make "run longer" safe to actually use.
+- **Jacket — `maude-run-governor.sh`:** counts tool-actions + wall-clock since your last turn (UserPromptSubmit resets it). Soft checkpoint whisper at 40 actions / 40 min; **hard-pause** (blocks) at 80 actions / 90 min until a human turn or `/maude:conscience run-governor` (fresh budget). Thresholds env-tunable (`MAUDE_RUN_SOFT_ACTIONS/MINS`, `MAUDE_RUN_HARD_ACTIONS/MINS`). The conscience escape-hatch command is exempt so the ceiling can't deadlock. Advisory layer → fails OPEN without jq.
+- **Bowtie — `maude-verify-watch.sh stop`:** on a Stop, a soft one-line reminder if code changed since the last verify (reuses the commit-mode detection; cooldowned per edit-batch so it isn't noisy). Never blocks.
+- New conscience key: `run-governor`.
+
+### Known limitations
+- The governor counts Claude's tool-calls as the activity proxy; a long single tool call advances wall-clock but not the action count — the minutes ceiling covers that.
+- `Stop` fires on every assistant pause, so the bowtie can only *remind*, not detect a true session-end; the cooldown holds it to once per edit-batch.
+- The governor is advisory (fail-open without jq); catastrophic protection remains the belt + suspenders + harness-deny.
+
+---
+
+## 0.6.0 — 2026-06-15
+
+**The gate outfit (Phase 0 + 1)** — dressing Maude with layered, *coordinated* gates so Claude can run long unattended without an irreversible mistake slipping through.
+
+### Added / changed
+- **Shared danger-palette** in `_maude-common.sh` (the RoE zones expressed once: sole-copy paths, public-publish commands, configurable destructive MCP tool set, configured sandbox). Belt and the new suspenders draw from it. (The shoes/`maude-bash-watch.sh` refactor onto the palette is deferred to a follow-on; a parity test currently locks the belt/shoes match on the *core* danger set — rm -rf /, force-push, sudo rm — only.)
+- **Belt (`maude-gate.sh`) now hard-blocks**, in addition to its prior set:
+  - `rm -rf` of the workspace / a repo root / any `.git` / a configured secrets path / `~/.claude` — including quoted, `~`/`$HOME`, bare home dir, trailing-slash, capital `-R`, and separated/long-flag (`rm -r -f`, `rm --recursive --force`) forms. Key: `rm-rf-sole-copy`.
+  - Public-facing publish: `gh release`, `twine upload`, `uv publish`, `hf upload`. Key: `public-publish`.
+- **New suspenders (`maude-infra-gate.sh`)** — co-manage-aware gate on a configurable set of destructive MCP tools (declared in `maude_infra_destructive_tools` in the local gate-config). Blocks irreversible ops on production targets; allows the configured sandbox. **Fail-closed**: an unidentifiable tool or unprovable target is blocked.
+- New conscience override keys: `rm-rf-sole-copy`, `public-publish`, `infra-destructive`.
+- A proposed harness `permissions.deny` layer (in `.scratch/settings.proposed-infra-gate.json`) — the un-bypassable lockdown layer, for John to apply by hand.
+
+### Fail-policy
+- The bash belt keeps its existing **fail-OPEN-without-jq** contract (blocking all bash on a jq-less box is unusable; jq is present here). The **new MCP suspenders fail CLOSED**. The harness-deny layer is absolute.
+
+### Known limitations — what these gates do NOT catch (by design / regex limits)
+The belt is best-effort regex with a fail-closed bias; it is NOT a sandbox. It does NOT catch:
+- Interior double-slash (`rm -rf <workspace>//sub`) or path traversal (`<workspace>/../sub`).
+- Shell-wrapped deletes: `bash -c "rm -rf <workspace>"`, `cd <parent> && rm -rf <name>` (relative target).
+- Variable-indirected paths: `P=<workspace>; rm -rf $P`.
+- Non-bareword `rm`: `/bin/rm -rf …`, `command rm -rf …`.
+- Environment-variable assignment prefix: `FOO=1 rm -rf <workspace>` (rm not seen at a command boundary).
+- The infra-gate uses ALLOWLIST semantics: a new destructive MCP tool is ungated until added to `maude_infra_destructive_tools` in the local gate-config.
+- `!`-prefixed local commands bypass ALL hooks (they aren't Claude tool calls) — secrets pasted via `!` are caught only by `maude-secret-scan` on the input surface, never blocked. The harness-deny proposal is the backstop for the catastrophic MCP set.
+
+These residuals rely on the fail-closed bias and (for the catastrophic MCP deletes) the harness-deny backstop. They are named here deliberately — a known hole is safer than a silent one.
 
 ---
 

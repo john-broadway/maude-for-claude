@@ -237,6 +237,80 @@ NOJQ="$(make_nojq_bin)"
 make_bash_tool_input "git push origin main" | PATH="$NOJQ" bash "$GATE" >/dev/null 2>&1
 assert_exit "$?" "0" "no-jq gate exit"
 
+# ── Sole-copy rm -rf — generic config-driven paths ──────────────────────────
+# Write a config with two deployment-specific paths. The gate should also
+# block the generic defaults (workspace = $TEST_TMP, ~/.claude, any .git).
+printf '{"sole_copy_paths":["/srv/app","/srv/secrets"]}\n' > "$MAUDE_GATE_CONFIG"
+
+test_start "gate blocks rm -rf of a configured sole-copy path"
+run_gate "rm -rf /srv/app"; assert_exit "$RC" "2" "configured sole-copy"
+
+test_start "gate blocks rm -rf of configured path with trailing slash"
+run_gate "rm -rf /srv/app/"; assert_exit "$RC" "2" "configured sole-copy trailing slash"
+
+test_start "gate blocks rm -rf of second configured sole-copy path"
+run_gate "rm -rf /srv/secrets"; assert_exit "$RC" "2" "second configured sole-copy"
+
+test_start "gate blocks rm -rf ~/.claude (generic default)"
+run_gate "rm -rf ~/.claude"; assert_exit "$RC" "2" "tilde-claude"
+
+test_start "gate blocks rm -rf \$HOME/.claude (generic default)"
+run_gate 'rm -rf $HOME/.claude'; assert_exit "$RC" "2" "dollar-HOME-claude"
+
+test_start "gate blocks rm -rf of a .git dir (generic default)"
+run_gate "rm -rf /some/repo/.git"; assert_exit "$RC" "2" ".git dir"
+
+test_start "gate blocks rm -rf multi-arg with sole-copy as second arg"
+run_gate "rm -rf build/ /srv/app"; assert_exit "$RC" "2" "sole-copy 2nd arg"
+
+test_start "gate blocks rm -Rf of configured path (capital R)"
+run_gate "rm -Rf /srv/app"; assert_exit "$RC" "2" "capital R combined"
+
+test_start "gate blocks rm -R of configured path (capital recursive, no force)"
+run_gate "rm -R /srv/app"; assert_exit "$RC" "2" "capital R alone"
+
+test_start "gate blocks rm -rf with double-quoted configured path"
+run_gate 'rm -rf "/srv/app"'; assert_exit "$RC" "2" "double-quoted sole-copy"
+
+test_start "sole-copy block names its conscience key"
+assert_contains "$ERR" "rm-rf-sole-copy" "key hint"
+
+test_start "gate PASSES rm -rf /tmp/foo (not a sole-copy path)"
+run_gate "rm -rf /tmp/foo"; assert_exit "$RC" "0" "tmp path safe"
+
+test_start "gate PASSES rm -rf /tmp/build (safe path outside any sole-copy tree)"
+run_gate "rm -rf /tmp/build"; assert_exit "$RC" "0" "tmp build dir ok"
+
+test_start "gate PASSES gh pr list (read-only)"
+run_gate "gh pr list"; assert_exit "$RC" "0" "gh pr list ok"
+
+test_start "gate PASSES git commit -m 'do not git push' (CANARY)"
+run_gate 'git commit -m "do not git push"'; assert_exit "$RC" "0" "canary commit-msg git push"
+
+# RECORDED DECISION: accepted fail-closed false-block — semicolon in commit message
+# exposes the path via UNQUOTED; rare + acceptable; clearable via /maude:conscience rm-rf-sole-copy
+test_start "gate blocks commit message containing rm -rf /srv/app via semicolon (fail-closed; acceptable)"
+run_gate 'git commit -m "; rm -rf /srv/app"'; assert_exit "$RC" "2" "semicolon-in-commit fail-closed"
+
+# ── Public-publish ──────────────────────────────────────────────────────────
+test_start "gate blocks gh release create"
+run_gate "gh release create v1.0 dist/*"; assert_exit "$RC" "2" "gh release"
+
+test_start "gate blocks uv publish"
+run_gate "uv publish"; assert_exit "$RC" "2" "uv publish"
+
+test_start "gate blocks twine upload"
+run_gate "twine upload dist/*"; assert_exit "$RC" "2" "twine"
+
+test_start "gate blocks hf upload"
+run_gate "hf upload john-broadway/x file"; assert_exit "$RC" "2" "hf"
+
+test_start "public-publish block names its conscience key"
+assert_contains "$ERR" "public-publish" "key hint"
+
+test_start "gate PASSES an ordinary gh pr list (not a publish)"
+run_gate "gh pr list"; assert_exit "$RC" "0" "gh read ok"
+
 print_summary
 teardown_test_env
 exit $FAILED

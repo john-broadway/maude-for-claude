@@ -406,6 +406,58 @@ test_start "no command inlines a non-canonical slug transform"
 [ -z "$bad" ]
 assert_exit "$?" "0" "all command slugs canonical${bad:+ — DRIFT:$bad}"
 
+# ── Public-facing publish commands (present regardless of config) ─────────────
+test_start "public-publish regex matches gh release create"
+printf 'gh release create v1' | grep -qE -- "$(maude_public_publish_re)"
+assert_exit "$?" "0" "gh release"
+
+test_start "public-publish regex matches uv publish"
+printf 'uv publish' | grep -qE -- "$(maude_public_publish_re)"; assert_exit "$?" "0" "uv publish"
+
+test_start "public-publish regex matches twine upload"
+printf 'twine upload dist/*' | grep -qE -- "$(maude_public_publish_re)"; assert_exit "$?" "0" "twine"
+
+test_start "public-publish regex matches hf upload"
+printf 'hf upload repo file' | grep -qE -- "$(maude_public_publish_re)"; assert_exit "$?" "0" "hf"
+
+test_start "public-publish regex does NOT match a plain git commit"
+printf 'git commit -m hi' | grep -qE -- "$(maude_public_publish_re)"; assert_exit "$?" "1" "commit safe"
+
+test_start "public-publish regex matches huggingface-cli upload"
+printf 'huggingface-cli upload repo file' | grep -qE -- "$(maude_public_publish_re)"
+assert_exit "$?" "0" "huggingface-cli upload"
+
+test_start "public-publish regex does NOT match gh pr create"
+printf 'gh pr create' | grep -qE -- "$(maude_public_publish_re)"
+assert_exit "$?" "1" "gh pr create safe"
+
+# ── Config-driven gate palette ───────────────────────────────────────────
+GCFG="$TEST_TMP/gate-config.json"
+printf '{"sole_copy_paths":["/srv/data"],"infra_destructive_tools":["delete_thing","wipe_store"],"infra_tool_prefix":"mcp__testsrv__","infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"]}\n' > "$GCFG"
+
+test_start "sole-copy includes generic default ~/.claude"
+maude_sole_copy_targets | grep -qF '.claude'; assert_exit "$?" "0" "default .claude"
+test_start "sole-copy includes a config path"
+maude_sole_copy_targets | grep -qF '/srv/data'; assert_exit "$?" "0" "config path present"
+test_start "destructive tools come from config"
+assert_eq "$(maude_infra_destructive_tools)" "delete_thing wipe_store" "tools from config"
+test_start "tool prefix from config"
+assert_eq "$(maude_infra_tool_prefix)" "mcp__testsrv__" "prefix from config"
+test_start "comanage true for config sandbox node"
+maude_is_comanage_target "test-node-a" ""; assert_exit "$?" "0" "sandbox node"
+test_start "comanage true for config sandbox vmid"
+maude_is_comanage_target "" "9001"; assert_exit "$?" "0" "sandbox vmid"
+test_start "comanage false for unlisted target"
+maude_is_comanage_target "prod-x" "1"; assert_exit "$?" "1" "not sandbox"
+
+rm -f "$GCFG"   # now exercise no-config (generic defaults / inert)
+test_start "no config → infra tools EMPTY (gate inert)"
+assert_eq "$(maude_infra_destructive_tools)" "" "empty without config"
+test_start "no config → comanage fails closed"
+maude_is_comanage_target "anything" "1"; assert_exit "$?" "1" "fail-closed no config"
+test_start "no config → sole-copy still has generic defaults"
+maude_sole_copy_targets | grep -qF '.claude'; assert_exit "$?" "0" "defaults survive"
+
 print_summary
 teardown_test_env
 exit $FAILED
