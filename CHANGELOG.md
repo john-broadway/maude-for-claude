@@ -9,7 +9,7 @@ The Maude Claude Code plugin.
 
 ---
 
-## 0.8.0 — 2026-06-15
+## v0.8.0 — 2026-06-15
 
 **Gates are now config-driven — the plugin carries no deployment specifics.** The gate MECHANISM ships in the plugin; per-deployment specifics (extra sole-copy paths, which MCP tools are destructive, the safe sandbox nodes/vmids) live in a LOCAL `~/.claude/maude/gate-config.json` (override `$MAUDE_GATE_CONFIG`), tracked by no repo.
 - **Belt:** sole-copy `rm -rf` protection now covers generic defaults — the current workspace dir, `~/.claude`, and any `.git` — plus any paths listed in the local gate-config. No hardcoded paths in the source.
@@ -22,7 +22,7 @@ The Maude Claude Code plugin.
 
 ---
 
-## 0.7.1 — 2026-06-15
+## v0.7.1 — 2026-06-15
 
 **Run-governor: overnight stand-down + off-switch.** So an intentional long/unattended run isn't blocked by the ceiling.
 - A live `/maude:conscience run-governor <seconds>` token now stands the governor DOWN for its whole window (no soft, no hard) instead of buying a single fresh budget — e.g. `run-governor 36000` = run free for 10h, logged. A human turn still resets; the token rides until it expires.
@@ -31,7 +31,7 @@ The Maude Claude Code plugin.
 
 ---
 
-## 0.7.0 — 2026-06-15
+## v0.7.0 — 2026-06-15
 
 **The gate outfit, Phase 2 — jacket + bowtie.** The layers that make "run longer" safe to actually use.
 - **Jacket — `maude-run-governor.sh`:** counts tool-actions + wall-clock since your last turn (UserPromptSubmit resets it). Soft checkpoint whisper at 40 actions / 40 min; **hard-pause** (blocks) at 80 actions / 90 min until a human turn or `/maude:conscience run-governor` (fresh budget). Thresholds env-tunable (`MAUDE_RUN_SOFT_ACTIONS/MINS`, `MAUDE_RUN_HARD_ACTIONS/MINS`). The conscience escape-hatch command is exempt so the ceiling can't deadlock. Advisory layer → fails OPEN without jq.
@@ -45,7 +45,7 @@ The Maude Claude Code plugin.
 
 ---
 
-## 0.6.0 — 2026-06-15
+## v0.6.0 — 2026-06-15
 
 **The gate outfit (Phase 0 + 1)** — dressing Maude with layered, *coordinated* gates so Claude can run long unattended without an irreversible mistake slipping through.
 

@@ -60,6 +60,7 @@ FLAG_AFTER='([[:space:]]|[;&|)`]|$)'
 GIT='git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--git-dir[=[:space:]][^[:space:]]+))*[[:space:]]+'
 # RMRF = "rm" + a flag bearing both r and f in either order (-rf, -fr, -Rf, -rfv…).
 # (Kept for backward compat / other callers; sole-copy patterns use RMR below.)
+# shellcheck disable=SC2034  # RMRF intentionally retained for external callers; unused in this file
 RMRF='rm[[:space:]]+(-[[:alnum:]]*r[[:alnum:]]*f[[:alnum:]]*|-[[:alnum:]]*f[[:alnum:]]*r[[:alnum:]]*)'
 # RMR = "rm" + any leading flags (including --recursive, --force, -r, -f in any
 # order and any combination) followed by whitespace before the path argument.
