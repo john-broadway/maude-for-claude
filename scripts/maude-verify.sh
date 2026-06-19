@@ -105,6 +105,18 @@ if [ -f README.md ] && [ -n "$CANONICAL" ]; then
   fi
 fi
 
+# ─── Check 3b: "What's new" stays condensed (the wall belongs in CHANGELOG) ──
+printf "\n## README 'What's new' condensed\n"
+WHATSNEW_MAX="${MAUDE_WHATSNEW_MAX:-6}"
+if [ -f README.md ] && grep -q '^## What.s new' README.md; then
+  WN_COUNT=$(awk '/^## What.s new/{flag=1; next} /^## /{flag=0} flag' README.md 2>/dev/null | grep -cE '^\*\*v[0-9]')
+  if [ "$WN_COUNT" -gt "$WHATSNEW_MAX" ]; then
+    emit "README 'What's new' has $WN_COUNT release entries (>$WHATSNEW_MAX) — condense older ones to the CHANGELOG so the public face stays fluid"
+  else
+    printf '  %d entries (<=%d) — condensed\n' "$WN_COUNT" "$WHATSNEW_MAX"
+  fi
+fi
+
 # ─── Check 4: Header Revised dates within 14 days ────────────────────
 printf '\n## Header revised dates\n'
 TODAY_EPOCH=$(date +%s)
@@ -200,6 +212,32 @@ if [ -f "$WORN_FILE" ]; then
   [ "$WORN_HITS" -eq 0 ] && printf '  No worn-framing hits (against %s)\n' "$WORN_FILE"
 else
   printf '  No %s — skipped (create one to scan project-specific phrases)\n' "$WORN_FILE"
+fi
+
+# ─── Check 8: Command-reference integrity ────────────────────────────
+# The recurring miss: a command is cut, but a /maude:<name> reference lingers in
+# the doc surface (README / SKILL / agent). Every referenced command must have a
+# commands/<name>.md. CHANGELOG is excluded (history legitimately names old cmds).
+printf '\n## Command-reference integrity\n'
+if [ -d commands ]; then
+  REF_FILES=""
+  for rf in README.md skills/maude/SKILL.md agents/maude.md; do
+    [ -f "$rf" ] && REF_FILES="$REF_FILES $rf"
+  done
+  DANGLING=0
+  if [ -n "$REF_FILES" ]; then
+    # shellcheck disable=SC2086  # intentional word-split of REF_FILES into grep args
+    REFS=$(grep -rhoE '/maude:[a-z][a-z-]*' $REF_FILES 2>/dev/null | sed 's|/maude:||' | sort -u)
+    for name in $REFS; do
+      if [ ! -f "commands/$name.md" ]; then
+        emit "Doc references /maude:$name but commands/$name.md does not exist (cut-command straggler?)"
+        DANGLING=$((DANGLING + 1))
+      fi
+    done
+  fi
+  [ "$DANGLING" -eq 0 ] && printf '  All /maude:<cmd> references resolve to a command file\n'
+else
+  printf '  No commands/ dir — skipped\n'
 fi
 
 # ─── Summary ─────────────────────────────────────────────────────────

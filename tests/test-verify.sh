@@ -96,5 +96,43 @@ assert_exit "$?" "0" "non-zero exit"
 
 rm -rf "$TMP_PLUGIN"
 
+# ── Command-reference integrity: a doc ref to a cut/missing command is a finding ─
+# The recurring miss: cut a command, but a /maude:<name> reference lingers in
+# README/SKILL/agents. This gate catches the straggler (commands/<name>.md gone).
+CREF="$(mktemp -d)"
+mkdir -p "$CREF/.claude-plugin" "$CREF/commands"
+printf '{"name":"x","version":"1.0.0"}\n' > "$CREF/.claude-plugin/plugin.json"
+printf 'real\n' > "$CREF/commands/wake.md"
+printf '<!-- Version: 1.0.0 -->\n# x\nUse /maude:wake to start. Old: /maude:brief was cut.\n' > "$CREF/README.md"
+OUT_C="$(bash "$VERIFY" "$CREF" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+
+test_start "verify flags a doc reference to a missing command"
+assert_contains "$OUT_C" "/maude:brief" "dangling command ref flagged"
+
+test_start "verify does NOT flag a command reference that resolves"
+printf '%s' "$OUT_C" | grep -q "/maude:wake but"
+assert_exit "$?" "1" "no false finding for an existing command"
+
+rm -rf "$CREF"
+
+# ── What's-new condensation: a wall of > MAX release entries is a finding ─────
+# The recurring miss: each release adds a What's-new entry but never condenses the
+# old ones, so the public README reads as a stale wall (24 entries at v0.9.0).
+WALL="$(mktemp -d)"
+mkdir -p "$WALL/.claude-plugin"
+printf '{"name":"x","version":"9.0.0"}\n' > "$WALL/.claude-plugin/plugin.json"
+{
+  printf '<!-- Version: 9.0.0 -->\n# x\n\n## What'\''s new\n\n'
+  for v in 9.0.0 8.0.0 7.0.0 6.0.0 5.0.0 4.0.0 3.0.0 2.0.0; do printf '**v%s** — entry.\n\n' "$v"; done
+} > "$WALL/README.md"
+OUT_W="$(bash "$VERIFY" "$WALL" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+
+test_start "verify flags an un-condensed What's-new wall"
+assert_contains "$OUT_W" "condense" "wall finding asks to condense"
+
+rm -rf "$WALL"
+
 print_summary
 exit $FAILED
