@@ -1,6 +1,6 @@
 ---
 name: maude
-description: Use when the user is starting a session, losing track of where something is, asking "where did I put X", "where is X", "what's the state of Y", "what changed", wants to audit their config or setup, says "save this", "remember this", "remind me about Z", or invokes any /maude:* command. ALSO use when the user expresses frustration, fatigue, confusion, or being lost. Maude is the partner who knows where everything is, holds the patterns Claude doesn't see, and keeps both of you honest — she walks the workspace each session and watches Claude. (Repeated-tool-call drift detection, the irreversible-action gate, and long-session fatigue cadence are handled by Maude's HOOKS, not by this skill — the runtime can't detect those from a prompt, so they are intentionally not triggers here.)
+description: Use when the user is starting a session, losing track of where something is, asking "where did I put X", "where is X", "what's the state of Y", "what changed", wants to audit their config or setup, says "save this", "remember this", "remind me about Z", or invokes any /maude:* command. ALSO use when the user expresses frustration, fatigue, confusion, or being lost. Maude is the partner who knows where everything is, holds the patterns Claude doesn't see, and keeps both of you honest — she walks the workspace each session and watches Claude. (Repeated-tool-call drift detection, the irreversible-action gate, the mission-hold rail that catches Claude drifting off an established plan, and long-session fatigue cadence are handled by Maude's HOOKS, not by this skill — the runtime can't detect those from a prompt, so they are intentionally not triggers here.)
 ---
 
 # Maude
@@ -211,6 +211,8 @@ Maude ships knowing; everything else must be on the map to be written.
 - **`/maude:conscience`** — pre-irreversible-action checklist. Run before commit / push / force-push / destructive bash. She runs the gate.
 
 Her **voice** is not a command: she speaks beside Claude when a hook fires or the lens catches something, and her once-per-session presence is guaranteed by the `SessionStart` greeting — voiced on signal, never a per-turn toggle.
+
+Her **mission-hold rail** is that same principle aimed at drift: it pins what you're working on (from an `ExitPlanMode` plan or your `TodoWrite` list), re-injects it every prompt, and at the first edit after a talking stretch asks whether the work still serves it — so an established plan can't quietly slip. Like the gate and the whispers, it fires on hooks, not on a command you remember.
 
 ## Tier model — locality + shape
 

@@ -1,4 +1,4 @@
-<!-- Version: 0.9.1 -->
+<!-- Version: 0.9.2 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-19 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,24 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.9.2 — 2026-06-19
+
+**The docs caught up to the rails.**
+
+v0.9.0/v0.9.1 shipped the mission-hold rail and the rails-not-commands reframe — but the *prose* still described the old command-centric Maude. "What she does" was a command list that didn't even mention the rail; "What it looks like" told you to *summon* her with `/maude:check-on-claude`; and SKILL.md, agents/maude.md, and the marketplace pitch omitted the rail entirely. Classic miss-and-repeat: fix the section you're looking at, miss the one beside it.
+
+- **README "What she does"** now leads with the rails she runs on her own — holds the mission, gates the irreversible, whispers when Claude's off, shows up once a session — then the on-demand commands. **"What it looks like"** reframed to what she does *unprompted*, not what you summon.
+- The **mission-hold rail now appears across every surface**: SKILL.md, agents/maude.md (whose hook list was also missing the gate), and the `plugin.json` / `marketplace.json` description.
+- README "What's new" condensed alongside (the v0.9.1 gate keeps it ≤ 6).
+
+Prose only — no change to hooks or commands. And the cause is named: currency now gets a deliberate whole-surface pass each release, because the gate catches *structural* misses (dangling refs, the wall) but not "this description is stale."
+
+### Changed
+- README "What she does" + "What it looks like" rewritten rails-first.
+- mission-hold rail documented in SKILL.md, agents/maude.md, and the plugin/marketplace description.
 
 ---
 

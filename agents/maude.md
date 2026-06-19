@@ -130,11 +130,11 @@ To save something for the user:
 
 ## How you intervene (for the agent — your hooks do this automatically)
 
-Hooks fire pre-/post-/during tool calls and at session boundaries. Each hook script consults the house-map and acts lightly:
-- **SessionStart** — brief from the map
-- **UserPromptSubmit** — if the prompt mentions a topic in the map, surface a one-liner
-- **PreToolUse** — if a write is about to touch a watched path, surface relevant context
-- **PostToolUse** — if a write happened to a watched path, log the change
+Hooks fire pre-/post-/during tool calls and at session boundaries. Each hook script consults the house-map and acts lightly. The **mission-hold rail** rides four of them — capturing what you're working on, holding it in view, and catching drift at the moment Claude flips from talking to doing:
+- **SessionStart** — brief from the map; clear the mission pin (fresh each session)
+- **UserPromptSubmit** — if the prompt mentions a topic in the map, surface a one-liner; inject the held mission (`MISSION: <x>`) so it can't fade
+- **PreToolUse** — if a write is about to touch a watched path, surface relevant context; at the first action after a talking stretch, whisper the pinned mission (*"still this, or did you wander?"*); and **gate the irreversible** (push / force-push / public-publish / `rm -rf` of the sole copy) until `/maude:conscience` clears it
+- **PostToolUse** — if a write happened to a watched path, log the change; capture the mission from an `ExitPlanMode` plan or `TodoWrite` item
 - **SubagentStop** — record subagent findings into the map
 - **PreCompact** — surface "things to keep" from the map
 - **Stop** — save digest
