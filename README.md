@@ -1,6 +1,6 @@
-<!-- Version: 0.8.0 -->
+<!-- Version: 0.9.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-15 CDT -->
+<!-- Revised: 2026-06-19 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -76,12 +76,14 @@ She is not loud. When she gets loud, listen.
 - **`/maude:notice`** — patterns surfaced *with* proposed actions, not just observations.
 - **`/maude:conscience`** — pre-irreversible-action gate. Run before commit, push, force-push, destructive bash. Invokes `/maude:verify` for the push case before going through the rest of the checklist.
 - **`/maude:verify`** — programmatic project audit. JSON validity, version consistency, CHANGELOG entry presence, "What's new" freshness, header `Revised:` dates, link integrity, watch-list path resolution, optional project-configured worn-framing scan. Leads with a count, never a verdict.
-- **`/maude:dual-voice [on|off]`** — turn standing dual-voice on/off: Claude and Maude both present in replies, not just Maude when summoned. Writes a consented block into a CLAUDE.md you choose; off by default.
-- Plus `brief`, `save`, `remind-me`, `where-is`, `sweep`, `check-setup`, `weekly`. Full surface in [`commands/`](commands/).
+- **Her voice rides the rails** — she speaks beside Claude when a hook catches something, and lands at least once every session in the start-up greeting. Not a toggle you flip.
+- Plus `save`, `remind-me`, `sweep`, `weekly`. Full surface in [`commands/`](commands/).
 
 ---
 
 ## What's new
+
+**v0.9.0 (2026-06-19) — the mission-hold rail, and Maude taking her own medicine.** This one started with a failure, not a feature: Maude had rules in memory (*use what you own, keep it simple*) that nothing ever **fired**, so Claude would settle on the right plan and drift off it within a few turns. The new **mission-hold rail** (`maude-mission.sh`) makes the rule fire — it **captures** the mission from an `ExitPlanMode` plan or the active `TodoWrite` item, **holds** it by re-injecting `MISSION: <x>` every prompt (so it can't scroll out of view), **verifies** at the action-flip (*"still this, or did you wander?"*), and **clears** each session. No drift-detector — that'd be the over-engineering it exists to fight. Then we turned the same honesty on Maude and found she'd caught the disease she cures: a dozen commands, most of them conveniences with a turnstile bolted on. So we **cut four** (`brief`, `where-is`, `check-setup`, `dual-voice`) and made her **voice a rail, not a switch** — the `SessionStart` greeting now always lands, even on a stranger's first run, so her once-per-session presence can't be skipped and never depended on a toggle. One capability added, ~320 lines gone, four fewer commands, a voice that's present instead of summoned.
 
 **v0.8.0 (2026-06-15) — the gate outfit, now config-driven.** The arc since v0.5.6: a layered set of gates so Claude can run longer *safely*. **Belt** — sole-copy `rm -rf` protection (the workspace, `~/.claude`, any `.git`, plus configured paths) and a public-publish block. **Suspenders** — a gate on destructive MCP/infra tools. **Jacket** — a run-governor that surfaces, then pauses, an unattended run that's gone too long, with an overnight stand-down token and an off-switch. **Bowtie** — a verify-watch that whispers before you commit code you haven't re-checked. As of v0.8.0 the mechanism ships in the plugin and **every per-deployment specific** (extra protected paths, which MCP tools are destructive, the safe sandbox) lives in a LOCAL `~/.claude/maude/gate-config.json` that no repo tracks — a config-less install still guards the workspace and `~/.claude` out of the box. Plus **`maude-secret-scan`**: a UserPromptSubmit hook that spots credential-shaped strings in the prompt itself and drives an immediate revoke without echoing the secret — the input-side complement to the gate, born after a token leaked twice through a `!` line the PreToolUse hook never sees.
 

@@ -17,16 +17,13 @@ test_start "session-start exits 0"
 run_start
 assert_exit "$RC" "0" "exit"
 
-# With nothing — silent
-test_start "session-start silent with no memory anywhere"
+# With nothing to surface — she still greets (her voice is guaranteed), but no stale signal lines
+test_start "session-start surfaces no Anthropic-now line when there's no memory"
 # Make sure no Anthropic memory dir exists for this fake project slug
 SLUG="$(printf '%s' "$TEST_TMP" | sed 's/[^a-zA-Z0-9]/-/g')"
 rm -rf "$HOME/.claude/projects/$SLUG"
 run_start
-# session-start may still print "Maude here" line if user-global patterns exist or
-# memory dir exists with files — accept silent or minimal output.
-[ -z "$OUT" ] || ! printf '%s' "$OUT" | grep -q "Anthropic now"
-assert_exit "$?" "0" "no anthropic-now output"
+assert_not_contains "$OUT" "Anthropic now" "no anthropic-now output"
 
 # With house-map present
 cat > "$TEST_TMP/.maude/plugin/house-map.md" <<'EOF'
@@ -198,6 +195,18 @@ rm "$LH/home/.claude/maude/letter-from-maude.md"
 LOUT2="$(printf '{}' | CLAUDE_PROJECT_DIR="$LH/proj" HOME="$LH/home" bash "$START" 2>/dev/null)"
 assert_not_contains "$LOUT2" "Letter from my last self" "silent without letter"
 rm -rf "$LH"
+
+# ── Guaranteed once-per-session voice ────────────────────────────────
+# Her voice is a RAIL, not the (retired) dual-voice toggle: SessionStart must land
+# her name EVERY session, including a stranger's first run on a pristine project
+# (no map, no memory, no remember, no letter). Isolated HOME + project so nothing
+# leaks in to mask the bare case.
+test_start "session-start always lands her name, even on a pristine project"
+PV="$(mktemp -d)"
+mkdir -p "$PV/home" "$PV/proj"
+PVOUT="$(printf '{}' | CLAUDE_PROJECT_DIR="$PV/proj" HOME="$PV/home" bash "$START" 2>/dev/null)"
+assert_contains "$PVOUT" "Maude here." "greets on a pristine project (her voice is guaranteed)"
+rm -rf "$PV"
 
 print_summary
 teardown_test_env
