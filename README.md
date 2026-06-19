@@ -1,4 +1,4 @@
-<!-- Version: 0.9.1 -->
+<!-- Version: 0.9.2 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-06-19 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -57,11 +57,11 @@ Verify with `/doctor`: maude should not appear in the issue list.
 
 ## What it looks like
 
-You open Claude Code. Her hooks fire on `SessionStart`. Before you say anything, she's read the workspace and put three things in front of you — what's pending, where you left off, what she noticed. You either pick one up or set them aside.
+You open Claude Code. Before you say anything, she's read the workspace and put three things in front of you — what's pending, where you left off, what she noticed.
 
-Mid-session, you say `/maude:check-on-claude`. She reads the trace. *"He's grepped the same term four times today. He hasn't opened your CLAUDE.md. The trace says about-to-commit; you might want to slow down."* You go fix that.
+You start working. A few turns in, you reach to build something — and the mission you set surfaces: *"still this, or did you wander?"* You were about to wander. You don't.
 
-End of day, you say `/maude:rest`. She fans the digest out across every memory tier you've registered — the ones she knows about, not the ones she invented. You close the laptop. Tomorrow's Claude can pick up where this one left off.
+Later, Claude's hammered the same grep four times and never opened your CLAUDE.md. She says so — once, unprompted. And when you reach for `git push` before the work's been checked, she stops you at the gate until you mean it. At day's end, `/maude:rest` fans the digest out so tomorrow's Claude picks up where this one left off.
 
 She is not loud. When she gets loud, listen.
 
@@ -69,19 +69,22 @@ She is not loud. When she gets loud, listen.
 
 ## What she does
 
-- **`/maude:found`** — arrival walk. Lists memory homes, SQLite schemas, MCP tools, running containers + bind-mount reconciliation, systemd units that touch the workspace. Writes a per-project house-map.
-- **`/maude:wake` / `/maude:rest`** — start-of-session and end-of-session rituals. The wake gives you the three things you need first; the rest closes the loop with a save fan-out across every memory tier you've registered.
-- **`/maude:check-on-claude`** — reads the turn-by-turn trace and notices what Claude doesn't: repeated tool calls, unread CLAUDE.md, confabulation risk, open todos.
-- **`/maude:check-on-me`** — the care side. Pattern-of-life, not absolute thresholds. Compares this session's cadence to your typical one.
-- **`/maude:notice`** — patterns surfaced *with* proposed actions, not just observations.
-- **`/maude:conscience`** — pre-irreversible-action gate. Run before commit, push, force-push, destructive bash. Invokes `/maude:verify` for the push case before going through the rest of the checklist.
-- **`/maude:verify`** — programmatic project audit. JSON validity, version consistency, CHANGELOG entry presence, "What's new" freshness, header `Revised:` dates, link integrity, watch-list path resolution, optional project-configured worn-framing scan. Leads with a count, never a verdict.
-- **Her voice rides the rails** — she speaks beside Claude when a hook catches something, and lands at least once every session in the start-up greeting. Not a toggle you flip.
-- Plus `save`, `remind-me`, `sweep`, `weekly`. Full surface in [`commands/`](commands/).
+Most of it she does **on her own** — rails wired to Claude's hooks, no command to remember:
+
+- **Holds the mission.** She pins what you're working on (from a plan, or your todo list), re-surfaces it every turn, and — the instant Claude flips from talking to editing — asks whether the work still serves it. Drift caught at the edge, not after the wreck.
+- **Gates the irreversible.** A `git push`, a force-push, a public publish, an `rm -rf` of the only copy — she stops it cold until you clear it with `/maude:conscience`. And she scans every prompt for leaked credentials.
+- **Whispers when Claude's off.** Repeated greps, the same file read five times, a commit with no verify run since the last edit, editing before CLAUDE.md was read — she notices, once.
+- **Shows up, once, every session.** At session start she's already read the workspace and put what's pending / where you left off / what she noticed in front of you. Her voice rides these rails — present every session, louder only when something's caught. Never a toggle you flip.
+
+And on demand, when you ask:
+
+- **`/maude:found`** writes the house-map · **`/maude:wake` / `/maude:rest`** orient on arrival / close the loop with a save fan-out · **`/maude:verify`** runs the readiness audit (version sync, JSON, links, dates, **references to cut commands, an un-condensed changelog** — leads with a count, never a verdict) · **`/maude:conscience`** is the gate's deliberate release valve · **`/maude:teach`** tells her a fact about you. Plus `save`, `remind-me`, `sweep`, `notice`, `check-on-claude`, `check-on-me`, `weekly`. Full surface in [`commands/`](commands/).
 
 ---
 
 ## What's new
+
+**v0.9.2 (2026-06-19) — the docs caught up to the rails.** v0.9.0/v0.9.1 shipped the mission-hold rail and the rails-not-commands reframe, but the prose still described the old command-centric Maude — "What she does" didn't mention the rail, "What it looks like" told you to *summon* her, and SKILL.md / agents.md / the marketplace pitch omitted it. Made every public surface current: a rails-first "What she does," a reframed "What it looks like," and the mission rail now present in the skill, the agent (whose hook list was also missing the gate), and the plugin description. Prose only — no runtime change.
 
 **v0.9.1 (2026-06-19) — release discipline: misses get gated, not remembered.** v0.9.0 shipped, and then the public README still carried all 24 old "What's new" entries and two references to commands we'd just cut — because the release was hand-walked across a dozen files, and hand-walking misses. So we made the misses impossible to *ship* instead of impossible to *forget*: `verify` (already a required CI check) now also fails on a reference to a command that no longer exists and on an un-condensed "What's new" wall — a broken release can't merge. And `scripts/release.sh <version>` (`make release VERSION=…`) propagates the version to every header, stamps the dates, and runs the gate, so the mechanical part stops depending on a person remembering. The copy below is condensed to match.
 
@@ -97,7 +100,7 @@ She is not loud. When she gets loud, listen.
 |---|---|
 | `<project>/.maude/plugin/house-map.md` | What's in this house — memory homes, tools, watch list, what she noticed. Refreshed by walks. |
 | `<project>/.maude/plugin/trace/today-YYYY-MM-DD.jsonl` | Turn-by-turn record of what Claude did today. Read by `/maude:check-on-claude`. |
-| `<project>/.maude/plugin/care.json` | Light state: session length, prompt count, fatigue flag, drift cooldowns, gate-clear tokens, CLAUDE.md-unread flag. Throwaway. |
+| `<project>/.maude/plugin/care.json` | Light state: current mission pin, session length, prompt count, fatigue flag, drift cooldowns, gate-clear tokens, CLAUDE.md-unread flag. Throwaway. |
 | `~/.claude/maude/identity.md` | Who the *user* is — Maude's living profile of them, shaped over time. |
 | `~/.claude/maude/patterns.md` | Cross-project things she's noticed about Claude. |
 | `~/.claude/maude/projects.json` | Light index of which workspaces she's walked. |
