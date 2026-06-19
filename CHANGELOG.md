@@ -1,11 +1,32 @@
-<!-- Version: 0.9.0 -->
+<!-- Version: 0.9.1 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-19 CDT -->
+<!-- Revised: 2026-06-19 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.9.1 — 2026-06-19
+
+**Release discipline — the misses get gated, not remembered.**
+
+v0.9.0 shipped correctly, but the public README still carried all 24 old "What's new" entries and two references to commands we'd just cut. Not a one-off slip: every release was hand-walked across ~12 files (bump each version header, stamp dates, match marketplace.json, add the changelog + What's-new entry, condense the old ones, scrub references to anything cut) — and hand-walking from memory misses. So we moved the release from "a person remembering" to "a mechanism that can't forget."
+
+- **`verify` now gates the misses** — and it runs as a required CI check, so a broken release can't merge. On top of the version-header sync it already enforced, it fails on (a) a `/maude:<name>` reference in README/SKILL/agent to a command that no longer has a `commands/<name>.md` (the cut-command straggler), and (b) an un-condensed "What's new" — more than 6 release entries means the wall wasn't trimmed.
+- **`scripts/release.sh <version>`** (`make release VERSION=…`) — the updater: sets the version in `plugin.json` + `marketplace.json`, propagates it to every `<!-- Version: -->` header, stamps the `Revised:` dates, and runs the gate (verify + test + lint). It writes no prose — the CHANGELOG and What's-new entries stay ours — and it never pushes; it stops at "ready for PR."
+- **Condensed the README "What's new"** from 24 stacked entries to the current two plus a one-line "Earlier" pointer here, which also cleared the dangling `/maude:brief` and `/maude:dual-voice` references the new gate flagged.
+
+No change to the plugin's runtime — hooks and commands are untouched. This is release-process hardening: the public face stays fluid and consistent because the gate won't let it drift.
+
+### Added
+- `verify` checks: command-reference integrity + "What's new" condensation.
+- `scripts/release.sh` + `make release VERSION=…`.
+
+### Changed
+- README "What's new" condensed (24 → 2 + "Earlier").
 
 ---
 
