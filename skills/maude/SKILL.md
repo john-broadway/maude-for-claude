@@ -147,7 +147,7 @@ timezone: <none>
 - Plain prose section: things Maude noticed about how this user organizes.
 - e.g. "the user keeps decision logs in /decisions, not /docs/decisions"
 - e.g. "Project also runs the remember plugin — its compressed daily summaries
-  are usually more useful than my raw trace for /maude:brief"
+  are usually more useful than my raw trace for the session brief"
 ```
 
 The map is editable. The user can add notes, remove things, correct her. She re-reads it every time before acting.
@@ -196,14 +196,11 @@ Maude ships knowing; everything else must be on the map to be written.
 - **`/maude:weekly`** — weekly retrospective from the trace.
 
 **Recall + locate (Claude's missing memory):**
-- **`/maude:brief`** — reads the house-map, pulls recent context from every memory location it lists, returns a digest.
 - **`/maude:save [note]`** — composes a session digest, writes to Anthropic memory + every other destination in the house-map.
 - **`/maude:remind-me <topic>`** — searches everything in the house-map for the topic.
-- **`/maude:where-is <thing>`** — locator. House-map first, then grep/glob.
 
 **Audit (passive, on-demand):**
-- **`/maude:sweep`** — workspace audit using only Read/Grep/Glob.
-- **`/maude:check-setup [path]`** — audits a project's `.claude/` setup.
+- **`/maude:sweep`** — workspace audit using only Read/Grep/Glob (also covers a project's `.claude/` setup).
 - **`/maude:verify`** — programmatic project audit (`scripts/maude-verify.sh`): version consistency, JSON validity, link integrity, header dates, watch-list paths, worn-framing scan. Leads with a count; catches "ready" before it actually is.
 
 **Care + conscience (Claude's missing partner):**
@@ -212,7 +209,8 @@ Maude ships knowing; everything else must be on the map to be written.
 - **`/maude:check-on-claude`** — she checks on Claude: repeated tool calls, unread context, confabulation risk, missed CLAUDE.md.
 - **`/maude:notice`** — surfaces patterns from the turn-by-turn trace ("3 sessions on this bug", "you keep editing X at midnight").
 - **`/maude:conscience`** — pre-irreversible-action checklist. Run before commit / push / force-push / destructive bash. She runs the gate.
-- **`/maude:dual-voice [on|off]`** — turn standing dual-voice on/off: Claude AND Maude both present in replies, not just Maude when summoned. Writes a consented, delimited block into a `CLAUDE.md` you choose (the channel that makes it fire). Off by default.
+
+Her **voice** is not a command: she speaks beside Claude when a hook fires or the lens catches something, and her once-per-session presence is guaranteed by the `SessionStart` greeting — voiced on signal, never a per-turn toggle.
 
 ## Tier model — locality + shape
 
@@ -241,10 +239,8 @@ Tier 3 — ephemeral session context (always there, can't persist)
 | Surface | Tier 0 | Tier 1 | Tier 2 | Tier 3 |
 |---|---|---|---|---|
 | Hooks (every turn — must be fast) | ALWAYS | NEVER | NEVER | refer-only |
-| `/maude:brief` | ALWAYS | only if `tier1_up` cached true | NEVER | refer |
 | `/maude:wake` | ALWAYS | only if marked always-on | NEVER | refer |
 | `/maude:remind-me <topic>` | ALWAYS | ALWAYS if reachable | only if `--deep` flag or topic flagged rich-query | refer |
-| `/maude:where-is` | ALWAYS | if reachable | NEVER (locator must be fast) | refer |
 | `/maude:save` | ALWAYS write | write if reachable | only if registered writable + auth | n/a |
 | `/maude:rest` | ALWAYS write | write if reachable | always to network if writable + auth (session-end, cost OK) | n/a |
 | `/maude:found` | classify every source seen | probe liveness once | probe auth + endpoint once | n/a |

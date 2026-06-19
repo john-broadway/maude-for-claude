@@ -1,11 +1,47 @@
-<!-- Version: 0.8.0 -->
+<!-- Version: 0.9.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-15 CDT -->
+<!-- Revised: 2026-06-19 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.9.0 — 2026-06-19
+
+**The mission-hold rail — and Maude taking her own medicine.**
+
+This one started with a failure, not a feature. Maude exists to keep Claude honest — but she had rules sitting in memory (*use what you own, keep it simple*) that nothing ever **fired**. Claude would settle on the right plan and then drift off it within a few turns, and the rule that should have caught the drift never ran. Storing a rule is not the same as the rule gating the answer. So we built the thing that makes it fire.
+
+**The mission-hold rail** (`maude-mission.sh`) — one pinned mission, four touches, all riding hooks that already existed:
+- **capture** — pins the mission from the only two places it's already structured data: an `ExitPlanMode` plan or the active `TodoWrite` item. Sticky; only those replace it.
+- **hold** — re-injects `MISSION: <x>` every prompt, so it can't scroll out of view (the reason it faded even right after wake).
+- **verify** — at the action-flip (the first `Write`/`Edit`/`Bash` after a stretch of talking), whispers the pinned mission: *still this, or did you wander?*
+- **clear** — wipes it at `SessionStart`, fresh each session.
+
+Honest about the seam: detecting the flip is deterministic; auto-capturing the *text* only works from the plan/todo payloads; the "am I drifting" judgment stays Claude's. No drift-detector — that would have been the exact over-engineering this release exists to fight.
+
+**Then we turned the same honesty on Maude, and found she'd caught the disease she's built to cure.** A dozen commands had piled up — most of them conveniences with a turnstile bolted on, value you had to *remember to summon*. And her "voice" was a toggle you flipped, not a presence that was simply there. So:
+- **Cut four commands** — `brief` (the `SessionStart` greeting already is it), `where-is` (just ask), `check-setup` (folded into `sweep`), and `dual-voice`.
+- **Her voice is a rail now, not a switch.** It never came from the dual-voice toggle — it comes from her hooks. We made the once-per-session presence unskippable: the `SessionStart` greeting now lands even on a stranger's first run on an empty project. She's voiced on signal — when a hook catches something — and guaranteed once a session. Never a per-turn echo.
+
+Net: one real capability added, ~320 lines removed, four fewer commands, a voice that's present instead of summoned. She got lighter and more honest in the same move. That was the point.
+
+Built test-first; the suite is green, shellcheck is clean, and her own `verify` reports zero findings. Design note in `docs/specs/`.
+
+### Added
+- `maude-mission.sh` + wiring — the mission-hold rail (`capture` / `hold` / `verify` / `clear`).
+- Guaranteed once-per-session voice: `SessionStart` always greets, even on a pristine project.
+- `tests/test-mission.sh` — 11 cases.
+
+### Changed
+- `maude-session-start.sh` always greets (removed the silent early-exit).
+- `sweep` now also covers `.claude/` setup (absorbed `check-setup`).
+
+### Removed
+- Commands: `brief`, `where-is`, `check-setup`, `dual-voice`.
 
 ---
 

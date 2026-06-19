@@ -72,10 +72,10 @@ fi
 # Tier 5: simple count of memory files in Anthropic dir
 [ -d "$MEM" ] && TOPIC_COUNT="$(find "$MEM" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')"
 
-# If nothing meaningful to surface, stay quiet.
-if [ -z "$NOW_LINE" ] && [ -z "$REMEMBER_HANDOFF" ] && [ -z "$PATTERN_HINT" ] && [ -z "$LETTER_LINE" ] && [ -z "$HAS_MAP" ] && [ "$TOPIC_COUNT" -eq 0 ]; then
-  exit 0
-fi
+# She ALWAYS greets — her once-per-session voice is a RAIL, not a condition. Even on
+# a pristine project (no memory, no map) her name lands, with a /maude:found nudge.
+# (Previously an early-exit-on-nothing stayed silent here; removed so the greeting can
+# never be skipped — the guaranteed once-per-session presence the plugin promises.)
 
 # Compose brief — terse, one stanza per signal that fired.
 # Greet by the user's local clock when the timezone is known (house-map);
@@ -91,7 +91,7 @@ GREETING="$(maude_greeting)"
   [ -n "$PATTERN_HINT" ]      && printf '  Cross-project pattern: %s\n' "$PATTERN_HINT"
   [ -n "$LETTER_LINE" ]       && printf '  Letter from my last self: %s\n' "$LETTER_LINE"
   [ "$TOPIC_COUNT" -gt 0 ]    && printf '  %s memory file(s) on hand.\n' "$TOPIC_COUNT"
-  [ -z "$HAS_MAP" ] && { [ -d "$REMEMBER" ] || [ -d "$MEM" ]; } && printf '  No house-map yet — run /maude:found.\n'
+  [ -z "$HAS_MAP" ] && printf '  No house-map yet — run /maude:found.\n'
 } 2>/dev/null
 
 exit 0
