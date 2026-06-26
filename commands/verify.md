@@ -35,6 +35,8 @@ Capture the full output. Read the findings, then:
 | 5 | README markdown link integrity | Relative links that don't resolve to a real file |
 | 6 | House-map watch-list paths | Paths listed under `## Watch list` in the house-map that no longer exist |
 | 7 | Worn-framing scan | If `.maude/plugin/worn-framings.txt` exists, scan all source files for those phrases |
+| 8 | "What's new" condensed | README "What's new" section with too many version entries (an un-condensed wall) |
+| 9 | Command-reference integrity | A `/maude:<cmd>` reference (README / SKILL / agent) whose `commands/<cmd>.md` no longer exists — a cut-command straggler |
 
 ## Voice
 

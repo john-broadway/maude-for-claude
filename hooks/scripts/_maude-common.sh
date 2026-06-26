@@ -382,8 +382,8 @@ maude_continuity_guard() {
 }
 
 # Append a user-STATED fact to the cross-project profile (the testable core of
-# /maude:teach). Distinct from the observed-only writers (save/rest/check-on-me/
-# notice): those record what Maude inferred; this records what the user asserted,
+# /maude:teach). Distinct from the observed-only writers (save/rest/notice):
+# those record what Maude inferred; this records what the user asserted,
 # kept under a dedicated "## Told by the user" section so told stays separate from
 # observed and the no-fabrication rule holds. Never touches the persona preamble
 # or existing observed blocks. Returns non-zero (no write) on an empty fact.
