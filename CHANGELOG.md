@@ -1,11 +1,124 @@
-<!-- Version: 0.9.2 -->
+<!-- Version: 0.13.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-19 -->
+<!-- Revised: 2026-06-26 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.13.0 — 2026-06-26
+
+**Audit punch-list, closed: four dead commands removed, the red-clear net widened (and its overclaim corrected), the test runner made hermetic.**
+
+The remaining items from the 2026-06-24 audit, done together. Surface trimmed, one real-enforcement layer strengthened, and a long-standing overclaim retired in favor of the truth.
+
+### Removed
+- **Four zero-use commands cut: `/maude:remind-me`, `/maude:sweep`, `/maude:weekly`, `/maude:check-on-me`.** The audit found zero invocations across ~73,000 traced events over 29 days — dead surface. Gone from `commands/`, the SKILL catalog + tier table, the agent, the README, SECURITY, and the launch copy. Muscle memory will find them gone (`/doctor` won't list them). Recall now rides the hooks + `/maude:wake`; the only intentional Tier-2 (network) path is now session-end `/maude:rest` / `/maude:save`. Command surface: 13 → 9.
+
+### Changed
+- **Red-clear write-net widened, and the "OS lock" overclaim corrected.** The `care-redclear.json` gate backstop caught `>`/`>>`/`tee` but missed the `cp`/`mv`/`dd` "pre-staged token" shapes it named as a residual — now it also blocks `chattr`/`chmod`/`chown`/`mv`/`cp`/`dd`/`install`/`truncate`/`ln` naming the file (`cat`/`grep` reads pass; a `cp` *out* of the file is blocked too — fail-closed, and arguably desirable). More importantly: the prior docs said "OS-level ownership is the real lock." On a **single-uid box that's false** — the agent process and John's `!` line run as the same user, so file ownership can't tell them apart; you cannot cage a same-uid peer with OS perms, and a fake lock would be theatre. Corrected the live claim (README keeps-things table + the in-source comment): the real discriminator is the **channel asymmetry** (`!` skips the tool-gate; the Bash tool doesn't) + this widened net + the harness deny + the audit trail. Where the authorizer and the agent run as *different* OS users, ownership closes it further; here it cannot.
+
+### Fixed
+- **Test runner made hermetic.** Two suites failed whenever the dev shell exported `MAUDE_RUN_GOVERNOR=off` (and would have on any leaked `MAUDE_*` toggle) — the ambient value leaked past `setup_test_env` and flipped a default-behavior assertion. `setup_test_env` now unsets every `MAUDE_*` var (`${!MAUDE_@}`, future-proof) before each file; tests that exercise a toggle set it explicitly. Proven by running the whole suite with all toggles set to junk → 25/25.
+
+### Honest seam
+- The red-clear net is a Bash-pattern net and the gate is the only enforcement here — a determined programmatic write (a Python/`perl` one-liner, `sed -i`, an unlisted verb) still slips it. That's stated plainly in-source and is the truth of a single-uid box, not a gap to paper over. No OS cage is claimed because none exists here.
+
+### Tested
+- 5 new red-clear backstop tests (cp/mv/dd/chmod/ln blocked; cat/grep reads pass), verified to fail against the pre-widening regex. Hermeticity proven against all `MAUDE_*` toggles. Full suite **25/25**, `make lint` clean, `maude:verify` 0 findings.
+
+---
+
+## v0.12.1 — 2026-06-26
+
+**The gate stops lying in two places: `DROP TABLE` was backwards, and heredoc prose false-blocked commits.**
+
+The gate's only value is accuracy — a gate that misses real threats and blocks real work is the theatre the audit exists to kill. Two bugs from the 2026-06-24 audit punch-list, both reproduced against the live gate before fixing, both fixed at the root with a failing test first.
+
+### Fixed
+- **`DROP TABLE` was exactly backwards (missed real SQL, fired on prose).** The pattern matched the quote-ERASED skeleton, but real SQL is always quoted (`psql -c "DROP TABLE x"`, `mysql -e '…'`) — so it stripped to `psql -c` and **slipped through**, while an unquoted prose mention (`echo … # DROP TABLE`, a commit body) **false-blocked**. Now matched against the content-KEPT view **and** gated on a SQL-client token (`psql`/`mysql`/`mariadb`/`sqlite3`/`sqlplus`), case-insensitive. Real quoted SQL and heredoc-to-`psql` block; prose mentions and `.sql` file-authoring pass.
+- **Heredoc prose false-blocked `rm -rf /` commits.** `maude_strip_quotes` erases `'…'`/`"…"` spans but not heredoc bodies, so a shell separator in heredoc prose (`fixed; rm -rf /…`, `caution (rm -rf /)…`) survived into the command-position skeleton and read as a real subshell rm — blocking a `git commit -F -` whose body merely *documents* `rm -rf /`. The rm-command-position guard now excises **all** heredoc bodies (new `maude_strip_heredocs`) before checking, so doc/commit heredocs are seen as the data they are.
+
+### Honest seam
+- **Bug 1 residual (fail-closed):** a command that mentions BOTH a SQL-client name AND "drop table" in prose (e.g. a commit message about a psql migration that drops a table) still blocks. It's a much narrower miss than before, `drop-table` is a RED key (conscience-clearable), and the client list is intentionally small — documented, not chased.
+- **Bug 2 consequences (two, verified):** excising heredoc bodies means (a) an rm inside a heredoc fed to a *shell* (`bash <<EOF … rm -rf / … EOF`) is now uniformly uncaught — the already-documented shell-wrapping limitation (#3), made consistent (the bare form was already missed; only the separator-prefixed variant accidentally blocked); and (b) a NEW, narrow under-block — the `<<WORD` scan is a heuristic on the raw line, so a `<<WORD` that's actually quoted text (`echo "x << EOF"`) or a letter-led arithmetic shift (`$((a << b))`) is mis-read as a heredoc and a real `rm -rf` on a *later* line gets wrongly skipped (the old guard caught that case). Documented as limitation #9, accepted under the gate's fail-closed-where-it-matters posture, and deliberately **not** narrowed: the obvious fix (strip quoted spans before detecting `<<`) erases the `<<'EOF'` delimiter and reopens the doc-body false-block this release fixes.
+
+### Tested
+- Reproduced both bugs against the real gate, RED tests first, then fixed: 10 new gate tests + 7 new `_maude-common` unit tests (`maude_strip_heredocs`, heredoc-aware rm-guard). Full suite **25/25** green; `make lint` clean. (Pre-existing: `test-run-governor`/`test-session-start` fail only when the ambient `MAUDE_RUN_GOVERNOR=off` leaks into the test env — unrelated to this change.)
+
+---
+
+## v0.12.0 — 2026-06-24
+
+**The continuity loop closes: the wake path reads the freshest source, and warns when even that's stale.**
+
+Continuity is Maude's most valuable mechanism — she wakes Claude oriented on a fresh-account box. But "is there a loop protecting that process?" exposed two gaps, both found by dogfooding the real workspace: (1) the wake path read the lagging Anthropic buffer (`$MEM/now.md`, ~1h stale) and an EMPTY handoff (`remember.md` is a transient inbox the remember plugin drains to 0 bytes), while the freshest capture — the remember plugin's live `$REMEMBER/now.md` — sat unread; (2) nothing verified continuity at all: the Stop hook writes no handoff, so a clean quit without `/maude:rest` could wake the next session under-informed, silently.
+
+### Added
+- **Continuity guard (SessionStart).** Reconciles the last CAPTURE — the freshest mtime among the sources the wake path actually reads (`$MEM/now.md`, `$REMEMBER/now.md`, a non-empty `remember.md`) — against real ACTIVITY (user `prompt` events in the durable trace). If work ran after the freshest capture, or nothing was captured at all, it warns at the top of the brief: *"~N exchanges ran after the last save — the handoff may be stale. /maude:wake reconstructs from the trace."* Continuity degrades LOUDLY, not silently. On a healthy system the live buffer keeps the anchor current and the guard stays quiet.
+
+### Changed
+- **The wake path now reads the freshest live buffer.** SessionStart surfaces a "Where you left off" line from the NEWEST entry of `$REMEMBER/now.md` (the remember plugin keeps it current), instead of leaning only on the Anthropic buffer that can lag an hour or more. The fix at the source — so the next session reads current state, not stale.
+
+### Honest seam
+- `prompt` is the unit because SessionStart fires before this session's first prompt, so every counted prompt is genuinely prior work. The guard concerns the remember-plugin substrate (no `.remember/` → N/A) and is a no-op without `jq`. It makes continuity gaps VISIBLE; reconstruction from the trace is still a manual `/maude:wake` — the trace holds the raw events, but an automatic rebuild is the next step, not this one. The first cut anchored on `remember.md` alone and false-alarmed on the live (drained) workspace; the dogfood caught it and the anchor was widened to the freshest source. One more scope note: under an umbrella root where one `.remember/` is shared across projects, the "Where you left off" line is the newest entry *workspace-wide* — it may name a different project than your current focus, by design (one session spans the whole workspace). In a single-project `.remember/`, it is naturally that project's latest.
+
+---
+
+## v0.11.0 — 2026-06-24
+
+**She gets a reader: the catch-digest surfaces to John what she's been catching for Claude.**
+
+An evidence-grounded audit of ~73,000 traced events answered John's "she does nothing" honestly. She fires constantly and the gates genuinely bite — six organic `rm -rf` saves of the sole copy, a fail-closed infra-gate — but ~99.7% of what she does is aimed at Claude and never reaches John: the advisory whispers (drift, verify, watch-list) land on a stderr channel with no reader. From where John sits, a thing he can't see does nothing. The fix was never more hooks. It was one reader.
+
+### Added
+- **The session-start catch-digest — Maude's one John-facing line.** The brief now leads with a plain summary of what she caught since John last looked: `Maude caught since you last looked: 1 sole-copy save, 2 blocks, 1 drift-catch (+3 push-clears, 14 verify-flags).` Value-first — real saves and protective blocks lead; high-volume friction (push-clears, verify-flags) folds into a parenthetical tail; a window with nothing caught stays silent.
+- **Watermark, not "last session."** Counts come from the trace JSONL (the source of truth), bounded by a `last_digest_iso` watermark in `care.json` that advances each digest — so SessionStart's resume/clear/compact re-fires never re-print the same catch. The git-push gate is the toll booth, surfaced as "push-clears" (friction), never miscounted as protection.
+
+### Honest seam — what this is and isn't
+- This makes the existing whispers *visible*; it does not make them *fewer*. The audit's other findings — a quote-blind `DROP TABLE` pattern, ~3,550 signal-free `subagent-stop` events, four zero-use commands — are real and still open. Surfacing the catch is the highest-leverage first move, not the last. The digest is a no-op without `jq` (like every counting hook); the example counts above are illustrative, not a fixed claim; and only `rm-rf-sole-copy` blocks are labeled "sole-copy saves" — other `rm-rf` variants (e.g. `rm-rf-root`) and `drop-table` count as generic blocks, so the high-value label can't inflate.
+
+---
+
+## v0.10.1 — 2026-06-24
+
+**Go further: the red rail goes from soft to unbypassable.**
+
+v0.10.0 made red-key clears need John's hand but said plainly that the rail was *soft* — a direct `care.json` write defeated it. v0.10.1 closes that, in two halves that meet in the middle: a plugin change and a harness deny.
+
+### Changed
+- **Red clear-tokens now live in a dedicated `care-redclear.json`**, separate from `care.json`. `maude-clear-gate.sh` writes red tokens there (yellow stays in `care.json`); `maude-gate.sh` and `maude-infra-gate.sh` read red tokens only from there.
+- **The gate blocks any Bash redirect/tee into `care-redclear.json`** — so Claude can't hand-write a red token through the shell.
+
+### Closing the easy write paths
+- Paired with a **harness deny** on the `Write`/`Edit` tools for `care-redclear.json` (outside the plugin — the user's hand, shipped in `~/.claude/settings.json`). With both halves in place, the **two easy self-clear paths are shut**: the Write/Edit tool (harness deny) and a shell redirect/tee (the gate). John's `!` line is the clean writer — it runs in his shell, skipping both the plugin's tool-gate and the harness tool-perms.
+
+### Honest seam — what this does NOT close
+- This removes the **easy** paths, not every path. A **determined programmatic write still gets through**: `python3 -c "open('…/care-redclear.json','w').write(...)"` (python is allow-listed), or a `cp`/`mv`/`dd` of a pre-staged file — none are caught, because the gate backstop only matches `>`/`>>`/`tee` and the harness deny only covers the Write/Edit *tools*, not arbitrary Bash. The gate is also fail-open without `jq`. The only real close is **OS-level**: own `care-redclear.json` as a uid the agent process cannot write. Not done on a single-root box. So this is "removes the reflex and the easy workarounds", not "removes the option" — said plainly, because claiming a lock it doesn't have is the hype this work exists to remove.
+
+---
+
+## v0.10.0 — 2026-06-24
+
+**The spine bites: the gate stops crying wolf, and the top-stakes brake needs John's hand.**
+
+The honest trigger: a hard look at what Maude actually *did* found the gate firing constantly but delivering little. It false-blocked a read-only `grep` three times in one session (the command carried `rm -rf` as a search string); its biggest catch by volume was nagging Claude about its own routine `git push`; and 244 logged gate-clears showed the one holding the key was the one being stopped. A brake the driver waves through every time is a chime, not a brake. This release makes the one genuinely-sound mechanism — the gate — actually bite.
+
+### Fixed
+- **The gate no longer false-blocks quoted prose.** The rm-family path patterns matched against the unquoted command (quote chars stripped, content kept), so a shell separator inside a quoted argument — `echo "(rm -rf /)"`, `git commit -m "; rm -rf /x"` — read as a real subshell `rm`. A two-pass skeleton guard (`maude_rm_in_command_position`) now first confirms, on the quote-*erased* skeleton, that an `rm` is genuinely *executing* in command position; only then does it resolve which path. A real `rm -rf` of a sole-copy path still blocks (including when only the path is quoted); prose *about* `rm -rf` no longer does. A test that previously codified an "accepted false-block" (a commit message containing `; rm -rf`) now correctly passes.
+
+### Added
+- **Red / yellow gate-key tiers — top-stakes clears are John's hand, not Claude's reflex.** Yellow keys (`git-push`, `commit-amend`, `reset-hard`, `no-verify`, `no-gpg-sign`, `run-governor`) Claude may still self-clear via `/maude:conscience`. Red keys (`rm-rf-*`, `sudo-rm-rf`, `public-publish`, `force-push`, `filter-repo`/`filter-branch`, `infra-destructive`, `drop-table`) cannot be self-cleared: the clear-script refuses them without `--john`, and the gate blocks Claude's own Bash from invoking the red clear-script. John authorizes by pasting a `!` line, which runs in his shell — outside the tool-gate — which is what makes it *his* hand.
+
+### Honest seams
+- The red tier is a **SOFT** rail: it removes the reflexive self-clear, not a determined bypass. The gate is Bash-only and the clear token is an unauthenticated value in `care.json`, so a direct `Write` to that file defeats it. A bash/JSON/markdown plugin has no enforcement point the agent it runs beside cannot reach — the real, unbypassable layer is the harness deny-rules, which are the user's hand (a complementary proposal ships outside the plugin). Stated plainly on purpose: a brake that claims to stop what it can't is exactly the hype this release removes.
+
+### Changed
+- `/maude:conscience` branches red vs yellow and surfaces John's `!` line for red keys instead of self-clearing.
+- `scripts/release.sh` now also stamps the `> **Version:**` blockquote form (the project-local `.claude/CLAUDE.md`), closing the version-header drift that had left it at 0.8.0.
 
 ---
 

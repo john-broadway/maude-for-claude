@@ -17,8 +17,19 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
-KEY="${1:-}"
-DURATION="${2:-300}"
+# Parse args: KEY and optional DURATION are positional; --john may appear
+# anywhere and marks a human-hand authorization for a RED key.
+KEY=""
+DURATION=""
+JOHN=0
+for _a in "$@"; do
+  case "$_a" in
+    --john) JOHN=1 ;;
+    -*)     ;;   # ignore other flags
+    *)      if [ -z "$KEY" ]; then KEY="$_a"; elif [ -z "$DURATION" ]; then DURATION="$_a"; fi ;;
+  esac
+done
+DURATION="${DURATION:-300}"
 
 if [ -z "$KEY" ]; then
   cat <<EOF >&2
@@ -47,13 +58,50 @@ EOF
   exit 1
 fi
 
+# Unknown keys are refused — guards against typos AND keeps the synthetic
+# 'red-self-clear' backstop key (used by maude-gate.sh) from being cleared here.
+if ! maude_is_known_key "$KEY"; then
+  printf 'Maude: "%s" is not a known gate key — refusing. Run with no args for the list.\n' "$KEY" >&2
+  exit 1
+fi
+
+# RED keys are John's hand. Claude must NOT self-clear them; John authorizes by
+# pasting the ! line below, which runs in his shell and skips the Bash tool-gate.
+# SOFT rail (v0.10.0): this removes the reflexive self-clear, NOT a determined
+# bypass — a direct care.json Write defeats it, because the gate is Bash-only and
+# the token carries no provenance. The real, unbypassable layer is the harness
+# deny-rules (see .scratch/maude-spine-deny.json). Saying this plainly is the
+# point: a brake that claims to stop what it can't is the hype we are removing.
+if maude_is_red_key "$KEY" && [ "$JOHN" -ne 1 ]; then
+  cat <<EOF >&2
+Maude: "$KEY" is a RED key — John's hand only. Claude must NOT self-clear it.
+
+John, to authorize ONE matching command, paste this line (the leading ! runs it
+as your hand, outside Claude's tool-gate):
+
+  ! bash "$DIR/maude-clear-gate.sh" "$KEY" --john
+
+(SOFT rail: removes the reflex, not a determined bypass. Real enforcement is the
+harness deny-rules — see .scratch/maude-spine-deny.json.)
+EOF
+  maude_log_trace "gate-clear-refused" "key=$KEY reason=red-needs-john"
+  exit 1
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "Maude: jq required for gate clearance — please install jq." >&2
   exit 1
 fi
 
 maude_ensure_self_dir
-CARE="$(maude_self_dir)/care.json"
+# RED tokens go in the dedicated, harness-lockable care-redclear.json; yellow
+# tokens stay in care.json (Claude may self-clear those). Reaching here for a red
+# key means --john was supplied (the refusal above already returned otherwise).
+if maude_is_red_key "$KEY"; then
+  CARE="$(maude_redclear_file)"
+else
+  CARE="$(maude_self_dir)/care.json"
+fi
 NOW=$(date +%s)
 UNTIL=$((NOW + DURATION))
 

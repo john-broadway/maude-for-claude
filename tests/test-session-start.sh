@@ -61,6 +61,27 @@ test_start "session-start surfaces remember handoff"
 run_start
 assert_contains "$OUT" "Last handoff" "handoff surfaced"
 
+# ── Fresh live buffer: $REMEMBER/now.md (the remember plugin keeps it current) ──
+# The wake path must surface the NEWEST entry of the live buffer, so it reads current
+# state instead of a lagging source while a fresh capture sits unread (the gap the live
+# dogfood exposed). The buffer is oldest-first; the newest entry is at the bottom.
+cat > "$TEST_TMP/.remember/now.md" <<'EOF'
+
+## 06:44 | unknown
+OLDERMARKER an early thing
+## 07:07 | unknown
+FRESHMARKER the latest thing
+EOF
+
+test_start "session-start surfaces the fresh live buffer (newest entry)"
+run_start
+assert_contains "$OUT" "FRESHMARKER" "newest live-buffer entry reaches the brief"
+
+test_start "session-start shows the newest buffer entry, not the oldest"
+assert_not_contains "$OUT" "OLDERMARKER" "stale buffer entry not surfaced"
+
+rm -f "$TEST_TMP/.remember/now.md"
+
 # ── Local-time-aware greeting ────────────────────────────────────────
 source_common
 
@@ -129,7 +150,7 @@ assert_not_contains "$GOV_DEFAULT" "run-governor is OFF" "no notice when on"
 # ── Trace + snapshot retention sweep ─────────────────────────────────
 # Trace JSONL and pre-compact snapshots were append-only forever. SessionStart
 # prunes files older than the retention window. Floor is well past the 7-day
-# window /maude:weekly and recent.md read, so a sweep never strands them.
+# window the remember plugin's recent.md reads, so a sweep never strands them.
 test_start "session-start prunes trace files older than the retention window"
 OLD_TRACE="$TEST_TMP/.maude/plugin/trace/today-2020-01-01.jsonl"
 printf '{"ts":"ancient"}\n' > "$OLD_TRACE"

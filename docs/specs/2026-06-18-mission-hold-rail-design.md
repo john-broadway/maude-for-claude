@@ -1,8 +1,13 @@
-<!-- Version: 0.9.2 -->
+<!-- Version: 0.13.0 -->
 <!-- Created: 2026-06-18 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Mission-Hold Rail — design
+
+> **Historical design doc (2026-06-18).** Captures the design *as planned*; kept for the
+> reasoning, not as current reference. Command names and counts here (e.g. "17 → ~5 + 4 cut",
+> `check-setup`, `dual-voice`) reflect the plan at that moment — the shipped surface is **9
+> commands** (see the README / SKILL for the current list). Rots in place by design.
 
 ## The one rule (the problem)
 

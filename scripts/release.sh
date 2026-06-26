@@ -52,6 +52,14 @@ while IFS= read -r f; do
 done < <(grep -rlE '<!-- Version: [0-9]' --include='*.md' . \
   --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
 
+# 2b. propagate the blockquote "> **Version:** X" form too — the project-local
+#     .claude/CLAUDE.md carries no HTML-comment header, so step 2 never touched it
+#     and it drifted (stranded at 0.8.0). This stamps it from the same source.
+while IFS= read -r f; do
+  [ -n "$f" ] && sed -i -E "s|(> \*\*Version:\*\* )[0-9][0-9A-Za-z.-]*|\1$V|" "$f"
+done < <(grep -rlE '> \*\*Version:\*\* [0-9]' --include='*.md' . \
+  --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
+
 # 3. stamp Revised dates to today (release-wide refresh; the convention is "current
 #    as of this release", which also keeps verify's <=14-day check green)
 while IFS= read -r f; do

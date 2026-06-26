@@ -84,35 +84,49 @@ If verdict is anything but "go", DO NOT take the action. Surface the verdict and
 
 ## After "go" verdict — clear the gate
 
-If the verdict is **go** AND the action matches one of the gated patterns below, run the gate-clear script so Maude's hook gate lets the next matching command pass once. The token lives 5 minutes and clears on first use.
+If the verdict is **go** AND the action matches a gated pattern, what happens next depends on the key's **tier** (v0.10.0). Pick the key from the table below.
+
+### YELLOW keys — Claude may self-clear
+
+`git-push`, `commit-amend`, `no-verify`, `no-gpg-sign`, `reset-hard`, `run-governor` — routine and reversible-enough that you clearing your own block is fine. Run the clear-script; the token lives 5 minutes and clears on first use:
 
 ```bash
 bash "$CLAUDE_PLUGIN_ROOT/hooks/scripts/maude-clear-gate.sh" "<key>"
 ```
 
-Pick `<key>` from this map:
+Longer window (e.g. a release session with several pushes): append seconds — `… "git-push" 1800` (30 min). For an intentional long/overnight run: `/maude:conscience run-governor 36000` (10h), or `MAUDE_RUN_GOVERNOR=off`.
 
-| User's action | Key |
-|---|---|
-| `git push` (any non-force) | `git-push` |
-| `git push --force` / `-f` / `--force-with-lease` | `force-push` |
-| Any command with `--no-verify` | `no-verify` |
-| Any command with `--no-gpg-sign` | `no-gpg-sign` |
-| `git reset --hard` | `reset-hard` |
-| `git filter-repo` | `filter-repo` |
-| `git filter-branch` | `filter-branch` |
-| `git commit --amend` | `commit-amend` |
-| `rm -rf /` | `rm-rf-root` |
-| `rm -rf *` | `rm-rf-glob` |
-| `sudo rm -rf …` | `sudo-rm-rf` |
-| `rm -rf` of the workspace / a repo root / `.git` / `.credentials` / `~/.claude` | `rm-rf-sole-copy` |
-| Public publish (`gh release`, `twine upload`, `uv publish`, `hf upload`) | `public-publish` |
-| Destructive MCP op on a production target (delete/rollback/prune, per gate-config) | `infra-destructive` |
-| SQL `DROP TABLE …` | `drop-table` |
-| Run-governor hard-pause (long unattended run) | `run-governor` |
+### RED keys — John's hand ONLY
+
+`rm-rf-root`, `rm-rf-glob`, `sudo-rm-rf`, `rm-rf-sole-copy`, `public-publish`, `force-push`, `filter-repo`, `filter-branch`, `infra-destructive`, `drop-table` — irreversible, public, or sole-copy.
+
+**Do NOT clear these yourself.** The gate blocks you from running the clear-script for a red key, and the script refuses without `--john`. Instead, **STOP and present John this line in your reply** (as text — he pastes it; the leading `!` runs it in *his* shell, outside your tool-gate, which is what makes it his hand):
+
+```
+! bash <PLUGIN_ROOT>/hooks/scripts/maude-clear-gate.sh <key> --john
+```
+
+Fill `<PLUGIN_ROOT>` with the value of `$CLAUDE_PLUGIN_ROOT` (run `echo "$CLAUDE_PLUGIN_ROOT"` to read it) and `<key>` with the red key. Then wait for John — do not take the action until his line has run.
+
+> **Honest seam (SOFT rail).** The red tier removes the *reflexive* self-clear — it is NOT a determined-bypass guard. A direct `care.json` write defeats it, because the gate is Bash-only and the token carries no provenance. The real, unbypassable enforcement is the harness deny-rules. See `.scratch/maude-spine-deny.json`. Don't claim this stops what it can't — that overclaim is the hype this work exists to remove.
+
+| User's action | Key | Tier |
+|---|---|---|
+| `git push` (any non-force) | `git-push` | yellow |
+| `git commit --amend` | `commit-amend` | yellow |
+| Any command with `--no-verify` | `no-verify` | yellow |
+| Any command with `--no-gpg-sign` | `no-gpg-sign` | yellow |
+| `git reset --hard` | `reset-hard` | yellow |
+| Run-governor hard-pause (long unattended run) | `run-governor` | yellow |
+| `git push --force` / `-f` / `--force-with-lease` | `force-push` | **RED** |
+| `git filter-repo` | `filter-repo` | **RED** |
+| `git filter-branch` | `filter-branch` | **RED** |
+| `rm -rf /` | `rm-rf-root` | **RED** |
+| `rm -rf *` | `rm-rf-glob` | **RED** |
+| `sudo rm -rf …` | `sudo-rm-rf` | **RED** |
+| `rm -rf` of the workspace / a repo root / `.git` / `.credentials` / `~/.claude` | `rm-rf-sole-copy` | **RED** |
+| Public publish (`gh release`, `twine upload`, `uv publish`, `hf upload`) | `public-publish` | **RED** |
+| Destructive MCP op on a production target (delete/rollback/prune, per gate-config) | `infra-destructive` | **RED** |
+| SQL `DROP TABLE …` | `drop-table` | **RED** |
 
 If the user's action isn't in this list, the gate isn't blocking it — no token needed.
-
-If the user wants more than 5 minutes (e.g., a longer release session with multiple pushes), pass a duration override: `bash "$CLAUDE_PLUGIN_ROOT/hooks/scripts/maude-clear-gate.sh" "git-push" 1800` (30 minutes).
-
-For an intentional long/overnight run, stand the governor down for a window: `/maude:conscience run-governor 36000` (10h) — or set `MAUDE_RUN_GOVERNOR=off` to disable it entirely.

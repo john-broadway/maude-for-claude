@@ -27,6 +27,12 @@ TEST_NAME=""
 
 setup_test_env() {
   TEST_TMP="$(mktemp -d)"
+  # Hermetic: drop any ambient MAUDE_* runtime toggle inherited from the dev
+  # shell (e.g. MAUDE_RUN_GOVERNOR=off, MAUDE_RETENTION_DAYS=1) so it can't leak
+  # in and flip a default-behavior test. Tests that exercise a toggle set it
+  # explicitly AFTER this. ${!MAUDE_@} future-proofs against toggles not yet
+  # invented — an explicit unset-list rots.
+  for _v in "${!MAUDE_@}"; do unset "$_v"; done
   export CLAUDE_PROJECT_DIR="$TEST_TMP"
   export MAUDE_GATE_CONFIG="$TEST_TMP/gate-config.json"
   mkdir -p "$TEST_TMP/.maude/plugin/trace"
@@ -159,6 +165,12 @@ trace_path() {
 
 care_path() {
   printf '%s/.maude/plugin/care.json' "$TEST_TMP"
+}
+
+# The dedicated RED-clear token file (v0.10.1): red clears live here, separate
+# from care.json, so the harness can lock it and the gate can block Bash writes.
+redclear_path() {
+  printf '%s/.maude/plugin/care-redclear.json' "$TEST_TMP"
 }
 
 # Read a value from care.json by jq path (without leading dot).

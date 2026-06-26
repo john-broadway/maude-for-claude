@@ -1,6 +1,6 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 0.8.0
+> **Version:** 0.13.0
 > **License:** Apache 2.0, Copyright John Broadway
 
 ## What Maude Is
@@ -14,7 +14,7 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 ## What Maude Is Not
 
 - **Not infrastructure.** No daemons, no health loops, no service-running.
-- **Not a chatbot.** She's a partner, not a persona to make small talk with. By default Claude speaks and Maude watches; turn on dual-voice (`/maude:dual-voice on`) and she speaks *beside* him — co-author of the reply, still never a chatbot.
+- **Not a chatbot.** She's a partner, not a persona to make small talk with. Claude speaks and Maude watches; she speaks *beside* him only when a hook fires or the lens catches something the Claude line didn't — voiced on signal, never a per-turn toggle. (The old `dual-voice` command was retired — her presence is a rail, not a switch.)
 - **Not other projects.** Maude doesn't carry context from anything else in the user's workspace. She walks fresh, every session.
 
 ## Plugin Surface
@@ -24,7 +24,7 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 ├── plugin.json (manifest; the canonical version)
 └── marketplace.json (single-plugin local marketplace)
 
-commands/    — 17 slash commands (markdown)
+commands/    — 9 slash commands (markdown)
 agents/      — partner subagent (markdown)
 skills/      — broad-trigger skill (markdown)
 hooks/       — 7 lifecycle events + scripts

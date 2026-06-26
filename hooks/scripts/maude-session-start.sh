@@ -47,6 +47,22 @@ if [ -f "$MEM/now.md" ]; then
   [ -z "$NOW_LINE" ] && NOW_LINE="$(head -1 "$MEM/now.md" | head -c 200)"
 fi
 
+# Tier 1b: the remember plugin's live buffer ($REMEMBER/now.md) — updated continuously,
+# so usually FRESHER than the Anthropic now.md (which can lag an hour+). Surface its
+# NEWEST entry as "where you left off", so the wake path reads CURRENT state instead of a
+# lagging source while the fresh capture sits unread. (The continuity gap the live
+# dogfood exposed: session-start was reading the stale buffer and an empty handoff while
+# this file held the freshest summary.) Entries are oldest-first; newest is at the bottom.
+# SCOPE: under an umbrella root (one shared .remember/ across projects), the newest entry
+# is workspace-WIDE — it may name a different project than the current focus. Intended:
+# one session spans the whole workspace, so "the latest thing done anywhere" is where you
+# left off. In a single-project .remember/, it's naturally that project's latest.
+LEFTOFF_LINE=""
+if [ -s "$REMEMBER/now.md" ]; then
+  LEFTOFF_LINE="$(grep -A1 -E '^## [0-9]{2}:[0-9]{2}' "$REMEMBER/now.md" 2>/dev/null \
+    | grep -vE '^## |^--$|^[[:space:]]*$' | tail -1 | head -c 200)"
+fi
+
 # Tier 2: remember plugin's handoff file (the dense, intentional signal from last session)
 if [ -s "$REMEMBER/remember.md" ]; then
   REMEMBER_HANDOFF="$(grep -m1 -A1 '^## Next' "$REMEMBER/remember.md" 2>/dev/null | tail -1 | head -c 200)"
@@ -80,12 +96,24 @@ fi
 # Compose brief — terse, one stanza per signal that fired.
 # Greet by the user's local clock when the timezone is known (house-map);
 # stay time-neutral otherwise — never assert a time-of-day from the box clock.
+# Maude's one JOHN-facing line: what she caught since he last looked. Watermark-based
+# (last_digest_iso in care.json) so it never re-prints across SessionStart's resume/
+# clear/compact re-fires. Computed before the brief so the catch leads the stanza.
+DIGEST_LINE="$(maude_digest_line)"
+
+# Continuity guard: warn at the top if the last save is stale vs real trace activity —
+# the closing loop so a forgotten /maude:rest degrades continuity loudly, not silently.
+CONTINUITY_LINE="$(maude_continuity_guard)"
+
 GREETING="$(maude_greeting)"
 {
   [ -n "$GREETING" ] && printf '%s ' "$GREETING"
   printf 'Maude here.'
   [ -n "$HAS_MAP" ] && printf ' (house-map ✓)'
   printf '\n'
+  [ -n "$DIGEST_LINE" ] && printf '  %s\n' "$DIGEST_LINE"
+  [ -n "$CONTINUITY_LINE" ] && printf '  %s\n' "$CONTINUITY_LINE"
+  [ -n "$LEFTOFF_LINE" ] && printf '  Where you left off: %s\n' "$LEFTOFF_LINE"
   [ -n "$REMEMBER_HANDOFF" ] && printf '  Last handoff (.remember): %s\n' "$REMEMBER_HANDOFF"
   [ -n "$NOW_LINE" ]          && printf '  Anthropic now: %s\n' "$NOW_LINE"
   [ -n "$PATTERN_HINT" ]      && printf '  Cross-project pattern: %s\n' "$PATTERN_HINT"
