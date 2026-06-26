@@ -27,7 +27,6 @@ A short thread on what that means. 🧵
 - `/maude:found` — the arrival walk
 - `/maude:wake` / `/maude:rest` — start/end-of-session rituals
 - `/maude:check-on-claude` — reads the trace, flags repeated calls, missed CLAUDE.md, confabulation risk
-- `/maude:check-on-me` — care side, pattern-of-life
 - `/maude:conscience` — pre-irreversible-action gate
 
 **4/** Her whisper layer runs on hooks. Drift detection: she notes when Claude reads the same file repeatedly or hammers Grep. Pre-irreversible gate: hard-blocks `git push` and other destructive commands until cleared via `/maude:conscience`. CLAUDE.md unread check: she reminds you before an edit if Claude hasn't read the rules. Both Claude and you hear her.
@@ -46,9 +45,9 @@ A Claude Code plugin that's been quietly load-bearing for me, and today's the da
 
 Maude walks your workspace at session start. He writes the code; she notices. She lists every memory home, SQLite database, MCP tool, and running container she finds, classifies them, and writes a per-project house-map. No baggage.
 
-She also watches Claude. `/maude:check-on-claude` reads the turn-by-turn trace and flags repeated tool calls (Claude grepping the same term four times), unread context (CLAUDE.md not opened this session), confabulation risk (claims made without backing reads), and open todos. `/maude:check-on-me` is the care side — pattern-of-life, not absolute thresholds.
+She also watches Claude. `/maude:check-on-claude` reads the turn-by-turn trace and flags repeated tool calls (Claude grepping the same term four times), unread context (CLAUDE.md not opened this session), confabulation risk (claims made without backing reads), and open todos.
 
-Other commands: `wake`, `rest`, `save`, `remind-me`, `sweep`, `notice`, `weekly`, `conscience`, `verify`, `teach`. Full list in the repo.
+Other commands: `wake`, `rest`, `save`, `notice`, `conscience`, `verify`, `teach`. Full list in the repo.
 
 Recent: the v0.5.x line is a verify-tripwire arc — she stamps when you actually run a test/lint/typecheck and whispers before a commit if code changed since the last verify (*"did you check this, or are you asserting it?"*), plus shared-state hardening so a corrupt state file is *recorded*, not silently wiped, and the gate-clear never claims a clearance it didn't write. v0.4.0 gave her a letter to her next self — she walks fresh each session by design, but `/maude:rest` writes what kind of partner she was (what she caught, what she missed) and the next session's wake reads it, so judgment inherits even though assumptions don't. The v0.3.x line was a hardening arc: a 69-agent cold audit, gate-bypass fixes (whitespace tricks, command substitution), and `/maude:teach` so you can tell her facts about yourself directly. v0.2.0 added her living profile of you and optional dual-voice. `/maude:verify` runs the programmatic audit (version consistency, JSON validity, link integrity, header dates, watch-list paths) before "ready" gets declared.
 

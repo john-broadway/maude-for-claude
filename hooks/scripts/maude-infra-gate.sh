@@ -14,7 +14,8 @@
 #   HARD-BLOCKS destructive ops against non-sandbox targets; ALLOWS targets that
 #   match the configured sandbox nodes/vmids (RoE lane). FAIL-CLOSED: a destructive
 #   op whose target cannot be proven to be a sandbox is blocked. Override: one-shot
-#   /maude:conscience infra-destructive token in care.json. Exits 2 to block.
+#   /maude:conscience infra-destructive token in care-redclear.json (John's hand).
+#   Exits 2 to block.
 set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
@@ -61,9 +62,11 @@ case " $(maude_infra_destructive_tools) " in
   *) exit 0 ;;
 esac
 
-# One-shot override token?
+# One-shot override token? infra-destructive is a RED key (v0.10.1) — its token
+# lives in the dedicated, harness-locked care-redclear.json (written only by
+# John's ! line), not in care.json.
 NOW=$(date +%s)
-CARE="$(maude_self_dir)/care.json"
+CARE="$(maude_redclear_file)"
 if [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
   CU="$(jq -r '.gate_cleared["infra-destructive"].until // 0' "$CARE" 2>/dev/null)"
   if [ -n "$CU" ] && [ "$CU" -gt 0 ] && [ "$CU" -gt "$NOW" ] 2>/dev/null; then

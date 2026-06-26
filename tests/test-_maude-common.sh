@@ -110,6 +110,74 @@ test_start "match_gate_pattern does NOT match git pull"
 maude_match_gate_pattern "git pull origin" '(^|[;&|(])[[:space:]]*git push([[:space:]]|$)'
 assert_exit "$?" "1" "should NOT match git pull"
 
+# ── maude_rm_in_command_position ─────────────────────────────────────
+# True iff a recursive rm is actually EXECUTED (command position on the
+# quote-erased skeleton), not merely present inside a quoted argument.
+test_start "rm_in_command_position true for a bare recursive rm"
+maude_rm_in_command_position "rm -rf /srv/app"
+assert_exit "$?" "0" "real rm executes"
+
+test_start "rm_in_command_position true even when only the path is quoted"
+maude_rm_in_command_position 'rm -rf "/srv/app"'
+assert_exit "$?" "0" "rm bare, path quoted, still executes"
+
+test_start "rm_in_command_position true for sudo rm in command position"
+maude_rm_in_command_position "sudo rm -R /var/log/x"
+assert_exit "$?" "0" "sudo rm executes"
+
+test_start "rm_in_command_position FALSE for rm-rf inside a quoted echo arg"
+maude_rm_in_command_position 'echo "danger (rm -rf /) prose"'
+assert_exit "$?" "1" "quoted prose is not execution"
+
+test_start "rm_in_command_position FALSE for ; rm -rf inside a quoted commit msg"
+maude_rm_in_command_position 'git commit -m "; rm -rf /srv/app"'
+assert_exit "$?" "1" "quoted commit msg is not execution"
+
+test_start "rm_in_command_position FALSE for a plain non-rm command"
+maude_rm_in_command_position "ls -la /srv/app"
+assert_exit "$?" "1" "no rm at all"
+
+# heredoc bodies are DATA — a separator in heredoc prose must not read as a
+# real subshell rm (this is the doc/commit-body false-positive the guard fixes).
+test_start "rm_in_command_position FALSE for ; rm -rf / in a heredoc body"
+maude_rm_in_command_position "git commit -F - <<EOF
+fixed bug; rm -rf / no longer fires
+EOF"
+assert_exit "$?" "1" "heredoc prose is not execution"
+
+test_start "rm_in_command_position FALSE for (rm -rf /) in a heredoc body"
+maude_rm_in_command_position "cat > note.txt <<EOF
+a destructive (rm -rf /) is fatal
+EOF"
+assert_exit "$?" "1" "heredoc paren-prose is not execution"
+
+# A real one-line rm has no heredoc — excision is a no-op, it STILL executes.
+test_start "rm_in_command_position still TRUE for a real rm with no heredoc"
+maude_rm_in_command_position "rm -rf /"
+assert_exit "$?" "0" "no heredoc, real rm still executes"
+
+# ── maude_strip_heredocs ─────────────────────────────────────────────
+test_start "strip_heredocs removes a quoted-delimiter heredoc body"
+got="$(maude_strip_heredocs "cat <<'EOF'
+secret rm -rf / body
+EOF")"
+printf '%s' "$got" | grep -q 'rm -rf'; assert_exit "$?" "1" "body removed"
+
+test_start "strip_heredocs keeps the command line itself"
+got="$(maude_strip_heredocs "git commit -F - <<EOF
+body line
+EOF")"
+printf '%s' "$got" | grep -q 'git commit -F -'; assert_exit "$?" "0" "command line kept"
+
+test_start "strip_heredocs is a no-op on a single-line command (no <<)"
+# $(...) strips the function's trailing newline — assert the content is intact.
+got="$(maude_strip_heredocs "rm -rf /")"
+assert_eq "$got" "rm -rf /" "single line preserved"
+
+test_start "strip_heredocs does not treat arithmetic << as a heredoc"
+got="$(maude_strip_heredocs "x=\$((1 << 2)); echo done")"
+printf '%s' "$got" | grep -q 'echo done'; assert_exit "$?" "0" "arithmetic shift kept"
+
 # ── maude_have_remember / maude_have_map ─────────────────────────────
 test_start "have_remember is false in fresh test env"
 maude_have_remember

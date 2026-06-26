@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # A bash/markdown plugin has no Python/npm/Go dependency manifests — the only
+  # versioned dependencies are the GitHub Actions pinned in .github/workflows.
+  # Keep those current (and let Dependabot bump any SHA-pins) so CI rides supported actions.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

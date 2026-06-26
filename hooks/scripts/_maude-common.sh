@@ -239,6 +239,148 @@ maude_care_set() {
   return 1
 }
 
+# The session-start catch-digest — Maude's one JOHN-FACING line. Everything else she
+# does aims at Claude (gate blocks, drift nudges, verify whispers); this is the one
+# channel that surfaces TO John what she caught. Summarizes catches since the last
+# digest, then advances a watermark (last_digest_iso in care.json) so SessionStart's
+# resume/clear/compact re-fires never re-print the same catch. Value-first: real saves
+# lead; the git-push gate is the toll booth, shown as "push-clears" (friction), never
+# as protection; a window with nothing caught stays silent. Reads only trace files
+# whose day could hold a newer-than-watermark event, so it stays cheap. jq-absent →
+# no-op, like every other counting hook. Prints the line (if any) to stdout.
+maude_digest_line() {
+  command -v jq >/dev/null 2>&1 || return 0
+  local self care tdir since now since_date d f line
+  local -a files=()
+  self="$(maude_self_dir)"
+  tdir="$self/trace"
+  care="$self/care.json"
+  [ -d "$tdir" ] || return 0
+  maude_care_ensure "$care"
+  since="$(jq -r '.last_digest_iso // ""' "$care" 2>/dev/null)"
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  # First run ever: seed the watermark and announce — never retro-dump weeks of history.
+  if [ -z "$since" ]; then
+    maude_care_set "$care" --arg ts "$now" '.last_digest_iso = $ts'
+    printf "Maude's catch-digest is on — from here I'll show what I caught while you were away.\n"
+    return 0
+  fi
+
+  # Only trace files whose filename-date is on/after the watermark's day can hold an
+  # event newer than the watermark. ISO timestamps sort lexically, so string compare is
+  # correct for both the filename filter and the per-event `.ts > since` below.
+  since_date="${since%%T*}"
+  for f in "$tdir"/today-*.jsonl; do
+    [ -e "$f" ] || continue
+    d="${f##*/today-}"; d="${d%.jsonl}"
+    if [ "$d" = "$since_date" ] || [ "$d" \> "$since_date" ]; then
+      files+=("$f")
+    fi
+  done
+
+  # Advance the watermark now — we've captured `since`, so a crash mid-compose skips one
+  # digest rather than re-printing the same window every session forever.
+  maude_care_set "$care" --arg ts "$now" '.last_digest_iso = $ts'
+
+  [ "${#files[@]}" -gt 0 ] || return 0
+
+  # Aggregate the new catches into a terse, value-first token list (empty string if the
+  # window holds nothing worth surfacing). `(.payload // "")` guards the kinds whose
+  # payload could be absent; `and` short-circuits so non-matching kinds are never probed.
+  line="$(cat "${files[@]}" 2>/dev/null | jq -rs --arg since "$since" '
+    [ .[] | select((.ts // "") > $since) ] as $new
+    | ( [ $new[] | select(.kind=="gate"
+                          and ((.payload // "")|startswith("blocked="))
+                          and (((.payload // "")|test("git-push"))|not)) ] ) as $blocks
+    | ( [ $blocks[] | select((.payload // "")|test("rm-rf-sole-copy")) ]|length ) as $saves
+    | ( ($blocks|length) - $saves ) as $otherblocks
+    | ( [ $new[] | select(.kind=="infra-gate" and ((.payload // "")|test("blocked"))) ]|length ) as $infra
+    | ( [ $new[] | select(.kind=="gate-cleared" and ((.payload // "")|test("git-push"))) ]|length ) as $pushclears
+    | ( [ $new[] | select(.kind=="drift") ]|length ) as $drift
+    | ( [ $new[] | select(.kind=="verify") ]|length ) as $verify
+    | [ (if $saves>0       then "\($saves) sole-copy save\(if $saves==1 then "" else "s" end)" else empty end),
+        (if $infra>0       then "\($infra) infra-block\(if $infra==1 then "" else "s" end)" else empty end),
+        (if $otherblocks>0 then "\($otherblocks) block\(if $otherblocks==1 then "" else "s" end)" else empty end),
+        (if $drift>0       then "\($drift) drift-catch\(if $drift==1 then "" else "es" end)" else empty end)
+      ] as $value
+    | [ (if $pushclears>0  then "\($pushclears) push-clear\(if $pushclears==1 then "" else "s" end)" else empty end),
+        (if $verify>0      then "\($verify) verify-flag\(if $verify==1 then "" else "s" end)" else empty end)
+      ] as $volume
+    # Value catches lead; high-volume noise (push-clears, verify-flags) folds into a
+    # parenthetical tail so the gold pops. Volume-only windows show the volume plainly.
+    | if ($value|length)>0
+      then ($value|join(", ")) + (if ($volume|length)>0 then " (+\($volume|join(", ")))" else "" end)
+      elif ($volume|length)>0 then ($volume|join(", "))
+      else "" end
+  ')"
+
+  [ -n "$line" ] && printf 'Maude caught since you last looked: %s.\n' "$line"
+  return 0
+}
+
+# The continuity guard — the closing loop the continuity chain was missing. The Stop hook
+# writes NO handoff (it can't tell a real session-end from a mid-turn pause), so a clean
+# quit without /maude:rest could leave the next session under-informed. This runs at
+# SessionStart and reconciles the last CAPTURE against real ACTIVITY. "Last capture" is
+# the freshest mtime among the continuity sources the wake path actually reads: the
+# Anthropic buffer ($MEM/now.md), the remember plugin's live buffer ($REMEMBER/now.md),
+# and the handoff (remember.md — NON-EMPTY only: it's drained to empty by design, so an
+# empty one carries nothing and must not anchor). Activity is user `prompt` events in the
+# durable trace — the right unit, because SessionStart fires before this session's first
+# prompt, so every counted prompt is genuinely prior work. If the freshest capture is
+# stale relative to that activity (or nothing was captured at all), it warns — continuity
+# degrades LOUDLY, not silently. On a healthy system the live buffer keeps the anchor
+# current and the guard stays quiet. jq-absent → no-op. Prints the warning (if any).
+maude_continuity_guard() {
+  command -v jq >/dev/null 2>&1 || return 0
+  local proj mem remember handoff tdir since_iso since_date n f d m anchor
+  local -a files=()
+  local threshold=3
+  proj="$(maude_project_dir)"
+  mem="$(maude_mem_dir)"
+  remember="$proj/.remember"
+  handoff="$remember/remember.md"
+  tdir="$(maude_self_dir)/trace"
+  # The remember plugin is the continuity substrate this guards; no .remember dir → N/A.
+  [ -d "$remember" ] && [ -d "$tdir" ] || return 0
+
+  # Anchor = freshest mtime among the sources the wake path reads (non-empty only).
+  anchor=0
+  for f in "$mem/now.md" "$remember/now.md" "$handoff"; do
+    [ -s "$f" ] || continue
+    m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+    [ "$m" -gt "$anchor" ] && anchor="$m"
+  done
+  if [ "$anchor" -gt 0 ]; then
+    since_iso="$(date -u -d "@$anchor" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || return 0
+  else
+    since_iso=""   # nothing captured at all → count ALL prior prompts
+  fi
+  since_date="${since_iso%%T*}"
+
+  # Only trace files whose day could hold a prompt after the anchor (ISO sorts lexically).
+  for f in "$tdir"/today-*.jsonl; do
+    [ -e "$f" ] || continue
+    d="${f##*/today-}"; d="${d%.jsonl}"
+    if [ -z "$since_date" ] || [ "$d" = "$since_date" ] || [ "$d" \> "$since_date" ]; then
+      files+=("$f")
+    fi
+  done
+  [ "${#files[@]}" -gt 0 ] || return 0
+
+  n="$(cat "${files[@]}" 2>/dev/null | jq -rs --arg since "$since_iso" '
+    [ .[] | select(.kind=="prompt" and ((.ts // "") > $since)) ] | length')"
+  [ "${n:-0}" -ge "$threshold" ] || return 0
+
+  if [ "$anchor" -gt 0 ]; then
+    printf 'Heads-up: ~%s exchanges ran after the last save — the handoff may be stale. /maude:wake reconstructs from the trace.\n' "$n"
+  else
+    printf 'Heads-up: no continuity captured, but the trace shows ~%s prior exchanges — /maude:wake reconstructs them.\n' "$n"
+  fi
+  return 0
+}
+
 # Append a user-STATED fact to the cross-project profile (the testable core of
 # /maude:teach). Distinct from the observed-only writers (save/rest/check-on-me/
 # notice): those record what Maude inferred; this records what the user asserted,
@@ -305,7 +447,7 @@ maude_identity_append() {
 
 # Retention window (days) for the append-only artifacts in her closet: trace
 # JSONL and pre-compact snapshots. Default 30 — well past the 7-day window that
-# /maude:weekly and recent.md read, so a sweep never strands a recent read.
+# the remember plugin's recent.md reads, so a sweep never strands a recent read.
 # Override via the MAUDE_RETENTION_DAYS env var.
 maude_retention_sweep() {
   local self days
@@ -551,6 +693,52 @@ maude_unquote() {
   printf '%s' "$1" | tr '\n' ' ' | tr -d "\"'"
 }
 
+# Remove HEREDOC bodies from a (possibly multi-line) command. A heredoc body is
+# DATA fed to a command (git commit -F -, cat > file), not shell structure — so
+# for the rm-command-position guard it must NOT read as executable shell. Without
+# this, a shell separator inside heredoc prose ( ; ( | ` ) survived into the
+# skeleton and made a commit whose body documents `rm -rf /` false-block.
+#
+# Scoped to the rm-guard (see maude_rm_in_command_position) — NOT applied to the
+# shared strip used by command-name patterns, so a heredoc fed to a SQL client
+# (psql <<EOF DROP TABLE … EOF) is still seen by the DROP-TABLE check.
+#
+# Fail-direction is UNDER-block (dropping body lines makes the guard see FEWER
+# command-position rms), with two honest costs — verified, not assumed:
+#   - An rm inside a heredoc fed to a SHELL (bash <<EOF …) is uncaught: the
+#     already-documented shell-wrapping limitation (maude-gate.sh #3).
+#   - This is a HEURISTIC `<<WORD` detector on the raw line — it cannot tell a
+#     real heredoc from a `<<WORD` sitting inside quotes ("note << EOF") or a
+#     letter-led arithmetic shift ($((a << b))). When such a token precedes a
+#     real rm on a later line, that rm line is wrongly eaten and the guard
+#     under-blocks (the old strip_quotes-only guard caught that case). This is a
+#     NEW, narrow gap, accepted per the gate's fail-closed-where-it-matters
+#     posture (maude-gate.sh #9). NOT chased closed: the obvious narrowing
+#     (strip quoted spans before detecting <<) erases the `<<'EOF'` delimiter
+#     and reopens the doc-body false-block this function exists to fix.
+# Operates on the raw string BEFORE newline-flattening (heredoc bodies are
+# delimited by newlines).
+maude_strip_heredocs() {
+  local input="$1" out="" line trimmed delim="" inh=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$inh" = 1 ]; then
+      # ltrim+rtrim whitespace (covers <<- tab-indented close)
+      trimmed="${line#"${line%%[![:space:]]*}"}"
+      trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+      [ "$trimmed" = "$delim" ] && inh=0
+      continue   # drop body lines AND the closing delimiter line
+    fi
+    # heredoc start: << [-] [spaces] [quote] WORD [quote]. A digit-led token
+    # (arithmetic  $((a << 2)) ) is not a valid delimiter and won't match.
+    if [[ "$line" =~ \<\<-?[[:space:]]*[\"\']?([A-Za-z_][A-Za-z0-9_]*)[\"\']? ]]; then
+      delim="${BASH_REMATCH[1]}"
+      inh=1
+    fi
+    out+="$line"$'\n'
+  done <<< "$input"
+  printf '%s' "$out"
+}
+
 # Match a gate pattern against a command. Strips paired quotes first to
 # dodge the in-string false positive that bit v0.1.5 (commit messages
 # describing the gate self-blocked the commit). The pattern is responsible
@@ -563,4 +751,66 @@ maude_match_gate_pattern() {
   local cmd="$1" pat="$2" stripped
   stripped="$(maude_strip_quotes "$cmd")"
   printf '%s' "$stripped" | grep -qE -- "$pat"
+}
+
+# Returns 0 (true) if a recursive rm (optionally sudo-prefixed) appears in
+# COMMAND POSITION on the quote-ERASED skeleton of $1 — i.e. an rm that is
+# actually being EXECUTED, not one sitting inside a quoted argument
+# (echo "rm -rf /"). The rm-family PATH patterns in maude-gate.sh match against
+# the UNQUOTED command (quote chars stripped, CONTENT kept — so a quoted path
+# like rm -rf "/srv" still resolves). That content-kept view means quoted PROSE
+# containing a shell separator + rm-rf would otherwise false-block (the quoted
+# '(' / ';' / backtick reads as a real subshell). The skeleton (quoted content
+# ERASED, via maude_strip_quotes) tells the truth about shell structure; only
+# once execution is proven here does the gate trust the unquoted string for
+# WHICH path. Mirrors maude-gate.sh's CMD_START + RMR recursive-flag anchors;
+# the trailing path argument is intentionally NOT required (path resolution is a
+# separate step). Fail-direction: if this wrongly returned false on a real rm the
+# gate would under-block — but the skeleton always retains a command-position
+# rm whenever the rm itself is unquoted (only the path may be quoted away), which
+# is the only shape that reaches a destructive delete.
+maude_rm_in_command_position() {
+  local skeleton
+  # Excise heredoc bodies (data, not shell) BEFORE quote-stripping/flattening so
+  # documentation prose in a `git commit -F -` body cannot read as a subshell rm.
+  skeleton="$(maude_strip_quotes "$(maude_strip_heredocs "$1")")"
+  printf '%s' "$skeleton" | grep -qE -- \
+    '(^|[;&|(`])[[:space:]]*(sudo[[:space:]]+)?rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]]*[rR][[:alnum:]]*|--recursive)'
+}
+
+# ─── Gate-key severity tiers (v0.10.0) ────────────────────────────────────
+# Single source of truth, consumed by maude-gate.sh and maude-clear-gate.sh.
+#
+# YELLOW: Claude MAY self-clear via /maude:conscience — routine, reversible-
+#   enough that the agent clearing its own block is acceptable.
+# RED: John's hand ONLY — the irreversible / public / sole-copy class. A red
+#   clear needs the --john flag, which John supplies by pasting a ! line (which
+#   runs in his shell and skips the Bash tool-gate). Listed EXPLICITLY rather
+#   than "anything not yellow", so any future key is recognised by the clear
+#   script (unknown keys are refused) but only an enumerated red key gets the
+#   John's-hand path.
+maude_yellow_keys() {
+  printf '%s' 'git-push commit-amend no-verify no-gpg-sign reset-hard run-governor'
+}
+maude_red_keys() {
+  printf '%s' 'rm-rf-root rm-rf-glob sudo-rm-rf rm-rf-sole-copy public-publish force-push filter-repo filter-branch infra-destructive drop-table'
+}
+# 0 (true) if $1 is a red key.
+maude_is_red_key() {
+  case " $(maude_red_keys) " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+# 0 (true) if $1 is a known gate key (yellow OR red).
+maude_is_known_key() {
+  case " $(maude_yellow_keys) $(maude_red_keys) " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+
+# Path to the dedicated RED-clear token file (v0.10.1). RED clears (John's hand)
+# live HERE, separate from care.json, so two enforcement points outside the
+# plugin's reflex can lock it: (1) the harness can deny the Write/Edit tools on
+# this exact path, and (2) maude-gate.sh blocks Bash redirects/tees to it. Yellow
+# tokens stay in care.json (Claude may self-clear those). The only writer left for
+# a red token is John's ! line running maude-clear-gate.sh — which skips both the
+# Bash tool-gate and the harness tool-perms because it is his shell, not a tool.
+maude_redclear_file() {
+  printf '%s/care-redclear.json' "$(maude_self_dir)"
 }

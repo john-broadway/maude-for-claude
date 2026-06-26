@@ -1,5 +1,5 @@
-<!-- Version: 0.9.2 -->
-<!-- Revised: 2026-06-19 -->
+<!-- Version: 0.13.0 -->
+<!-- Revised: 2026-06-24 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Security Policy
@@ -33,7 +33,7 @@ We will acknowledge receipt within 48 hours and provide a timeline for resolutio
 - A slash command in `commands/` exfiltrating workspace data outside the workspace.
 - The trace JSONL leaking user content beyond what `/maude:check-on-claude` needs.
 - The `.maude/plugin/` closet escaping its workspace anchoring.
-- Any Maude artifact making outbound network calls without an explicit user-triggered command (`/maude:remind-me --deep` is the only intentional Tier-2 path).
+- Any Maude artifact making outbound network calls without an explicit user-triggered command (session-end `/maude:rest` / `/maude:save` writing to a registered, authenticated destination is the only intentional Tier-2 path).
 
 ## Out of Scope
 

@@ -80,9 +80,52 @@ test_start "gate blocks sudo rm -rf"
 run_gate "sudo rm -rf /var/log/foo"
 assert_exit "$RC" "2" "sudo-rm-rf exit"
 
-test_start "gate blocks DROP TABLE"
+# ── DROP TABLE — context-aware (real quoted SQL blocks; prose does not) ──────
+# Pre-fix this was exactly backwards: real SQL is always quoted
+# (psql -c "DROP TABLE x"), so the quote-ERASED skeleton dropped it and it
+# SLIPPED THROUGH; an unquoted prose mention (echo DROP TABLE) false-blocked.
+# The fix matches the content-KEPT view AND requires a SQL-client token.
+
+test_start "gate blocks real quoted SQL: psql -c \"DROP TABLE\""
+run_gate 'psql -c "DROP TABLE users"'
+assert_exit "$RC" "2" "quoted DROP TABLE via psql blocks"
+
+test_start "drop-table block names its conscience key"
+assert_contains "$ERR" "drop-table" "drop-table key hint"
+
+test_start "gate blocks single-quoted SQL: mysql -e 'DROP TABLE'"
+run_gate "mysql -e 'DROP TABLE users'"
+assert_exit "$RC" "2" "single-quoted DROP TABLE via mysql blocks"
+
+test_start "gate blocks lowercase drop table via sqlite3 (case-insensitive)"
+run_gate 'sqlite3 db.sqlite "drop table t"'
+assert_exit "$RC" "2" "lowercase drop table blocks"
+
+test_start "gate blocks DROP TABLE in a heredoc fed to psql"
+run_gate "psql <<EOF
+DROP TABLE users;
+EOF"
+assert_exit "$RC" "2" "heredoc-to-psql DROP TABLE blocks"
+
+test_start "gate PASSES echo DROP TABLE (prose, no SQL client)"
 run_gate "echo DROP TABLE users"
-assert_exit "$RC" "2" "drop-table exit"
+assert_exit "$RC" "0" "prose drop-table mention does not block"
+
+test_start "gate PASSES a commit message mentioning DROP TABLE"
+run_gate 'git commit -m "explain the DROP TABLE migration"'
+assert_exit "$RC" "0" "commit-msg drop-table mention passes"
+
+test_start "gate PASSES authoring a .sql file via heredoc (not executing)"
+run_gate "cat > drop.sql <<EOF
+DROP TABLE t;
+EOF"
+assert_exit "$RC" "0" "writing a .sql file is not execution"
+
+test_start "gate PASSES a heredoc commit body mentioning drop table (no client)"
+run_gate "git commit -F - <<EOF
+note: migration 5 will drop table legacy_sessions
+EOF"
+assert_exit "$RC" "0" "heredoc prose drop-table mention passes"
 
 # ── False positives — must NOT block ─────────────────────────────────
 
@@ -129,6 +172,81 @@ EOF
 )"'
 run_gate "$heredoc"
 assert_exit "$RC" "0" "HEREDOC self-block"
+
+# ── Quoted-prose false positives (v0.10.0) — must NOT block ──────────────────
+# A destructive string sitting INSIDE a quoted argument is data, not execution.
+# Pre-v0.10.0 these false-blocked: the PATH patterns matched against UNQUOTED
+# (quote chars stripped, CONTENT kept), so a shell separator inside quoted prose
+# ( '(' / ';' / backtick ) made the quoted text read as a real subshell `rm`.
+# These are the exact commands that false-blocked a read-only investigation.
+
+test_start "gate PASSES echo with (rm -rf /) inside a quoted string"
+run_gate 'echo "did the gate block a destructive bash (rm -rf / sole-copy)"'
+assert_exit "$RC" "0" "paren-prose false positive"
+
+test_start "gate PASSES echo with ; rm -rf / inside a quoted string"
+run_gate 'echo "step one; rm -rf / then done"'
+assert_exit "$RC" "0" "semicolon-prose false positive"
+
+test_start "gate PASSES echo with backtick rm -rf / inside a quoted string"
+run_gate 'echo "subshell `rm -rf /` example"'
+assert_exit "$RC" "0" "backtick-prose false positive"
+
+test_start "gate PASSES grep for the literal rm -rf pattern"
+run_gate "grep -E 'rm -rf /' logfile.txt"
+assert_exit "$RC" "0" "grep-arg false positive"
+
+# A REAL rm whose path is quoted must STILL block — the skeleton still sees the
+# bare `rm -rf` in command position (only the path was quoted away).
+test_start "gate STILL blocks rm -rf with a fully-quoted root target"
+run_gate 'rm -rf "/"'
+assert_exit "$RC" "2" "real rm, quoted path, still blocks"
+
+# ── HEREDOC-body false positives — must NOT block ────────────────────────────
+# A heredoc body is DATA fed to a command (git commit -F -, cat > file), not
+# shell structure. maude_strip_quotes erases '…'/"…" spans but NOT heredoc
+# bodies, so a shell separator in heredoc prose ( ; ( | ` ) survived into the
+# command-position skeleton and read as a real subshell rm — false-blocking a
+# commit whose body documents rm -rf /. The rm-guard now excises heredoc bodies.
+test_start "gate PASSES heredoc commit body with '; rm -rf /' prose"
+run_gate "git commit -F - <<EOF
+fixed bug; rm -rf / no longer fires the gate
+EOF"
+assert_exit "$RC" "0" "heredoc semicolon-prose passes"
+
+test_start "gate PASSES heredoc commit body with '(rm -rf /)' prose"
+run_gate "git commit -F - <<EOF
+caution: a destructive (rm -rf /) is fatal
+EOF"
+assert_exit "$RC" "0" "heredoc paren-prose passes"
+
+test_start "gate PASSES heredoc commit body with '| rm -rf /' prose"
+run_gate "git commit -F - <<EOF
+example: foo | rm -rf / is the bug
+EOF"
+assert_exit "$RC" "0" "heredoc pipe-prose passes"
+
+# Intentional consequence of excising heredoc bodies (option B): an rm inside a
+# heredoc fed to a SHELL is now uniformly uncaught — this is the already-
+# documented shell-wrapping limitation (#3), not a new gap. The bare
+# `bash <<EOF\nrm -rf /\nEOF` was ALREADY missed; only the separator-prefixed
+# variant accidentally blocked. Now both pass, consistently.
+test_start "gate PASSES rm -rf inside a bash heredoc (shell-wrapping, limitation #3)"
+run_gate "bash <<EOF
+echo hi; rm -rf /
+EOF"
+assert_exit "$RC" "0" "shell-heredoc rm is limitation #3, not blocked"
+
+# KNOWN LIMITATION #9 (documented, accepted): the heredoc excision uses a
+# heuristic <<WORD scan, so a <<WORD that is actually QUOTED TEXT on an earlier
+# line is mis-read as a heredoc start and a real rm on a later line gets eaten.
+# The old strip_quotes-only guard caught this; the trade buys the doc-heredoc
+# false-positive fix. NOT narrowed (the obvious fix reopens the <<'EOF' block).
+# This test pins the limitation so a future change to it is a conscious choice.
+test_start "gate PASSES rm -rf after a quoted << on an earlier line (limitation #9)"
+run_gate 'echo "note << EOF" ;
+rm -rf /'
+assert_exit "$RC" "0" "quoted-<< heredoc mis-detection is limitation #9"
 
 # ── After-separator real positives — must block ──────────────────────
 
@@ -287,10 +405,14 @@ run_gate "gh pr list"; assert_exit "$RC" "0" "gh pr list ok"
 test_start "gate PASSES git commit -m 'do not git push' (CANARY)"
 run_gate 'git commit -m "do not git push"'; assert_exit "$RC" "0" "canary commit-msg git push"
 
-# RECORDED DECISION: accepted fail-closed false-block — semicolon in commit message
-# exposes the path via UNQUOTED; rare + acceptable; clearable via /maude:conscience rm-rf-sole-copy
-test_start "gate blocks commit message containing rm -rf /srv/app via semicolon (fail-closed; acceptable)"
-run_gate 'git commit -m "; rm -rf /srv/app"'; assert_exit "$RC" "2" "semicolon-in-commit fail-closed"
+# RESOLVED v0.10.0: was an accepted fail-closed false-block. The skeleton-guard
+# (maude_rm_in_command_position) now reads a commit message as quoted DATA, not
+# execution — the "; rm -rf /srv/app" lives entirely inside the quoted -m
+# argument, so the quote-ERASED skeleton shows no command-position rm and the
+# gate passes. (A REAL rm whose rm-and-flags are unquoted STILL blocks even if
+# only the path is quoted — see "real rm, quoted path, still blocks" above.)
+test_start "gate PASSES commit message containing ; rm -rf /srv/app (quoted data, not execution)"
+run_gate 'git commit -m "; rm -rf /srv/app"'; assert_exit "$RC" "0" "semicolon-in-commit is quoted data"
 
 # ── Public-publish ──────────────────────────────────────────────────────────
 test_start "gate blocks gh release create"
@@ -310,6 +432,88 @@ assert_contains "$ERR" "public-publish" "key hint"
 
 test_start "gate PASSES an ordinary gh pr list (not a publish)"
 run_gate "gh pr list"; assert_exit "$RC" "0" "gh read ok"
+
+# ── v0.10.0: red-key self-clear backstop ─────────────────────────────────────
+# Claude must not self-authorize a RED key by running the clear-script via the
+# Bash TOOL (which fires this hook). John's ! line runs in his shell and skips
+# PreToolUse hooks, so it is unaffected. SOFT: a direct care.json Write bypasses
+# this (gate is Bash-only) — the harness deny-rules are the real layer.
+rm -f "$(care_path)"
+
+test_start "gate BLOCKS Claude-Bash invoking the red clear-script"
+run_gate 'bash /x/hooks/scripts/maude-clear-gate.sh rm-rf-sole-copy --john'
+assert_exit "$RC" "2" "red self-clear via Bash blocked"
+
+test_start "red-self-clear block names it John's hand"
+assert_contains "$ERR" "John" "block message names John"
+
+test_start "gate BLOCKS red clear-script even with a quoted script path"
+run_gate 'bash "/x/hooks/scripts/maude-clear-gate.sh" force-push --john'
+assert_exit "$RC" "2" "quoted-path red self-clear blocked"
+
+test_start "gate PASSES Claude-Bash invoking the clear-script for a YELLOW key"
+run_gate 'bash /x/hooks/scripts/maude-clear-gate.sh git-push'
+assert_exit "$RC" "0" "yellow self-clear via Bash allowed"
+
+# ── v0.10.1: RED tokens are honored ONLY from care-redclear.json ─────────────
+rm -f "$(care_path)" "$(redclear_path)"
+mkdir -p "$TEST_TMP/.maude/plugin"
+# config so /srv/app is a sole-copy target (rm-rf-sole-copy is a RED key)
+printf '{"sole_copy_paths":["/srv/app"]}\n' > "$MAUDE_GATE_CONFIG"
+
+test_start "gate HONORS a red token placed in care-redclear.json"
+printf '{"gate_cleared":{"rm-rf-sole-copy":{"until":%d}}}\n' $(($(date +%s)+600)) > "$(redclear_path)"
+run_gate "rm -rf /srv/app"
+assert_exit "$RC" "0" "red token in redclear file passes"
+
+test_start "gate does NOT honor a red token placed in care.json (the lock)"
+rm -f "$(care_path)" "$(redclear_path)"
+printf '{"gate_cleared":{"rm-rf-sole-copy":{"until":%d}}}\n' $(($(date +%s)+600)) > "$(care_path)"
+run_gate "rm -rf /srv/app"
+assert_exit "$RC" "2" "red token in care.json is ignored"
+
+test_start "gate BLOCKS a Bash redirect that writes care-redclear.json"
+rm -f "$(care_path)" "$(redclear_path)"
+run_gate 'echo {} > /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "redirect to redclear blocked"
+
+test_start "gate BLOCKS appending to care-redclear.json"
+run_gate 'printf x >> /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "append to redclear blocked"
+
+test_start "gate BLOCKS tee to care-redclear.json"
+run_gate 'echo {} | tee /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "tee to redclear blocked"
+
+# v0.13.0: net widened beyond redirect/tee to the cp/mv/dd "pre-staged token"
+# shapes the v0.10.1 net missed (honest residual: an interpreter still slips it).
+test_start "gate BLOCKS cp of a pre-staged token over care-redclear.json"
+run_gate 'cp /tmp/staged.json /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "cp to redclear blocked"
+
+test_start "gate BLOCKS mv onto care-redclear.json"
+run_gate 'mv /tmp/staged.json /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "mv to redclear blocked"
+
+test_start "gate BLOCKS dd of=care-redclear.json"
+run_gate 'dd if=/tmp/staged.json of=/x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "dd to redclear blocked"
+
+test_start "gate BLOCKS chmod of care-redclear.json"
+run_gate 'chmod 666 /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "chmod of redclear blocked"
+
+test_start "gate BLOCKS ln symlink-swap onto care-redclear.json"
+run_gate 'ln -sf /tmp/evil.json /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "ln to redclear blocked"
+
+test_start "gate still PASSES a harmless read of care-redclear.json"
+run_gate 'cat /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "reading the redclear file is fine"
+
+test_start "gate still PASSES a grep of care-redclear.json (read)"
+run_gate 'grep until /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "grepping the redclear file is fine"
 
 print_summary
 teardown_test_env

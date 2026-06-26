@@ -79,7 +79,11 @@ RMR='rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]]*[rR][[
 # 2. Path traversal: `rm -rf /srv/app/../app` — not normalised;
 #    the `..` component defeats the pattern.
 # 3. Shell wrapping: `bash -c "rm -rf /srv/app"` — the outer bash command
-#    is not recursively expanded; the inner command is not inspected.
+#    is not recursively expanded; the inner command is not inspected. This now
+#    also covers an rm inside a heredoc fed to a shell (`bash <<EOF … EOF`):
+#    the rm-command-position guard excises ALL heredoc bodies (they are data,
+#    so a `git commit -F -` body documenting rm -rf / no longer false-blocks),
+#    which means a shell-fed heredoc rm falls here, uniformly uncaught.
 # 4. Variable-indirected paths: `P=/srv/app; rm -rf $P` — the gate sees
 #    the literal `$P`, not the expanded value.
 # 5. `cd` + relative delete: `cd /srv && rm -rf app` or
@@ -92,6 +96,13 @@ RMR='rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]]*[rR][[
 # 8. Environment-variable assignment prefix: `FOO=1 rm -rf /srv/app` —
 #    the command-start anchor treats an assignment prefix as not-a-separator,
 #    so `rm` isn't seen at a command boundary.
+# 9. Heredoc mis-detection: the rm-command-position guard excises heredoc bodies
+#    via a HEURISTIC `<<WORD` scan of the raw line (see maude_strip_heredocs).
+#    A `<<WORD` that is actually quoted text (`echo "x << EOF"`) or a letter-led
+#    arithmetic shift (`$((a << b))`) is mis-read as a heredoc start, so a real
+#    `rm -rf …` on a LATER line of the same command can be wrongly skipped and
+#    under-blocked. Accepted to keep doc/commit heredocs from false-blocking;
+#    not narrowed because the obvious fix reopens the `<<'EOF'` false-block.
 # ──────────────────────────────────────────────────────────────────────────
 
 # Sole-copy targets come from the config-aware list (generic defaults + local
@@ -134,24 +145,35 @@ CMD_PATTERNS=(
   "${CMD_START}${GIT}filter-branch${FLAG_AFTER} ||| filter-branch ||| git filter-branch rewrites history. Run /maude:conscience filter-branch to override."
   "${CMD_START}${GIT}commit[[:space:]].*--amend ||| commit-amend ||| git commit --amend rewrites the last commit. If pushed, this needs force-push. Run /maude:conscience commit-amend."
   "${CMD_START}$(maude_public_publish_re) ||| public-publish ||| public-facing publish (gh release / twine / uv publish / hf upload). Run /maude:conscience public-publish after the pre-public-push checklist + John's go."
-  "DROP TABLE ||| drop-table ||| SQL DROP TABLE detected. Run /maude:conscience drop-table to override."
+  # NOTE: DROP TABLE is NOT a CMD_PATTERN — matching the quote-ERASED skeleton
+  # made it exactly backwards (missed quoted real SQL, fired on prose). It is
+  # handled by the context-aware block below (content-kept view + SQL client).
 )
 
 MATCHED_KEY=""
 MATCHED_MSG=""
 
-# Check PATH patterns first (against UNQUOTED)
-for entry in "${PATH_PATTERNS[@]}"; do
-  PAT="${entry%% ||| *}"
-  REST="${entry#* ||| }"
-  KEY="${REST%% ||| *}"
-  MSG="${REST#* ||| }"
-  if printf '%s' "$UNQUOTED" | grep -qE -- "$PAT"; then
-    MATCHED_KEY="$KEY"
-    MATCHED_MSG="$MSG"
-    break
-  fi
-done
+# Check PATH patterns first (against UNQUOTED) — but ONLY when the quote-ERASED
+# skeleton proves a recursive rm is actually executing in command position.
+# Without this guard, quoted prose like  echo "(rm -rf /)"  or  echo "x; rm -rf /"
+# false-blocks: UNQUOTED keeps quoted content, so a separator inside the quoted
+# argument reads as a real subshell rm. The skeleton tells the truth about shell
+# structure; the unquoted string is only trusted to resolve WHICH path once
+# execution is proven. (All current PATH_PATTERNS are rm-family; a future non-rm
+# path pattern would need its own command-position guard.)
+if maude_rm_in_command_position "$CMD"; then
+  for entry in "${PATH_PATTERNS[@]}"; do
+    PAT="${entry%% ||| *}"
+    REST="${entry#* ||| }"
+    KEY="${REST%% ||| *}"
+    MSG="${REST#* ||| }"
+    if printf '%s' "$UNQUOTED" | grep -qE -- "$PAT"; then
+      MATCHED_KEY="$KEY"
+      MATCHED_MSG="$MSG"
+      break
+    fi
+  done
+fi
 
 # Then check COMMAND patterns (against CMD via strip_quotes, unchanged)
 if [ -z "$MATCHED_KEY" ]; then
@@ -168,11 +190,83 @@ if [ -z "$MATCHED_KEY" ]; then
   done
 fi
 
+# ── Red-key self-clear backstop (v0.10.0) ────────────────────────────────────
+# Claude must not self-authorize a RED gate key by running the clear-script via
+# the Bash TOOL (which fires this hook). John's ! line runs in his shell and
+# skips PreToolUse, so it is unaffected — that channel asymmetry is the whole
+# discriminator. Matched against UNQUOTED so a quoted script path still resolves.
+# SOFT: a direct care.json Write bypasses this (the gate is Bash-only, the token
+# carries no provenance); the harness deny-rules in .scratch/maude-spine-deny.json
+# are the real, unbypassable layer. The 'red-self-clear' block key is itself not
+# clearable here (maude-clear-gate.sh refuses unknown keys).
+if [ -z "$MATCHED_KEY" ]; then
+  for _rk in $(maude_red_keys); do
+    if printf '%s' "$UNQUOTED" | grep -qE -- "maude-clear-gate\.sh([[:space:]]+-[^[:space:]]+)*[[:space:]]+${_rk}([[:space:]]|$)"; then
+      MATCHED_KEY="red-self-clear"
+      MATCHED_MSG="\"$_rk\" is a RED key — Claude cannot self-clear it. This is John's hand: he authorizes by pasting a ! line. See /maude:conscience $_rk for the exact line."
+      break
+    fi
+  done
+fi
+
+# ── Red-clear-file write backstop (v0.10.1, net widened v0.13.0) ─────────────
+# The dedicated care-redclear.json holds RED clear tokens. Block any Claude Bash
+# that writes/relocates it: a REDIRECT or tee (echo/jq/printf > …, >>, | tee),
+# OR a mutating/relocating verb naming the file (chattr/chmod/chown/mv/cp/dd/
+# install/truncate/ln — the cp/mv/dd "pre-staged token" shapes the v0.10.1 net
+# missed). With the harness Write/Edit deny on that path + the red-self-clear
+# backstop above, the !-run clear-script (John's shell, no tool-gate) is left the
+# clean writer of a red token. Reads (cat/grep) are left alone. Matched against
+# UNQUOTED so a quoted path still resolves.
+#
+# HONEST RESIDUAL — verified, not hand-waved: this is a Bash-pattern net, and the
+# gate is the ONLY enforcement here. A determined programmatic write still slips
+# it — an interpreter (`python3 -c "open('…/care-redclear.json','w')…"`, perl,
+# `sed -i`), or a verb the net doesn't list. There is NO OS lock behind it: on a
+# single-uid box the agent process and John's ! line run as the SAME user, so
+# file ownership/perms cannot tell them apart — you cannot cage a same-uid peer
+# with OS perms, and a fake lock would be theatre. The real discriminator is the
+# CHANNEL asymmetry (! skips the tool-gate; the Bash tool does not) plus this
+# net + the harness deny + the audit trail. Where the authorizer and the agent
+# run as DIFFERENT OS users, standard ownership/perms close this further; on a
+# single-uid box they cannot. (See CHANGELOG honest seam.)
+if [ -z "$MATCHED_KEY" ]; then
+  if printf '%s' "$UNQUOTED" | grep -qE -- '(>>?[[:space:]]*|tee[[:space:]]+)[^[:space:];&|]*care-redclear\.json' ||
+     printf '%s' "$UNQUOTED" | grep -qE -- '(^|[[:space:];&|(`])(chattr|chmod|chown|mv|cp|dd|install|truncate|ln)[[:space:]][^;&|]*care-redclear\.json'; then
+    MATCHED_KEY="redclear-write"
+    MATCHED_MSG="writes to the red-clear token file are blocked. Only John's ! line may authorize a red key (see /maude:conscience)."
+  fi
+fi
+
+# ── DROP TABLE — only in a SQL-execution context (v0.12.1) ───────────────────
+# A real DROP TABLE is passed to a SQL client and lives INSIDE quotes
+# (psql -c "DROP TABLE x") or a heredoc — so the quote-ERASED skeleton the
+# CMD_PATTERNS use never saw it (it slipped through), while an unquoted prose
+# mention (echo DROP TABLE, a commit body) false-blocked. Match the content-KEPT
+# view ($UNQUOTED) for "drop table" AND require a known SQL-client token, so
+# quoted real SQL is caught and prose / .sql file-authoring is left alone.
+# Case-insensitive — `drop table` lowercase is the common script form.
+# Known limitation: a heredoc/commit body that mentions BOTH a client name and
+# "drop table" fails closed (drop-table is a RED key, conscience-clearable) —
+# rare, not chased. Client list intentionally small; extend on real need.
+if [ -z "$MATCHED_KEY" ]; then
+  if printf '%s' "$UNQUOTED" | grep -qiE -- 'drop[[:space:]]+table' &&
+     printf '%s' "$UNQUOTED" | grep -qiE -- '(^|[[:space:];&|(`])(psql|mysql|mariadb|sqlite3|sqlplus)([[:space:]]|$)'; then
+    MATCHED_KEY="drop-table"
+    MATCHED_MSG="SQL DROP TABLE in an execution context. Run /maude:conscience drop-table to override."
+  fi
+fi
+
 [ -z "$MATCHED_KEY" ] && exit 0
 
-# Check for a live conscience token for this key
+# Check for a live conscience token for this key. RED keys read from the locked
+# care-redclear.json; yellow keys (and synthetic block keys) from care.json.
 NOW=$(date +%s)
-CARE="$(maude_self_dir)/care.json"
+if maude_is_red_key "$MATCHED_KEY"; then
+  CARE="$(maude_redclear_file)"
+else
+  CARE="$(maude_self_dir)/care.json"
+fi
 if [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
   CLEARED_UNTIL="$(jq -r --arg k "$MATCHED_KEY" '.gate_cleared[$k].until // 0' "$CARE" 2>/dev/null)"
   if [ -n "$CLEARED_UNTIL" ] && [ "$CLEARED_UNTIL" -gt 0 ] && [ "$CLEARED_UNTIL" -gt "$NOW" ] 2>/dev/null; then

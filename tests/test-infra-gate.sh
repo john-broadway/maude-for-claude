@@ -51,13 +51,15 @@ run_infra "mcp__testsrv__list_things" '{"node":"prod-x"}'
 assert_exit "$RC" "0" "read allowed"
 
 # ── Override token (one-shot) ────────────────────────────────────────────
-test_start "respects a live infra-destructive conscience token"
-printf '{"gate_cleared":{"infra-destructive":{"until":%d}}}\n' $(($(date +%s)+600)) > "$(care_path)"
+# infra-destructive is a RED key (v0.10.1) — its one-shot token lives in the
+# dedicated, harness-locked care-redclear.json, written only by John's ! line.
+test_start "respects a live infra-destructive token in care-redclear.json"
+printf '{"gate_cleared":{"infra-destructive":{"until":%d}}}\n' $(($(date +%s)+600)) > "$(redclear_path)"
 run_infra "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":777}'
 assert_exit "$RC" "0" "token allowed pass"
 
 test_start "token clears after one use"
-remaining="$(read_care '.gate_cleared["infra-destructive"].until // "absent"')"
+remaining="$(jq -r '.gate_cleared["infra-destructive"].until // "absent"' "$(redclear_path)" 2>/dev/null)"
 assert_eq "$remaining" "absent" "one-shot consumed"
 
 test_start "second destructive call re-blocks after token use"
