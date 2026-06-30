@@ -180,5 +180,5 @@ not caught.
 **Canonicalizer as a pure function (unit):**
 - `/tmp/../` → resolves to `/` (block path)
 - `/tmp/x/../safe` → `/tmp/safe` (no block)
-- `/home/user/../..` → resolves to `/` (block path)
+- `/srv/app/../..` → resolves to `/` (block path)
 - `/srv//app` → `/srv/app`
