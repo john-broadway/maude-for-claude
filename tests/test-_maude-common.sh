@@ -543,7 +543,7 @@ test_start "canon resolves chained .. correctly"
 assert_eq "$(maude_canon_path_view 'rm -rf /a/b/../../etc')" "rm -rf /etc" "chain-dotdot"
 
 test_start "canon leaves a non-dotdot path untouched"
-assert_eq "$(maude_canon_path_view 'rm -rf /home/user/project')" "rm -rf /home/user/project" "no-op"
+assert_eq "$(maude_canon_path_view 'rm -rf /srv/app/project')" "rm -rf /srv/app/project" "no-op"
 
 test_start "canon leaves leading /../b as residue (no over-pop into false /-match)"
 assert_eq "$(maude_canon_path_view 'rm -rf /../b')" "rm -rf /../b" "beyond-root-residue"

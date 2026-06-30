@@ -16,10 +16,11 @@ agents/            partner subagent (markdown)
 commands/          9 slash commands (markdown)
 hooks/             7 lifecycle hooks + bash scripts
 skills/            broad-trigger skill (markdown)
-scripts/           project audit (maude-verify.sh)
+scripts/           audit + release/publish helpers (maude-verify.sh, release.sh, check-satellites.sh)
 tests/             bash test harness for every hook script
 .github/           CI workflow (tests + verify) + templates
-docs/launch/       internal launch artifacts (not user-facing)
+docs/specs/        design docs (kept as rot-in-place records)
+PUBLISHING.md      release surface-manifest + push protocol
 ```
 
 The plugin is markdown, JSON, and bash. No Python package, no external test framework, no daemons, no services — and there should not be. If a feature seems to need any of those, raise an issue first.
