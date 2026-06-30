@@ -526,6 +526,66 @@ maude_is_comanage_target "anything" "1"; assert_exit "$?" "1" "fail-closed no co
 test_start "no config → sole-copy still has generic defaults"
 maude_sole_copy_targets | grep -qF '.claude'; assert_exit "$?" "0" "defaults survive"
 
+test_start "canon_path_view collapses repeated slashes"
+assert_eq "$(maude_canon_path_view 'rm -rf /srv//app')" "rm -rf /srv/app" "//-collapse"
+
+test_start "canon_path_view collapses triple slashes"
+assert_eq "$(maude_canon_path_view 'rm -rf /srv///app')" "rm -rf /srv/app" "///-collapse"
+
+# ── maude_canon_path_view: .. resolution (Task 3) ────────────────────────────
+test_start "canon resolves middle .. (keeps the safe segment)"
+assert_eq "$(maude_canon_path_view 'rm -rf /tmp/x/../safe')" "rm -rf /tmp/safe" "mid-dotdot"
+
+test_start "canon resolves trailing .. to parent (/tmp/.. -> /)"
+assert_eq "$(maude_canon_path_view 'rm -rf /tmp/..')" "rm -rf /" "trailing-dotdot-root"
+
+test_start "canon resolves chained .. correctly"
+assert_eq "$(maude_canon_path_view 'rm -rf /a/b/../../etc')" "rm -rf /etc" "chain-dotdot"
+
+test_start "canon leaves a non-dotdot path untouched"
+assert_eq "$(maude_canon_path_view 'rm -rf /home/user/project')" "rm -rf /home/user/project" "no-op"
+
+test_start "canon leaves leading /../b as residue (no over-pop into false /-match)"
+assert_eq "$(maude_canon_path_view 'rm -rf /../b')" "rm -rf /../b" "beyond-root-residue"
+
+# ── maude_wrapped_payloads / maude_has_opaque_wrap (Task 7) ──────────────────
+test_start "wrapped_payloads extracts single-quoted bash -c body"
+assert_eq "$(maude_wrapped_payloads "bash -c 'rm -rf /'")" "rm -rf /" "sq-payload"
+
+test_start "wrapped_payloads extracts double-quoted literal (no \$)"
+assert_eq "$(maude_wrapped_payloads 'sh -c "git push --force"')" "git push --force" "dq-literal"
+
+test_start "wrapped_payloads handles -lc and trailing args"
+assert_eq "$(maude_wrapped_payloads "bash -lc 'rm -rf /' arg0")" "rm -rf /" "lc-trailing"
+
+test_start "wrapped_payloads extracts eval single-quoted body"
+assert_eq "$(maude_wrapped_payloads "eval 'rm -rf /'")" "rm -rf /" "eval-sq"
+
+test_start "wrapped_payloads SKIPS interpolated double-quote (under-extract)"
+assert_eq "$(maude_wrapped_payloads 'bash -c "rm -rf $VAR"')" "" "interp-skipped"
+
+test_start "has_opaque_wrap true for interpolated payload"
+maude_has_opaque_wrap 'bash -c "rm -rf $VAR"'; assert_exit "$?" "0" "opaque-interp"
+
+test_start "has_opaque_wrap true for eval \$X"
+maude_has_opaque_wrap 'eval "$DYNAMIC"'; assert_exit "$?" "0" "opaque-eval-var"
+
+test_start "has_opaque_wrap false for single-quoted literal"
+maude_has_opaque_wrap "bash -c 'ls'"; assert_exit "$?" "1" "literal-not-opaque"
+
+# Task 8 carry-forward: bare-word (unquoted) token after -c / eval is also opaque
+test_start "has_opaque_wrap true for bare bash -c \$CMD"
+maude_has_opaque_wrap 'bash -c $CMD'; assert_exit "$?" "0" "opaque-bare-cmd"
+
+test_start "has_opaque_wrap true for bare eval \$CMD"
+maude_has_opaque_wrap 'eval $CMD'; assert_exit "$?" "0" "opaque-eval-bare"
+
+# Pin intentional bareword whisper: an unquoted bareword after eval/-c is opaque
+# (it is not inspected by maude_wrapped_payloads) and must surface via the whisper.
+# Cost: benign whisper on harmless `eval ls`. This test owns that behavior.
+test_start "has_opaque_wrap true for bare eval ls (bareword is opaque; benign whisper cost)"
+maude_has_opaque_wrap 'eval ls'; assert_exit "$?" "0" "opaque-eval-bareword"
+
 print_summary
 teardown_test_env
 exit $FAILED

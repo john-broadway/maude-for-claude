@@ -237,16 +237,16 @@ echo hi; rm -rf /
 EOF"
 assert_exit "$RC" "0" "shell-heredoc rm is limitation #3, not blocked"
 
-# KNOWN LIMITATION #9 (documented, accepted): the heredoc excision uses a
+# KNOWN LIMITATION #7 (documented, accepted): the heredoc excision uses a
 # heuristic <<WORD scan, so a <<WORD that is actually QUOTED TEXT on an earlier
 # line is mis-read as a heredoc start and a real rm on a later line gets eaten.
 # The old strip_quotes-only guard caught this; the trade buys the doc-heredoc
 # false-positive fix. NOT narrowed (the obvious fix reopens the <<'EOF' block).
 # This test pins the limitation so a future change to it is a conscious choice.
-test_start "gate PASSES rm -rf after a quoted << on an earlier line (limitation #9)"
+test_start "gate PASSES rm -rf after a quoted << on an earlier line (limitation #7)"
 run_gate 'echo "note << EOF" ;
 rm -rf /'
-assert_exit "$RC" "0" "quoted-<< heredoc mis-detection is limitation #9"
+assert_exit "$RC" "0" "quoted-<< heredoc mis-detection is limitation #7"
 
 # ── After-separator real positives — must block ──────────────────────
 
@@ -362,6 +362,10 @@ printf '{"sole_copy_paths":["/srv/app","/srv/secrets"]}\n' > "$MAUDE_GATE_CONFIG
 
 test_start "gate blocks rm -rf of a configured sole-copy path"
 run_gate "rm -rf /srv/app"; assert_exit "$RC" "2" "configured sole-copy"
+
+test_start "gate blocks rm -rf with interior double-slash on sole-copy"
+run_gate "rm -rf $CLAUDE_PROJECT_DIR//"
+assert_exit "$RC" "2" "//-bypass blocked"
 
 test_start "gate blocks rm -rf of configured path with trailing slash"
 run_gate "rm -rf /srv/app/"; assert_exit "$RC" "2" "configured sole-copy trailing slash"
@@ -514,6 +518,101 @@ assert_exit "$RC" "0" "reading the redclear file is fine"
 test_start "gate still PASSES a grep of care-redclear.json (read)"
 run_gate 'grep until /x/.maude/plugin/care-redclear.json'
 assert_exit "$RC" "0" "grepping the redclear file is fine"
+
+# ── Newline-separated commands must still block (CMD_START bypass — fixed 2026-06-30) ──
+# A command on its own line is a real, separate command. maude_strip_quotes / maude_unquote
+# flattened '\n'→' ' before matching, so the CMD_START anchor (which treats ; & | ( ` as a
+# boundary but NOT a space) saw the gated command mid-line and passed it. The flatten now uses
+# ';' so a newline reads as a command boundary. Covers yellow + RED command keys + a RED path key.
+test_start "gate blocks newline-separated git push"
+run_gate "$(printf 'echo hi\ngit push origin main')"
+assert_exit "$RC" "2" "newline git-push blocks"
+
+test_start "gate blocks newline-separated git push --force (RED key)"
+run_gate "$(printf 'echo hi\ngit push --force origin main')"
+assert_exit "$RC" "2" "newline force-push blocks"
+
+test_start "gate blocks newline-separated rm -rf / (RED path key)"
+run_gate "$(printf 'echo hi\nrm -rf /')"
+assert_exit "$RC" "2" "newline rm-rf-root blocks"
+
+test_start "gate blocks newline + indented git push"
+run_gate "$(printf 'echo hi\n  git push origin main')"
+assert_exit "$RC" "2" "newline-indented git-push blocks"
+
+# ── Path traversal / .. resolution integration tests (Task 3) ─────────────────
+test_start "gate blocks rm -rf /tmp/.. (resolves to root)"
+run_gate "rm -rf /tmp/.."
+assert_exit "$RC" "2" "trailing-dotdot blocked"
+
+test_start "gate does NOT block rm -rf /tmp/x/../safe (resolves off-root)"
+run_gate "rm -rf /tmp/x/../safe"
+assert_exit "$RC" "0" "mid-dotdot allowed"
+
+# ── Task 4: transparent command-position prefix bypasses (#6/#7/#8) ──────────
+
+# positives — should now block
+test_start "gate blocks /bin/rm -rf / (absolute-path invocation #6)"
+run_gate "/bin/rm -rf /"
+assert_exit "$RC" "2" "abs-path rm"
+
+test_start "gate blocks command rm -rf / (#7)"
+run_gate "command rm -rf /"
+assert_exit "$RC" "2" "command-builtin rm"
+
+test_start "gate blocks FOO=1 rm -rf / (#8)"
+run_gate "FOO=1 rm -rf /"
+assert_exit "$RC" "2" "env-assign rm"
+
+test_start "gate blocks FOO=1 git push --force (#8 generalises to all patterns)"
+run_gate "FOO=1 git push --force"
+assert_exit "$RC" "2" "env-assign force-push"
+
+test_start "gate blocks /usr/bin/git push (#6 generalises)"
+run_gate "/usr/bin/git push origin main"
+assert_exit "$RC" "2" "abs-path git push"
+
+# false-block traps — must still PASS (exit 0)
+test_start "gate does NOT block rmdir"
+run_gate "rmdir /tmp/emptydir"
+assert_exit "$RC" "0" "rmdir allowed"
+
+test_start "gate does NOT block /usr/bin/rmdir"
+run_gate "/usr/bin/rmdir /tmp/emptydir"
+assert_exit "$RC" "0" "abs rmdir allowed"
+
+test_start "gate does NOT block a command named mycommand"
+run_gate "mycommand --recursive /tmp"
+assert_exit "$RC" "0" "mycommand allowed"
+
+# ── Task 8: shell-wrapping inspection (#3) ───────────────────────────────────
+# Literal bash -c / eval payloads are now recursively inspected. A gated inner
+# command blocks with its own key (so /maude:conscience <key> clears it). An
+# uninspectable wrapper (variable/interpolated payload) emits a non-blocking
+# whisper and exits 0.
+
+test_start "gate blocks bash -c 'rm -rf /' with inner key"
+run_gate "bash -c 'rm -rf /'"
+assert_exit "$RC" "2" "wrapped rm blocked"
+assert_contains "$ERR" "rm-rf-root" "wrapped rm key"
+
+test_start "gate blocks sh -c \"git push --force\""
+run_gate 'sh -c "git push --force"'
+assert_exit "$RC" "2" "wrapped force-push blocked"
+
+test_start "gate blocks nested bash -c sh -c rm"
+run_gate "bash -c \"sh -c 'rm -rf /'\""
+assert_exit "$RC" "2" "nested wrapped blocked"
+
+test_start "gate WHISPERS (exit 0) on bash -c with variable payload"
+run_gate 'bash -c "rm -rf $VAR"'
+assert_exit "$RC" "0" "opaque not blocked"
+assert_contains "$ERR" "can't inspect" "opaque whisper text"
+
+test_start "gate passes bash -c 'ls' silently"
+run_gate "bash -c 'ls'"
+assert_exit "$RC" "0" "literal-safe allowed"
+assert_eq "$ERR" "" "no whisper on safe literal"
 
 print_summary
 teardown_test_env
