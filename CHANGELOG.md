@@ -1,6 +1,6 @@
-<!-- Version: 0.13.0 -->
+<!-- Version: 0.13.2 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-26 -->
+<!-- Revised: 2026-06-30 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,47 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.13.2 — 2026-06-30
+
+**Gate hardening: six documented bypasses closed (#1,2,6,7,8 + #3 partial).**
+
+The Bash gate's regex belt documented nine ways it could be dodged. Six are now
+closed; three remain fully open (variable indirection, `cd`+relative, heredoc
+mis-detection); #2 and #3 are partially closed with documented residuals (see
+Known limitations in the hook) — they need shell semantics the gate can't safely have.
+
+### Fixed
+- **#1 interior `//`** and **#2 `..` traversal** — a canonical path-matching view
+  (`maude_canon_path_view`) collapses `//` and lexically resolves `/seg/../`, so
+  `rm -rf /srv//app` and `rm -rf /tmp/..` match the same as the canonical path.
+- **#6/#7/#8 transparent prefixes** — `/bin/rm`, `command rm`, and `FOO=1 rm` are
+  now seen at a command boundary (new `PREFIX`/`ABS` anchor fragments). Applies to
+  *every* pattern, so `FOO=1 git push --force` blocks too.
+- **#3 shell wrapping (partial)** — literal `bash|sh|dash|zsh -c '…'` and `eval '…'`
+  payloads are extracted and re-matched against the full gate (blocked with the
+  inner key, so `/maude:conscience` clears as normal).
+
+### Honest seam
+- **#3 is only partial.** Heredoc-fed-shell (`bash <<EOF … rm -rf / … EOF`) and
+  variable/interpolated payloads (`bash -c "$CMD"`, `eval "$X"`) are NOT inspected;
+  the variable case now emits a **non-blocking whisper** rather than silent passage.
+  Payload extraction is biased to UNDER-extract (under-block) over mis-parse.
+- **#2 residual:** leading `..` beyond root (`/../b`) is not resolved.
+- **Adjacent prefixes not closed:** `exec`/`env`/`nohup`/`timeout`/`xargs rm` and
+  `\rm` (alias-escape) — same class as #6/#7, extend on real need.
+
+## v0.13.1 — 2026-06-30
+
+**Gate hardening: newline-separated commands no longer bypass the command-position gates.**
+
+A gated command on its own line (`echo hi`⏎`git push`) slipped *every* `CMD_START`-anchored gate — `git push`, force-push (RED), `reset --hard`, `commit --amend`, and the `rm -rf` RED path patterns — even though `;` / `&&` / `|` / `(`-separated forms blocked correctly. Root cause: `maude_strip_quotes` and `maude_unquote` flattened `\n`→space *before* matching, and the `CMD_START` anchor (`^ ; & | ( ` `` ` ``) counts those separators but **not** a space — so the gated command sat mid-line, unanchored, and passed. (`--no-verify` / `--no-gpg-sign` were unaffected — they anchor on whitespace.)
+
+### Fixed
+- **Newline-separated gated commands now block.** Both flatteners map `\n`→`;` (a real shell command separator) rather than a space, so a command on its own line reads as a boundary the anchors recognise. Found and verified empirically (every other separator blocked; newline alone passed), then fixed TDD-first: 4 regression tests (`git push` / force-push / `rm -rf /` / indented) RED→GREEN; full suite 25/25, shellcheck clean.
+
+### Honest seam
+- Mapping `\n`→`;` means a heredoc / multi-line **body** whose line *starts* with a gated command (a commit body literally beginning `git push …`) now fail-closes (blocks; conscience-clearable). Mid-line mentions still pass. Consistent with the gate's fail-closed bias; excising heredoc bodies in the command path too (as the `rm` path already does) would remove even that edge — deferred, not done.
 
 ## v0.13.0 — 2026-06-26
 

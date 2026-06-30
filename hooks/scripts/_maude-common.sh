@@ -671,26 +671,66 @@ maude_is_comanage_target() {
 # containing the substring "git push"). Newlines are flattened first so a
 # multi-line HEREDOC inside `"$(cat <<EOF ... EOF)"` collapses correctly.
 #
-# Order: flatten newlines → strip single-quoted spans → strip double-quoted
+# Order: newlines → ';' → strip single-quoted spans → strip double-quoted
 # spans. Single-quoted first because shell single-quotes don't interpret
 # backslashes — matching them is unambiguous and removes their content
 # (including any stray double-quotes inside) before the double-quote pass.
+# Newlines map to ';' (a command separator), NOT a space: a command on its own
+# line IS a separate command, so it must read as a boundary the CMD_START anchor
+# recognises (^ ; & | ( `). Mapping to a space let `foo\ngit push` flatten to
+# `foo git push` — mid-line, unanchored — bypassing every command-position gate
+# (git push / force-push / reset --hard / rm -rf …). (2026-06-30)
 maude_strip_quotes() {
   local cmd="$1"
-  cmd="$(printf '%s' "$cmd" | tr '\n' ' ')"
+  cmd="$(printf '%s' "$cmd" | tr '\n' ';')"
   cmd="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g")"
   cmd="$(printf '%s' "$cmd" | sed -E 's/"([^"\\]|\\.)*"//g')"
   printf '%s' "$cmd"
 }
 
-# Remove quote CHARACTERS but KEEP their content (newlines flattened). For
-# matching PATH/argument patterns where a quoted path (rm -rf "/srv/data")
-# must still match — unlike maude_strip_quotes which ERASES quoted content
-# (right for command-name patterns like git push, wrong for path args).
-# Fail-closed: keeping content can only ever match MORE, never introduce a
-# new bypass.
+# Remove quote CHARACTERS but KEEP their content (newlines → ';', a command
+# separator — see maude_strip_quotes: mapping newline to a space let a path gate
+# be bypassed by putting `rm -rf /` on its own line). For matching PATH/argument
+# patterns where a quoted path (rm -rf "/srv/data") must still match — unlike
+# maude_strip_quotes which ERASES quoted content (right for command-name patterns
+# like git push, wrong for path args). Fail-closed: keeping content can only ever
+# match MORE, never introduce a new bypass.
 maude_unquote() {
-  printf '%s' "$1" | tr '\n' ' ' | tr -d "\"'"
+  printf '%s' "$1" | tr '\n' ';' | tr -d "\"'"
+}
+
+# Canonicalise the PATH-matching view of a command string so obfuscated rm
+# targets match the canonical gate patterns: collapse repeated slashes (// → /)
+# and (Task 3) lexically resolve /<seg>/../ → /. String-level only — never
+# touches the filesystem. Fail-direction: canonicalising only makes a path MORE
+# likely to match a protected pattern (closes under-blocks); it never invents a
+# reachable path. Leading-`..`-beyond-root residue (/../b) is NOT resolved
+# (documented limitation #2 residual).
+#
+# CONTRACT: This function operates on the WHOLE command string (not just path
+# args). It is safe to do so ONLY because UNQUOTED_PATH feeds SOLELY the
+# rm-command-position-guarded PATH loop (maude_rm_in_command_position must fire
+# first). A `://` or stray `..` in a non-path token (URL, here-doc label, etc.)
+# could in theory rewrite to something matching a red pattern — the
+# rm-command-position guard is the structural firewall that prevents that from
+# causing a false-block.
+maude_canon_path_view() {
+  local s="$1" i=0 prev
+  s="$(printf '%s' "$s" | sed -E 's#/{2,}#/#g')"
+  # Resolve /<seg>/../ → / repeatedly until stable (cap 16 — bounds work).
+  # <seg> = a non-slash, non-space token that is NOT '..' itself, so a
+  # leading /../ beyond root is left as residue (documented #2 residual) and
+  # never over-pops into a false /-match.
+  while [ "$i" -lt 16 ]; do
+    prev="$s"
+    # interior:  /seg/../  (seg is not '.' or '..')
+    s="$(printf '%s' "$s" | sed -E 's#/([^/.[:space:]][^/[:space:]]*|\.[^/.[:space:]][^/[:space:]]*)/\.\./#/#g')"
+    # trailing:  /seg/..   at end-of-token (space, end, or shell separator)
+    s="$(printf '%s' "$s" | sed -E 's#/([^/.[:space:]][^/[:space:]]*|\.[^/.[:space:]][^/[:space:]]*)/\.\.([[:space:];&|)]|$)#/\2#g')"
+    [ "$s" = "$prev" ] && break
+    i=$((i + 1))
+  done
+  printf '%s' "$s"
 }
 
 # Remove HEREDOC bodies from a (possibly multi-line) command. A heredoc body is
@@ -775,7 +815,7 @@ maude_rm_in_command_position() {
   # documentation prose in a `git commit -F -` body cannot read as a subshell rm.
   skeleton="$(maude_strip_quotes "$(maude_strip_heredocs "$1")")"
   printf '%s' "$skeleton" | grep -qE -- \
-    '(^|[;&|(`])[[:space:]]*(sudo[[:space:]]+)?rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]]*[rR][[:alnum:]]*|--recursive)'
+    '(^|[;&|(`])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|command[[:space:]]+|sudo[[:space:]]+)*(/[^[:space:]]*/)?rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]]*[rR][[:alnum:]]*|--recursive)'
 }
 
 # ─── Gate-key severity tiers (v0.10.0) ────────────────────────────────────
@@ -813,4 +853,81 @@ maude_is_known_key() {
 # Bash tool-gate and the harness tool-perms because it is his shell, not a tool.
 maude_redclear_file() {
   printf '%s/care-redclear.json' "$(maude_self_dir)"
+}
+
+# ─── Wrapper-payload extraction primitives (v0.13.2) ──────────────────────────
+#
+# maude_wrapped_payloads "<cmd>"
+#   Prints each INSPECTABLE literal payload found in the command string, one per
+#   line. Inspectable = single-quoted ('...'), or double-quoted ("...") with no
+#   $ or backtick.  Wrappers recognised: bash|sh|dash|zsh -c, and eval.
+#   Flags before -c (e.g. -l, -lc) and trailing args after the quoted payload
+#   are handled correctly.
+#
+#   UNDER-EXTRACT BIAS: when a payload's boundaries are ambiguous the function
+#   outputs NOTHING rather than a wrong/partial string.  A mis-extraction in
+#   Task 8's recursive re-match could produce a FALSE-BLOCK; an under-extraction
+#   merely under-blocks (same class as the documented variable-indirection limit).
+#
+# maude_has_opaque_wrap "<cmd>"
+#   Returns 0 (true) iff a wrapper carries an UNINSPECTABLE payload:
+#     • double-quoted body containing $ or backtick, OR
+#     • unquoted / bare-word token right after -c or eval.
+#   Drives a whisper in Task 8.
+#
+# Caller note: each grep sub-pipeline exits 1 on no-match; safe under set +e /
+# the test harness, but callers using set -e pipefail should account for that.
+
+# shellcheck disable=SC2016  # $/$` inside single-quoted pattern strings are
+#                            # intentionally literal (grep/sed ERE), not expansions.
+maude_wrapped_payloads() {
+  local cmd="$1"
+  local _q _pfx _eval_pfx _bash_c_sq _bash_c_dq _eval_sq _eval_dq
+  _q="'"
+  # Prefix patterns (stored in variables to keep the grep calls readable and to
+  # allow _q substitution without breaking single-quote strings).
+  _pfx='(bash|sh|dash|zsh)([[:space:]]+-[A-Za-z]+)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+'
+  _eval_pfx='(^|[;&|(`[:space:]])eval[[:space:]]+'
+  # Single-quoted body: '...' — always a literal, safe to extract.
+  _bash_c_sq="${_pfx}${_q}[^${_q}]*${_q}"
+  _eval_sq="${_eval_pfx}${_q}[^${_q}]*${_q}"
+  # Double-quoted body with no $ or backtick: "..." — literal, safe to extract.
+  _bash_c_dq='(bash|sh|dash|zsh)([[:space:]]+-[A-Za-z]+)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+"[^"$`]*"'
+  _eval_dq='(^|[;&|(`[:space:]])eval[[:space:]]+"[^"$`]*"'
+
+  # bash/sh/dash/zsh -c 'payload'
+  # Strip: ^[^']*' removes everything up to and including the opening quote;
+  # .$ removes the closing quote (grep guarantees the last char is ').
+  printf '%s\n' "$cmd" | grep -oE "$_bash_c_sq" \
+    | sed -E "s/^[^${_q}]*${_q}//" | sed 's/.$//'
+  # bash/sh/dash/zsh -c "payload"  (no $ or backtick)
+  printf '%s\n' "$cmd" | grep -oE "$_bash_c_dq" \
+    | sed -E 's/^[^"]*"//; s/.$//'
+  # eval 'payload'
+  printf '%s\n' "$cmd" | grep -oE "$_eval_sq" \
+    | sed -E "s/^[^${_q}]*${_q}//" | sed 's/.$//'
+  # eval "payload"  (no $ or backtick)
+  printf '%s\n' "$cmd" | grep -oE "$_eval_dq" \
+    | sed -E 's/^[^"]*"//; s/.$//'
+}
+
+maude_has_opaque_wrap() {
+  local cmd="$1"
+  local _bash_c_opaque_dq _eval_opaque_dq _bash_c_bare _eval_bare
+  # Double-quoted body containing $ or backtick → uninspectable interpolation.
+  _bash_c_opaque_dq='(bash|sh|dash|zsh)([[:space:]]+-[A-Za-z]+)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+"[^"]*[$`]'
+  _eval_opaque_dq='(^|[;&|(`[:space:]])eval[[:space:]]+"[^"]*[$`]'
+  # Unquoted / bare-word token after -c or eval → uninspectable indirection.
+  # INTENTIONAL: a bareword (not just $VAR) is treated as opaque because an
+  # unquoted wrapped command (e.g. `eval rm -rf /`, `bash -c rm`) is NOT
+  # extracted or inspected by maude_wrapped_payloads and must still be surfaced
+  # via this whisper. The cost is a benign whisper on harmless `eval ls`.
+  # [^[:space:]'"] = first char is not space, not single-quote, not double-quote.
+  _bash_c_bare='(bash|sh|dash|zsh)([[:space:]]+-[A-Za-z]+)*[[:space:]]+-[A-Za-z]*c[A-Za-z]*[[:space:]]+[^[:space:]'"'"'"]'
+  _eval_bare='(^|[;&|(`[:space:]])eval[[:space:]]+[^[:space:]'"'"'"]'
+  printf '%s' "$cmd" | grep -qE "$_bash_c_opaque_dq" && return 0
+  printf '%s' "$cmd" | grep -qE "$_eval_opaque_dq"   && return 0
+  printf '%s' "$cmd" | grep -qE "$_bash_c_bare"       && return 0
+  printf '%s' "$cmd" | grep -qE "$_eval_bare"         && return 0
+  return 1
 }

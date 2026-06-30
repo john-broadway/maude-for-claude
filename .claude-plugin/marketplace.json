@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "maude",
-      "version": "0.13.0",
+      "version": "0.13.2",
       "description": "Claude's partner inside Claude Code. He writes the code; she notices. She holds the mission you set and flags it the moment he drifts off it, gates irreversible actions before they fire, whispers when he's stuck or hasn't verified, and shows up once every session. No daemon, no database, no backend — she's in your plugin folder, that's all of her. Beta.",
       "author": {
         "name": "John Broadway"
