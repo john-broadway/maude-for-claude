@@ -1,6 +1,10 @@
-.PHONY: test verify lint release
+.PHONY: test test-py verify lint release
 
-test:
+test-py:
+	@if command -v pytest >/dev/null 2>&1; then PYTHONPATH=. pytest tests/vault tests/eye -q; \
+	else echo "pytest not installed — skipping python vault tests"; fi
+
+test: test-py
 	bash tests/run.sh
 
 # Propagate a new version everywhere + stamp dates + run the gate. Writes no prose.

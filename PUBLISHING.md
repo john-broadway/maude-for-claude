@@ -1,4 +1,4 @@
-<!-- Version: 0.13.2 -->
+<!-- Version: 0.16.0 -->
 <!-- Created: 2026-06-30 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
@@ -36,9 +36,13 @@ else must be made to agree with it.
 | `john-broadway/john-broadway.github.io` | `index.html` | the **Maude card** `<p class="status">` — version + date + blurb |
 | `john-broadway/john-broadway.github.io` | `maude/index.html` | **three places**: (1) front-matter `description:` version, (2) `.subtitle` `&middot; vX &middot;`, (3) **add a new `<h2>vX &mdash; …</h2>` release-highlight block at the top of the highlights series** (keep the prior one below as history) |
 
-> Note: `docs/superpowers/` (SDD build scaffolding) is intentionally **excluded** from the
-> public repo — it lives only on local + gitea (private dev history). The public tree = local
-> `main` minus `docs/superpowers/`.
+> Note: the **internal set** is intentionally excluded from the public repo — it lives only on
+> local + gitea: `docs/superpowers/` (SDD build scaffolding), `docs/VISION.md` (the family
+> vision — names people), `docs/dogfood/` (living tuning logs), and any spec whose header marks
+> it internal (currently `docs/specs/2026-07-13-maude-body-light-first-design.md`). The public
+> tree = local `main` minus the internal set. Test fixtures must be SYNTHETIC — never excerpts
+> of a real workspace's memory notes (swapped 2026-07-13, same class as the `/srv/app` path
+> fixtures).
 
 ## The push protocol
 

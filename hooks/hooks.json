@@ -17,6 +17,11 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-mission.sh clear",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-vault-build.sh",
+            "timeout": 15
           }
         ]
       }
@@ -54,7 +59,13 @@
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-trace.sh prompt",
             "timeout": 5
           },
-          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-run-governor.sh reset", "timeout": 5 }
+          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-run-governor.sh reset", "timeout": 5 },
+          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-eye.sh whisper", "timeout": 5 },
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-page.sh",
+            "timeout": 10
+          }
         ]
       }
     ],
@@ -90,6 +101,16 @@
           {
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-verify-watch.sh commit",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Agent|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-dispatch-watch.sh",
             "timeout": 5
           }
         ]
@@ -153,7 +174,8 @@
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-trace.sh tool",
             "timeout": 5
           },
-          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-run-governor.sh tick", "timeout": 5 }
+          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-run-governor.sh tick", "timeout": 5 },
+          { "type": "command", "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-eye.sh tick", "timeout": 5 }
         ]
       }
     ],
@@ -175,6 +197,17 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-pre-compact.sh",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/scripts/maude-session-end.sh",
+            "timeout": 10
           }
         ]
       }

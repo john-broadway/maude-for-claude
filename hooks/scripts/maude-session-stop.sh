@@ -10,8 +10,9 @@
 # to recent.md (it would accumulate dozens of lines per real session). For
 # explicit session-end actions, the user invokes /maude:rest.
 #
-# Cost: if the user quits without /maude:rest, no auto-handoff is left in
-# .remember/. That's the price of avoiding false-positive writes mid-session.
+# Cost: this hook itself leaves no handoff. The SessionEnd stitch
+# (maude-session-end.sh) now covers the real-end case — it fires only on a
+# true end and may leave a one-line auto-note in an EMPTY handoff slot.
 #
 # We log a JSONL event to the project-local trace so the audit still shows
 # every Stop. Cheap, append-only, lives in HER closet.

@@ -1,6 +1,6 @@
-<!-- Version: 0.13.2 -->
+<!-- Version: 0.16.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-24 -->
+<!-- Revised: 2026-07-13 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -73,7 +73,8 @@ Most of it she does **on her own** — rails wired to Claude's hooks, no command
 
 - **Holds the mission.** She pins what you're working on (from a plan, or your todo list), re-surfaces it every turn, and — the instant Claude flips from talking to editing — asks whether the work still serves it. Drift caught at the edge, not after the wreck.
 - **Gates the irreversible.** A `git push`, a force-push, a public publish, an `rm -rf` of the only copy — she stops it cold until you clear it with `/maude:conscience`. And she scans every prompt for leaked credentials.
-- **Whispers when Claude's off.** Repeated greps, the same file read five times, a commit with no verify run since the last edit, editing before CLAUDE.md was read — she notices, once.
+- **Whispers when Claude's off.** Repeated greps, the same file read five times, a commit with no verify run since the last edit, editing before CLAUDE.md was read, a sub-agent dispatched on a flagship model when a small one would do — she notices, once.
+- **Covers the exit.** A real session end (quit, logout, `/clear`) that leaves 3+ unsaved exchanges gets a one-line auto-note in the *empty* handoff slot, pointing the next session at the trace. A real handoff is never overwritten.
 - **Shows up, once, every session.** At session start she's already read the workspace and put what's pending / where you left off / what she noticed in front of you. Her voice rides these rails — present every session, louder only when something's caught. Never a toggle you flip.
 
 And on demand, when you ask:
@@ -84,19 +85,19 @@ And on demand, when you ask:
 
 ## What's new
 
+**v0.16.0 (2026-07-13) — two new garments: the dispatch whisper and the exit stitch.** She now watches *which model* Claude sends his sub-agents out on — a scout dispatched on a flagship tier (or with no model at all, which silently inherits one) gets a whisper: match the model to the sub-task. Never blocks, once a day, and the catch rides her existing drift-digest. And the session's exit is finally covered: `SessionEnd` — a true end, unlike `Stop` — logs the reason, stamps her closet, and if 3+ exchanges were never saved it leaves a one-line, honestly-labeled auto-note in the empty handoff slot so the next session knows to reconstruct from the trace. Both ends of the continuity loop now share one definition of "uncaptured" (extracted helpers; the wake-side guard refactored onto them). 27 new tests; full fleet 31/31 green.
+
+**v0.15.1 (2026-07-13) — her voice moves in: "our house", never "your house".** Persona alignment across every speaking surface — the workspace is her home now and she talks like it ("Walked our house.", "Quite the collection we have."); the skill and agent personas carry the rule explicitly. No mechanism changes.
+
+**v0.15.0 (2026-07-13) — the eye opens: she watches with her own model.** New `maude_eye` package: every ~25 tool calls (≥3 min apart), a background blink digests recent activity + the pinned mission + her vault's notes and asks a discovered `claude -p --model haiku` — run `--safe-mode --no-session-persistence --tools ""`, so it sees the digest and nothing else — whether anything's off: churn, drift, an unverified claim, a human running on fumes. Almost always silence; otherwise ONE contained `**Maude:** …` line, once. Sealed pre-merge by review: safe-mode (a bare runner would have leaked the user's CLAUDE.md into every blink), a 30s wall-clock bound + atomic spawn-lock (no orphaned/multiplying blinks), and a hard recursion guard proven over all 30 hooks. No runner → the eye stays dark. Kill switch: `MAUDE_EYE=off`.
+
+**v0.14.0 (2026-07-13) — the vault floor: she pages the right note instead of dumping the index.** New `maude_vault` package (python3 **stdlib only** — sqlite3 + FTS5, no pip, ever): a disposable index rebuilt each session from your memory notes, and a paging hook that surfaces the top-K *relevant* notes when you ask a question. Against a real 397-note corpus: build 0.19s, ~1KB injected where the dump was ~13KB — the right note, twelve times quieter. Born hardened: note content can't break out of its block (whitespace collapsed, capped), query cost bounded, prompt via stdin (no argv ceiling), one bad file can't abort a rebuild, and every hook degrades to silence. 19 python + 26 bash tests green; `make test` now fails red for real.
+
 **v0.13.2 (2026-06-30) — gate bypass hardening: six documented bypasses closed (#1,2,6,7,8 + #3 partial).** Interior `//`, `..` traversal, transparent prefixes (`/bin/rm`, `command rm`, `FOO=1 rm`), and literal shell-wrapping payloads (`bash -c '…'`, `eval '…'`) are now caught. Three remain fully open (variable indirection, `cd`+relative, heredoc mis-detection); #2 and #3 are partially closed with documented residuals. The variable-opaque case now emits a non-blocking whisper. Full suite 25/25, shellcheck clean, verify 0 findings.
 
 **v0.13.1 (2026-06-30) — the gate stops missing newlines.** A gated command on its own line slipped *every* command-position gate — `git push`, force-push, `reset --hard`, even `rm -rf /` — because both quote-strippers flattened a newline to a *space*, and the command-start anchor counts `;` / `&&` / `|` / `(` as boundaries but not a space, so the command landed mid-line and passed. (`;`-separated forms blocked fine — that was the tell.) Found by testing every separator against the live gate, then fixed test-first: newline now maps to `;` (a real boundary), four regression tests RED→GREEN, full suite 25/25, shellcheck clean. The one cost — a heredoc body whose line *starts* with a gated command now fail-closes — is conscience-clearable and consistent with the gate's bias.
 
-**v0.13.0 (2026-06-26) — audit punch-list closed.** Three remaining items, done together. Four commands the audit found unused across ~73k events — `remind-me`, `sweep`, `weekly`, `check-on-me` — are gone (surface 13 → 9; recall now rides the hooks + `/maude:wake`). The red-clear gate net caught `>`/`tee` but missed `cp`/`mv`/`dd` — it now blocks those plus `chattr`/`chmod`/`ln`, and the old "OS ownership is the real lock" line is **retired for the truth**: on a single-uid box the agent and John's `!` line are the same user, so there is no OS cage — only the channel asymmetry (`!` skips the tool-gate), the net, and the audit. And the test runner is now hermetic: a `MAUDE_*` toggle left in your shell can no longer leak in and flip a test.
-
-**v0.12.1 (2026-06-26) — the gate stops lying in two places.** The gate's only value is accuracy, and the audit found two spots where it lied. `DROP TABLE` was exactly backwards: it matched the quote-*erased* command, but real SQL is always quoted (`psql -c "DROP TABLE x"`) — so it **slipped through** while an unquoted *prose* mention false-blocked. Now it matches the content-kept view and only fires in a real SQL-client context, so quoted SQL blocks and a commit message mentioning the words passes. And a `git commit -F -` whose body *documented* `rm -rf /` got blocked — heredoc bodies weren't being treated as the data they are; the rm-guard now excises them before deciding whether an `rm` is genuinely executing. Both reproduced against the live gate, failing-test-first, then fixed.
-
-**v0.12.0 (2026-06-24) — the continuity loop closes.** Continuity is what lets Maude wake Claude oriented — but "is there a loop protecting that?" found two gaps, both caught by dogfooding the real workspace: the wake path was reading a lagging buffer and an empty handoff while the freshest capture sat unread, and nothing verified continuity at all (the Stop hook writes no handoff, so a clean quit without `/maude:rest` could wake the next session under-informed, silently). Fixed both — SessionStart now surfaces a **"Where you left off"** line from the freshest live buffer (`$REMEMBER/now.md`), and a new **continuity guard** reconciles the last capture against real trace activity, warning at the top of the brief when work ran after the last save. Continuity degrades loudly, not silently; on a healthy system the guard stays quiet.
-
-**v0.11.0 (2026-06-24) — she gets a reader.** An evidence-grounded audit of ~73,000 traced events found the honest shape of "she does nothing": the gates genuinely bite (six organic `rm -rf` saves of the sole copy, a fail-closed infra-gate), but ~99.7% of what Maude does aims at Claude and never reaches John — the advisory whispers land on a channel with no reader. So the session-start brief now leads with a **catch-digest**: one plain line of what she caught since John last looked — `1 sole-copy save, 2 blocks, 1 drift-catch (+3 push-clears, 14 verify-flags)` — value-first, the volume folded into a tail, silent when there's nothing. It's watermark-bounded (counted from the trace, advancing each session) so resume/compact never re-print the same catch. Makes the whispers *visible*, not *fewer* — the first reader, where there was none.
-
-**Earlier.** v0.10.1 hardened the spine: rm-family patterns now use a quote-erased skeleton to avoid false-blocking prose, and gate keys split into yellow (Claude self-clearable) and red (sole-copy/public/irreversible — John's `!` line only). The v0.9.x line was release discipline and docs catching up to the rails: `verify` now fails a broken release (a reference to a cut command, an un-condensed "What's new"), `scripts/release.sh` propagates the version to every header, and every public surface was made rails-first. v0.9.0 added the mission-hold rail (the "don't drift" rule that finally *fires* — captures the plan, re-injects it every prompt, checks at the action-flip), cut four convenience commands, and made her voice a rail not a switch. v0.8.0 dressed her in the gate outfit — layered, config-driven safety for long autonomous runs. The v0.5.x line added a verify tripwire (a whisper before you commit code that has not been re-checked); v0.4.0 left her a letter to her next self; the v0.3.x arc was hardening — cold audits, gate-bypass fixes, `/maude:teach`. Full history in the [CHANGELOG](CHANGELOG.md).
+**Earlier.** v0.12.1 made the gate stop lying in two places (quoted `DROP TABLE` slipped through while prose false-blocked; heredoc bodies documenting `rm -rf /` blocked a legitimate commit — both reproduced live, fixed failing-test-first). v0.12.0 closed the continuity loop: SessionStart surfaces "Where you left off" from the freshest live buffer, and a continuity guard warns when work ran after the last save — degrades loudly, never silently. v0.11.0 gave her a reader: the session-start brief leads with a **catch-digest** — one plain line of what she caught since John last looked, watermark-bounded, silent when there's nothing (an audit of ~73k traced events showed the whispers landed on a channel with no reader). v0.10.1 hardened the spine: rm-family patterns now use a quote-erased skeleton to avoid false-blocking prose, and gate keys split into yellow (Claude self-clearable) and red (sole-copy/public/irreversible — John's `!` line only). The v0.9.x line was release discipline and docs catching up to the rails: `verify` now fails a broken release (a reference to a cut command, an un-condensed "What's new"), `scripts/release.sh` propagates the version to every header, and every public surface was made rails-first. v0.9.0 added the mission-hold rail (the "don't drift" rule that finally *fires* — captures the plan, re-injects it every prompt, checks at the action-flip), cut four convenience commands, and made her voice a rail not a switch. v0.8.0 dressed her in the gate outfit — layered, config-driven safety for long autonomous runs. The v0.5.x line added a verify tripwire (a whisper before you commit code that has not been re-checked); v0.4.0 left her a letter to her next self; the v0.3.x arc was hardening — cold audits, gate-bypass fixes, `/maude:teach`. Full history in the [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -113,7 +114,27 @@ And on demand, when you ask:
 | `~/.claude/maude/projects.json` | Light index of which workspaces she's walked. |
 | `~/.claude/maude/letter-from-maude.md` | Her letter to her next self — what she caught, what she missed, what to do differently. Rewritten at `/maude:rest`, read on wake. |
 
-Her **hooks** only read — `~/.claude/projects/<slug>/memory/` (Anthropic auto-memory), `<project>/.remember/` (the companion `remember` plugin's pipeline), and her own `~/.claude/maude/` — never write, so the hot path stays fast and side-effect-free. Her **`/maude:save` and `/maude:rest` commands** do write the session digest: fanned out to `now.md` / `today-*.md` / `recent.md` in the auto-memory dir, and `remember.md` in the `.remember/` handoff format. `/maude:rest` also rewrites her letter to her next self.
+Her **hooks** only read — `~/.claude/projects/<slug>/memory/` (Anthropic auto-memory), `<project>/.remember/` (the companion `remember` plugin's pipeline), and her own `~/.claude/maude/` — never write, so the hot path stays fast and side-effect-free. One labeled exception, off the hot path: the **SessionEnd** hook may leave a one-line auto-note in `.remember/remember.md` — only at a true end, only into an *empty* slot, never over a real handoff. Her **`/maude:save` and `/maude:rest` commands** do write the session digest: fanned out to `now.md` / `today-*.md` / `recent.md` in the auto-memory dir, and `remember.md` in the `.remember/` handoff format. `/maude:rest` also rewrites her letter to her next self.
+
+---
+
+### The memory vault (beta)
+
+Maude keeps a local SQLite index of your memory notes and surfaces the
+*relevant* ones when you ask a question — alongside the session-start brief
+(which a later increment will slim down as paging proves out). It's rebuilt each session from your memory directory. Pure
+python3 stdlib — no `pip install`, no services. The DB lives at
+`.maude/plugin/vault.db` and is disposable (delete it and it rebuilds).
+
+### The eye (beta)
+
+Every ~25 tool calls, Maude takes one background glance at the session — a compact
+digest of recent activity, the pinned mission, and the notes her vault pages up — and
+asks *her own* model (a discovered `claude -p --model haiku`; nothing ships, nothing
+installs) whether anything's off: churn, drift, an unverified claim, a human running
+on fumes. Almost always the answer is silence. When it isn't, the next prompt carries
+one line — `**Maude:** …` — once, and that's all. No runner on the box → the eye
+simply stays dark.
 
 ---
 
