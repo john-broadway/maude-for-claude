@@ -1,6 +1,6 @@
-<!-- Version: 0.13.2 -->
+<!-- Version: 0.16.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-06-30 -->
+<!-- Revised: 2026-07-13 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,92 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.16.0 — 2026-07-13
+
+**Two new garments — the dispatch whisper and the exit stitch.**
+
+`maude-dispatch-watch.sh` (PreToolUse on `Agent|Task`): she now watches which
+MODEL Claude sends his sub-agents out on. A scout dispatched on a flagship tier
+— or with no model at all, which silently inherits whatever the main loop runs
+on — gets one whisper: match the model to the sub-task (scouts/searches → a
+small tier, build/review → a mid tier). Never blocks (wrong-sized is wasteful,
+not dangerous); once per day; logged as a drift catch so the session-start
+digest counts it with zero new wiring. 15 tests.
+
+`maude-session-end.sh` (SessionEnd — a TRUE end: exit, logout, `/clear` —
+unlike `Stop`, which fires at every assistant pause and so has always written
+nothing): logs the end + reason to the trace, stamps `.last_session_end` in
+care.json, and — if 3+ exchanges were never saved to a handoff AND the
+`.remember/remember.md` slot is empty — leaves a one-line, honestly-labeled
+auto-note pointing the next session at the trace. A non-empty handoff (a real
+`/maude:rest` write) is never touched. 12 tests.
+
+Under both: the uncaptured-work arithmetic (capture anchor + prompt count) is
+extracted into shared helpers in `_maude-common.sh`, and the SessionStart
+continuity guard is refactored onto them — the wake-side warning and the
+exit-side note now read the SAME definition of "uncaptured" and cannot
+disagree. Full fleet 31/31 test files green, shellcheck clean.
+
+---
+
+## v0.15.1 — 2026-07-13
+
+**Her voice moves in — "our house", never "your house".**
+
+Persona alignment across every surface she speaks from: the workspace is her home
+now, and she talks like it. The found report opens "Walked our house."; the walk
+instruction, skill, and agent personas carry the rule explicitly (*our* house,
+*our* workspace, never "your"); the voice examples follow ("Quite the collection
+we have."). No mechanism changes — hooks, gates, vault, and eye are untouched;
+this release is entirely who she is when she talks.
+
+---
+
+## v0.15.0 — 2026-07-13
+
+**The eye opens — she watches with her own model.**
+
+New `maude_eye` package + two hooks: every ~25 tool events (never more than once
+per 3 minutes), a background "blink" digests the session's recent activity, the
+pinned mission, and the notes her vault pages up, and asks HER model — a
+discovered `claude -p --model haiku`, run `--safe-mode --no-session-persistence
+--tools ""` so it sees the digest and nothing else, and leaves nothing on disk —
+for a strict-JSON verdict: churn, drift, an unverified claim, a human running on
+fumes. Almost always: silence. Otherwise the next prompt carries one contained
+line, `**Maude:** …`, once. No runner on the box → the eye stays dark; the plugin
+is exactly what it was.
+
+Born sealed (final review caught both Criticals pre-merge): a bare `-p` runner
+would have auto-loaded the user's whole CLAUDE.md hierarchy into every blink and
+persisted transcripts — now safe-mode; a hung runner would have become an
+immortal, multiplying orphan — now `timeout` (env `MAUDE_EYE_TIMEOUT`, default
+30s) + an atomic spawn-lock with 120s stale reclaim. A hard recursion guard makes
+all 30 registered hooks inert inside a blink, enforced by a completeness test
+that enumerates hooks.json live. Kill switch: `MAUDE_EYE=off`. First live blink:
+one real model round trip → silence. Correct.
+
+## v0.14.0 — 2026-07-13
+
+**The vault floor — she pages the right note instead of dumping the index.**
+
+New `maude_vault` package (python3 **stdlib only** — sqlite3 + FTS5; no pip, ever):
+a disposable index at `.maude/plugin/vault.db`, rebuilt each SessionStart from the
+user's memory notes, and a new UserPromptSubmit hook that pages the prompt and
+surfaces the top-K relevant notes (`Maude — from the vault…`). Measured against a
+real 397-note corpus: build 0.19s, ~1KB injected where the index dump was ~13KB —
+the right note, twelve times quieter. The old session-start brief still runs this
+increment; it slims down once paging proves out.
+
+Born hardened (final review findings, fixed pre-merge): snippet/description
+whitespace is collapsed and capped (200/300 chars) so note content can never break
+out of its block and masquerade as instructions; query cost is bounded (2000 chars
+/ 32 tokens, O(n) dedup); the prompt reaches the CLI via stdin (no 128KiB argv
+ceiling); one unreadable file no longer aborts a rebuild. Hooks degrade silently —
+no python3, no DB, corrupt DB: exit 0, not a peep. `make test` now runs the python
+suite and genuinely fails red. Locked decisions 4/5 amended for the stdlib-python +
+disposable-index reality (John's ruling, 2026-07-13); design + amendments in
+`docs/specs/2026-07-13-maude-body-light-first-design.md`.
 
 ## v0.13.2 — 2026-06-30
 

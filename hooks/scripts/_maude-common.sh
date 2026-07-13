@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # Shared helpers for Maude's hook scripts.
 # Sourced by every hook. Must be silent on success and fast.
+
+# Eye recursion guard: inside a blink subprocess every maude hook is inert.
+# NOTE: `exit` (not `return`) is deliberate — this file is SOURCED, and `exit`
+# in a sourced file terminates the sourcing hook script with status 0, which is
+# exactly the contract. A `return` would only stop the sourcing of this file and
+# let the hook continue half-initialized.
+[ -n "${MAUDE_EYE_BLINK:-}" ] && exit 0
+
 #
 # Layout convention:
 #
@@ -41,6 +49,9 @@ maude_project_dir() {
   # Claude Code exports CLAUDE_PROJECT_DIR to hook subprocesses but NOT to
   # the Bash tool subprocess. So slash-command-invoked scripts have to find
   # the workspace root themselves. Order:
+  #   0. $MAUDE_PROJECT_DIR_OVERRIDE if set (test seam only — lets a test
+  #      point a hook at a project dir without touching CLAUDE_PROJECT_DIR.
+  #      Unset in normal use, so default behavior is unchanged.)
   #   1. $CLAUDE_PROJECT_DIR if set (always for hooks)
   #   2. Walk up the process tree looking for the `claude` process; read its
   #      cwd. On Linux this matches what hooks see, regardless of how many
@@ -48,6 +59,10 @@ maude_project_dir() {
   #   3. Walk up the FILESYSTEM from pwd looking for an existing
   #      .maude/plugin/ closet (non-Linux fallback / edge cases).
   #   4. pwd (first-time setup, no closet anywhere).
+  if [ -n "${MAUDE_PROJECT_DIR_OVERRIDE:-}" ]; then
+    printf '%s' "$MAUDE_PROJECT_DIR_OVERRIDE"
+    return
+  fi
   if [ -n "${CLAUDE_PROJECT_DIR:-}" ]; then
     printf '%s' "$CLAUDE_PROJECT_DIR"
     return
@@ -85,7 +100,14 @@ maude_slug() {
 }
 
 # Anthropic auto-memory dir (the shared kitchen). Read-only when absent — never auto-create.
+# $MAUDE_MEM_DIR_OVERRIDE is a test seam (points a hook at a fixture mem dir
+# without needing a real ~/.claude/projects/<slug>/memory tree); unset in
+# normal use, so default behavior is unchanged.
 maude_mem_dir() {
+  if [ -n "${MAUDE_MEM_DIR_OVERRIDE:-}" ]; then
+    printf '%s' "$MAUDE_MEM_DIR_OVERRIDE"
+    return
+  fi
   printf '%s' "$HOME/.claude/projects/$(maude_slug)/memory"
 }
 
@@ -319,9 +341,68 @@ maude_digest_line() {
   return 0
 }
 
+# ─── Uncaptured-work arithmetic (shared by BOTH ends of the continuity loop) ──
+# "Capture anchor" = the freshest mtime among the continuity sources the wake
+# path actually reads: the Anthropic buffer ($MEM/now.md), the remember
+# plugin's live buffer (.remember/now.md), and the handoff (remember.md —
+# NON-EMPTY only: it's drained to empty by design, so an empty one carries
+# nothing and must not anchor). "Uncaptured" = user `prompt` events in the
+# durable trace newer than that anchor. The SessionStart guard (warn on a
+# stale wake) and the SessionEnd auto-note (leave a pointer at quit) both
+# read THESE — never their own copy — so the two ends of the loop can't
+# disagree on what "uncaptured" means.
+
+# Print the capture-anchor epoch (freshest capture mtime), or 0 if nothing
+# was ever captured.
+maude_capture_anchor_epoch() {
+  local proj mem remember f m anchor=0
+  proj="$(maude_project_dir)"
+  mem="$(maude_mem_dir)"
+  remember="$proj/.remember"
+  for f in "$mem/now.md" "$remember/now.md" "$remember/remember.md"; do
+    [ -s "$f" ] || continue
+    m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+    [ "$m" -gt "$anchor" ] && anchor="$m"
+  done
+  printf '%s' "$anchor"
+}
+
+# Print the count of prompt events newer than the capture anchor (0 without
+# jq / without a trace). Only trace files whose filename-date could hold a
+# post-anchor event are read (ISO timestamps sort lexically, so string compare
+# is correct for both the filename filter and the per-event compare).
+maude_uncaptured_prompt_count() {
+  command -v jq >/dev/null 2>&1 || { printf '0'; return 0; }
+  local tdir anchor since_iso since_date d f n
+  local -a files=()
+  tdir="$(maude_self_dir)/trace"
+  [ -d "$tdir" ] || { printf '0'; return 0; }
+  anchor="$(maude_capture_anchor_epoch)"
+  if [ "$anchor" -gt 0 ]; then
+    since_iso="$(date -u -d "@$anchor" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || { printf '0'; return 0; }
+  else
+    since_iso=""   # nothing captured at all → count ALL prior prompts
+  fi
+  since_date="${since_iso%%T*}"
+  for f in "$tdir"/today-*.jsonl; do
+    [ -e "$f" ] || continue
+    d="${f##*/today-}"; d="${d%.jsonl}"
+    if [ -z "$since_date" ] || [ "$d" = "$since_date" ] || [ "$d" \> "$since_date" ]; then
+      files+=("$f")
+    fi
+  done
+  [ "${#files[@]}" -gt 0 ] || { printf '0'; return 0; }
+  n="$(cat "${files[@]}" 2>/dev/null | jq -rs --arg since "$since_iso" '
+    [ .[] | select(.kind=="prompt" and ((.ts // "") > $since)) ] | length')"
+  printf '%s' "${n:-0}"
+}
+
 # The continuity guard — the closing loop the continuity chain was missing. The Stop hook
 # writes NO handoff (it can't tell a real session-end from a mid-turn pause), so a clean
-# quit without /maude:rest could leave the next session under-informed. This runs at
+# quit without /maude:rest could leave the next session under-informed. (The SessionEnd
+# auto-note now covers the common real-end case; this guard stays as the wake-side
+# backstop — SessionEnd may not fire on a crash, and the note needs an empty slot.)
+# This runs at
 # SessionStart and reconciles the last CAPTURE against real ACTIVITY. "Last capture" is
 # the freshest mtime among the continuity sources the wake path actually reads: the
 # Anthropic buffer ($MEM/now.md), the remember plugin's live buffer ($REMEMBER/now.md),
@@ -334,43 +415,17 @@ maude_digest_line() {
 # current and the guard stays quiet. jq-absent → no-op. Prints the warning (if any).
 maude_continuity_guard() {
   command -v jq >/dev/null 2>&1 || return 0
-  local proj mem remember handoff tdir since_iso since_date n f d m anchor
-  local -a files=()
+  local remember tdir n anchor
   local threshold=3
-  proj="$(maude_project_dir)"
-  mem="$(maude_mem_dir)"
-  remember="$proj/.remember"
-  handoff="$remember/remember.md"
+  remember="$(maude_project_dir)/.remember"
   tdir="$(maude_self_dir)/trace"
   # The remember plugin is the continuity substrate this guards; no .remember dir → N/A.
   [ -d "$remember" ] && [ -d "$tdir" ] || return 0
 
-  # Anchor = freshest mtime among the sources the wake path reads (non-empty only).
-  anchor=0
-  for f in "$mem/now.md" "$remember/now.md" "$handoff"; do
-    [ -s "$f" ] || continue
-    m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
-    [ "$m" -gt "$anchor" ] && anchor="$m"
-  done
-  if [ "$anchor" -gt 0 ]; then
-    since_iso="$(date -u -d "@$anchor" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || return 0
-  else
-    since_iso=""   # nothing captured at all → count ALL prior prompts
-  fi
-  since_date="${since_iso%%T*}"
-
-  # Only trace files whose day could hold a prompt after the anchor (ISO sorts lexically).
-  for f in "$tdir"/today-*.jsonl; do
-    [ -e "$f" ] || continue
-    d="${f##*/today-}"; d="${d%.jsonl}"
-    if [ -z "$since_date" ] || [ "$d" = "$since_date" ] || [ "$d" \> "$since_date" ]; then
-      files+=("$f")
-    fi
-  done
-  [ "${#files[@]}" -gt 0 ] || return 0
-
-  n="$(cat "${files[@]}" 2>/dev/null | jq -rs --arg since "$since_iso" '
-    [ .[] | select(.kind=="prompt" and ((.ts // "") > $since)) ] | length')"
+  # Anchor + count via the shared uncaptured-work helpers (one definition,
+  # shared with the SessionEnd auto-note — see maude_uncaptured_prompt_count).
+  anchor="$(maude_capture_anchor_epoch)"
+  n="$(maude_uncaptured_prompt_count)"
   [ "${n:-0}" -ge "$threshold" ] || return 0
 
   if [ "$anchor" -gt 0 ]; then

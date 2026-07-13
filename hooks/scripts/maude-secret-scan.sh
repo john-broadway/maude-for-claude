@@ -20,6 +20,12 @@
 
 set +e
 
+# Eye recursion guard: inert inside a blink subprocess. This is the one
+# registered hook that doesn't source _maude-common.sh (deliberately
+# standalone), so it can't inherit that file's guard — this inline copy is
+# the surgical fix rather than pulling in the whole shared file.
+[ -n "${MAUDE_EYE_BLINK:-}" ] && exit 0
+
 # --- read the submitted prompt (match the house convention used by sibling hooks) ---
 PROMPT=""
 if command -v jq >/dev/null 2>&1; then

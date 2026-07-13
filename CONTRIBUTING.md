@@ -14,7 +14,7 @@ Contributions should respect those same principles: minimal complexity, no new d
 .claude-plugin/    plugin.json + marketplace.json
 agents/            partner subagent (markdown)
 commands/          9 slash commands (markdown)
-hooks/             7 lifecycle hooks + bash scripts
+hooks/             8 lifecycle hooks + bash scripts
 skills/            broad-trigger skill (markdown)
 scripts/           audit + release/publish helpers (maude-verify.sh, release.sh, check-satellites.sh)
 tests/             bash test harness for every hook script

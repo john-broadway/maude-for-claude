@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# Tests for hooks/scripts/maude-dispatch-watch.sh — the sub-agent model whisper.
+#
+# The documented drift: sub-work (scouts, greps, reads) dispatched on the
+# flagship model — real tokens wasted on work a small model does fine. The
+# whisper fires when an Agent/Task dispatch carries a flagship model OR no
+# model at all (which inherits the flagship main loop). Never blocks.
+
+set +e
+. "$(dirname "$0")/lib.sh"
+setup_test_env
+
+WATCH="$HOOKS_DIR/maude-dispatch-watch.sh"
+
+# Run the watch against a synthetic Agent dispatch. Sets $RC and $ERR.
+# Usage: run_watch '<tool_input json>' [tool_name]
+run_watch() {
+  local args="$1" tool="${2:-Agent}"
+  ERR="$(make_mcp_tool_input "$tool" "$args" | bash "$WATCH" 2>&1 >/dev/null)"
+  RC=$?
+}
+
+# Reset the daily cooldown between scenarios (single key, like drift-watch).
+clear_cooldown() {
+  local care; care="$(care_path)"
+  [ -f "$care" ] && jq 'del(.dispatch_warned)' "$care" > "$care.tmp" && mv "$care.tmp" "$care"
+}
+
+# ── Whisper fires: flagship / unset ────────────────────────────────────
+
+test_start "whispers on explicit flagship model (opus)"
+run_watch '{"description":"search the repo","prompt":"grep stuff","model":"opus"}'
+assert_contains "$ERR" "Maude:" "stderr"
+
+test_start "flagship whisper never blocks (exit 0)"
+assert_exit "$RC" "0" "exit"
+
+test_start "flagship whisper names the drift (model-to-task match)"
+assert_contains "$ERR" "model" "stderr"
+
+test_start "whispers on fable too"
+clear_cooldown
+run_watch '{"description":"scout","prompt":"find files","model":"fable"}'
+assert_contains "$ERR" "Maude:" "stderr"
+
+test_start "whispers when model is unset (inherits the flagship)"
+clear_cooldown
+run_watch '{"description":"scout","prompt":"find files"}'
+assert_contains "$ERR" "Maude:" "stderr"
+
+test_start "unset-model whisper says the model was not chosen"
+assert_contains "$ERR" "no model" "stderr"
+
+test_start "whisper is logged to the trace as a drift catch"
+TRACE_LINE="$(grep '"kind":"drift"' "$(trace_path)" | grep dispatch | head -1)"
+assert_contains "$TRACE_LINE" "dispatch" "trace"
+
+# ── Silent: right-sized dispatches ─────────────────────────────────────
+
+test_start "silent on haiku"
+clear_cooldown
+run_watch '{"description":"scout","prompt":"find files","model":"haiku"}'
+assert_eq "$ERR" "" "stderr empty"
+
+test_start "silent on sonnet"
+run_watch '{"description":"build a thing","prompt":"implement","model":"sonnet"}'
+assert_eq "$ERR" "" "stderr empty"
+
+test_start "silent dispatches still exit 0"
+assert_exit "$RC" "0" "exit"
+
+# ── Cooldown: once per day ─────────────────────────────────────────────
+
+test_start "second flagship dispatch same day is silent (daily cooldown)"
+clear_cooldown
+run_watch '{"description":"a","prompt":"b","model":"opus"}'
+run_watch '{"description":"c","prompt":"d","model":"opus"}'
+assert_eq "$ERR" "" "stderr empty on repeat"
+
+test_start "cooldown is shared across flagship and unset (one drift class)"
+run_watch '{"description":"c","prompt":"d"}'
+assert_eq "$ERR" "" "stderr empty"
+
+# ── Defensive guards ───────────────────────────────────────────────────
+
+test_start "non-dispatch tool input is ignored"
+clear_cooldown
+run_watch '{"command":"ls"}' "Bash"
+assert_eq "$ERR" "" "stderr empty"
+
+test_start "empty stdin is inert"
+ERR="$(printf '' | bash "$WATCH" 2>&1 >/dev/null)"
+RC=$?
+assert_exit "$RC" "0" "exit"
+
+test_start "no jq → inert exit 0"
+NOJQ_BIN="$(make_nojq_bin)"
+ERR="$(make_mcp_tool_input "Agent" '{"model":"opus"}' | PATH="$NOJQ_BIN" bash "$WATCH" 2>&1 >/dev/null)"
+RC=$?
+assert_exit "$RC" "0" "exit"
+
+teardown_test_env
+print_summary
