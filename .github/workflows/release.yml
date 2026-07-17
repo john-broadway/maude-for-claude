@@ -1,0 +1,41 @@
+# Maude for Claude — Release
+# Copyright (c) 2026 John Broadway
+# Licensed under the Apache License, Version 2.0
+# Authors: John Broadway, Claude (Anthropic)
+#
+# Mint the GitHub Release page when a version tag lands (#38): the Releases tab
+# must never fall behind the tags again. The CHANGELOG is the single source —
+# scripts/release-notes.sh renders the entry, this workflow publishes it.
+# Idempotent: an existing Release is left untouched. A tag with no CHANGELOG
+# entry fails LOUD (release-notes.sh exits 1) — a Release page with an empty
+# body is drift wearing a bow.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the Release page
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Create the Release page from the CHANGELOG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release exists for $TAG — nothing to do."
+            exit 0
+          fi
+          bash scripts/release-notes.sh "${TAG#v}" > /tmp/notes.md
+          gh release create "$TAG" --title "$TAG" --notes-file /tmp/notes.md

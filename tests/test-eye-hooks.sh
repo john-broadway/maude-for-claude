@@ -93,5 +93,24 @@ test_start "second pickup is silent"
 OUT2="$(bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
 assert_eq "$OUT2" "" "second pickup is silent"
 
+# 6) staleness: a whisper past its TTL never wears a fresh voice (issue #35)
+test_start "stale whisper is dropped, not printed"
+printf 'watch the thing that already resolved\n' > "$SELF/eye-whisper.txt"
+touch -d '10 minutes ago' "$SELF/eye-whisper.txt"
+OUT3="$(bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
+assert_eq "$OUT3" "" "stale whisper is dropped"
+
+test_start "stale drop clears the file (no zombie on next pickup)"
+assert_eq "$(cat "$SELF/eye-whisper.txt" 2>/dev/null)" "" "stale whisper cleared"
+
+test_start "stale drop leaves a trace receipt"
+assert_contains "$(cat "$SELF/trace/"today-*.jsonl 2>/dev/null)" "stale whisper dropped" "drop is auditable"
+
+test_start "TTL is configurable (MAUDE_EYE_WHISPER_TTL)"
+printf 'still warm under a long TTL\n' > "$SELF/eye-whisper.txt"
+touch -d '10 minutes ago' "$SELF/eye-whisper.txt"
+OUT4="$(MAUDE_EYE_WHISPER_TTL=1200 bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
+assert_contains "$OUT4" "still warm under a long TTL" "long TTL keeps it fresh"
+
 teardown_test_env
 print_summary; exit $FAILED

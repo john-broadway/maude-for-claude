@@ -342,7 +342,9 @@ maude_digest_line() {
       else "" end
   ')"
 
-  [ -n "$line" ] && printf 'Maude caught since you last looked: %s.\n' "$line"
+  # Every count carries a path to its receipts (issue #37): a folded tally
+  # with no way to see the underlying catches is a claim taken on faith.
+  [ -n "$line" ] && printf 'Maude caught since you last looked: %s. Receipts: /maude:notice\n' "$line"
   return 0
 }
 

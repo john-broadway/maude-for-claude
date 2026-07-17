@@ -112,6 +112,28 @@ DIGEST_LINE="$(maude_digest_line)"
 # the closing loop so a forgotten /maude:rest degrades continuity loudly, not silently.
 CONTINUITY_LINE="$(maude_continuity_guard)"
 
+# Cushion line (issue #36): render the last flip's stamp — count + age, one line.
+# No re-scan at wake (the flip walks every repo; too heavy for session-start);
+# absent stamp = the nudge, so the ritual can't quietly reapply its own problem
+# ("nobody checks the places nobody sweeps") to itself.
+CUSHION_LINE=""
+CUSHION_STAMP="$(maude_self_dir)/cushions-last"
+if [ -f "$CUSHION_STAMP" ]; then
+  read -r C_EPOCH C_COUNT < "$CUSHION_STAMP" 2>/dev/null
+  # Both fields must be non-empty and numeric — the ':' probe catches a missing
+  # field (leading/trailing colon) that bare concatenation would let slip.
+  case "${C_EPOCH}:${C_COUNT}" in
+    *[!0-9:]*|:*|*:) : ;;  # malformed stamp → say nothing rather than something wrong
+    *)
+      C_AGE_D=$(( ( $(date +%s) - C_EPOCH ) / 86400 ))
+      if [ "$C_AGE_D" -lt 1 ]; then C_WHEN="today"; else C_WHEN="${C_AGE_D}d ago"; fi
+      C_PL="s"; [ "$C_COUNT" = "1" ] && C_PL=""
+      CUSHION_LINE="Cushions: $C_COUNT value candidate$C_PL — last flipped $C_WHEN." ;;
+  esac
+else
+  CUSHION_LINE="Cushions: never flipped — /maude:cushions when you have a minute."
+fi
+
 GREETING="$(maude_greeting)"
 {
   [ -n "$GREETING" ] && printf '%s ' "$GREETING"
@@ -126,6 +148,7 @@ GREETING="$(maude_greeting)"
   [ -n "$PATTERN_HINT" ]      && printf '  Cross-project pattern: %s\n' "$PATTERN_HINT"
   [ -n "$LETTER_LINE" ]       && printf '  Letter from my last self: %s\n' "$LETTER_LINE"
   [ "$TOPIC_COUNT" -gt 0 ]    && printf '  %s memory file(s) on hand.\n' "$TOPIC_COUNT"
+  [ -n "$CUSHION_LINE" ]      && printf '  %s\n' "$CUSHION_LINE"
   [ -z "$HAS_MAP" ] && printf '  No house-map yet — run /maude:found.\n'
 } 2>/dev/null
 

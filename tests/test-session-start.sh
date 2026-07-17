@@ -298,6 +298,32 @@ PVOUT="$(printf '{}' | CLAUDE_PROJECT_DIR="$PV/proj" HOME="$PV/home" bash "$STAR
 assert_contains "$PVOUT" "Maude here." "greets on a pristine project (her voice is guaranteed)"
 rm -rf "$PV"
 
+# ── The brief renders the last cushion-flip's stamp (issue #36) ──────
+test_start "brief renders the cushion stamp"
+printf '%s 3\n' "$(date +%s)" > "$TEST_TMP/.maude/plugin/cushions-last"
+run_start
+assert_contains "$OUT" "Cushions: 3 value candidates" "cushion count surfaces"
+
+test_start "a fresh flip reads as today"
+assert_contains "$OUT" "last flipped today" "fresh stamp age"
+
+test_start "an old stamp shows its age in days"
+printf '%s 1\n' "$(( $(date +%s) - 6*86400 ))" > "$TEST_TMP/.maude/plugin/cushions-last"
+run_start
+assert_contains "$OUT" "Cushions: 1 value candidate" "singular count"
+assert_contains "$OUT" "last flipped 6d ago" "aged stamp"
+
+test_start "no stamp -> the never-flipped nudge"
+rm -f "$TEST_TMP/.maude/plugin/cushions-last"
+run_start
+assert_contains "$OUT" "never flipped" "nudge lands"
+
+test_start "a malformed stamp says nothing rather than something wrong"
+printf '1751234567\n' > "$TEST_TMP/.maude/plugin/cushions-last"   # epoch only, no count
+run_start
+assert_not_contains "$OUT" "value candidate" "no half-rendered cushion line"
+assert_not_contains "$OUT" "never flipped" "a present-but-bad stamp is not 'never'"
+
 print_summary
 teardown_test_env
 exit $FAILED

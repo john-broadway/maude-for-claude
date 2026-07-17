@@ -59,7 +59,20 @@ case "$CMD" in
     ;;
   whisper)
     if [ -s "$WHISPER_FILE" ]; then
-      printf '**Maude:** %s\n' "$(head -c 400 "$WHISPER_FILE" | tr '\n' ' ')"
+      # Freshness by write-time (the blink's mv stamps it): a whisper is
+      # advisory and asynchronous — one generated many calls ago must not
+      # wear a fresh voice (issue #35). Weight the gate over the whisper.
+      # stat failure -> BORN=0 -> treated as fresh (fail-open to the old
+      # behavior; a false print beats a silent swallow of a live catch).
+      TTL="${MAUDE_EYE_WHISPER_TTL:-300}"
+      BORN="$(stat -c %Y "$WHISPER_FILE" 2>/dev/null || echo 0)"
+      NOW="$(date +%s)"
+      if [ "$BORN" -gt 0 ] && [ $((NOW - BORN)) -gt "$TTL" ]; then
+        # Content-free receipt: the trace is metadata-only by design.
+        maude_log_trace "eye" "stale whisper dropped (aged $((NOW - BORN))s > ttl ${TTL}s)"
+      else
+        printf '**Maude:** %s\n' "$(head -c 400 "$WHISPER_FILE" | tr '\n' ' ')"
+      fi
       : > "$WHISPER_FILE" 2>/dev/null
     fi
     ;;
