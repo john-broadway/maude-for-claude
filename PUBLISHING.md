@@ -37,14 +37,24 @@ else must be made to agree with it.
 | `john-broadway/john-broadway.github.io` | `maude/index.html` | **three places**: (1) front-matter `description:` version, (2) `.subtitle` `&middot; vX &middot;`, (3) **add a new `<h2>vX &mdash; …</h2>` release-highlight block at the top of the highlights series** (keep the prior one below as history) |
 
 > Note: the **internal set** is intentionally excluded from the public repo — it lives only on
-> local + gitea: `docs/superpowers/` (SDD build scaffolding), `docs/VISION.md` (the family
-> vision — names people), `docs/dogfood/` (living tuning logs), and any spec whose header marks
-> it internal (currently `docs/specs/2026-07-13-maude-body-light-first-design.md`). The public
-> tree = local `main` minus the internal set. Test fixtures must be SYNTHETIC — never excerpts
-> of a real workspace's memory notes (swapped 2026-07-13, same class as the `/srv/app` path
-> fixtures).
+> local + gitea, and its manifest is **`.publishignore`** (one path per line; the file excludes
+> itself — the list of what's private is itself private). Currently: `docs/superpowers/` (SDD
+> build scaffolding), `docs/VISION.md` (the family vision — names people), `docs/dogfood/`
+> (living tuning logs), and any spec whose header marks it internal. The public tree = local
+> `main` minus the internal set; `ship.sh build` strips it mechanically. Test fixtures must be
+> SYNTHETIC — never excerpts of a real workspace's memory notes (swapped 2026-07-13, same
+> class as the `/srv/app` path fixtures).
 
 ## The push protocol
+
+> **The one-button rail (2026-07-17): `scripts/ship.sh`.** It mechanizes steps 1–4:
+> `ship.sh build` makes the clean public branch off `origin/main` (internal set stripped per
+> `.publishignore`), runs the **leak-audit locally** (the guard's own shapes — a block never
+> costs John a `!`), runs the gates, and prints John's single push line. After his push,
+> `ship.sh open --review "<second-lens reference>"` opens the PR with the review documented
+> and **auto-merge armed** — checks green, it merges itself. Without `--review` the PR opens
+> as a **DRAFT**: the no-self-merge law is enforced by the tool, not by memory. The manual
+> recipe below remains as the reference for what the tool does.
 
 ### 0. Land it privately first
 Normal dev flow: feature branch → tests green (`make test` / `make lint` / `make verify`) →
@@ -81,7 +91,16 @@ the pre-push guard's known-fixture flag):
 ! cd <repo> && ALLOW_PUBLIC_PUSH=1 git push -u origin publish-vX
 ```
 
-### 4. PR → CI → merge → tag (Claude may drive — gh API is classifier-allowed)
+### 4. PR → CI → merge → tag (Claude may drive the MECHANICS — the merge needs a second lens)
+
+Claude opening AND merging his own PR minutes apart is a push wearing PR
+clothes — Proximo's culture (review-before-merge, always) applies here too.
+**The merge happens only when one of these is true:** (a) the diff carries a
+documented independent review (the adversarial pass on the source branch
+counts — name it in the PR body), or (b) John's go on this specific PR.
+Green CI alone is not a second lens. (Earned 2026-07-17: PRIVACY.md went
+public self-merged with only CI between draft and the world — content was
+fine, process was not.)
 ```bash
 gh pr create --base main --head publish-vX --title "release: vX — …" --body "…"
 gh pr checks <PR#> --watch          # lint · verify · tests · gitleaks must pass
