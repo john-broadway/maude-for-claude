@@ -51,10 +51,10 @@ git -C "$W/clean" push -q origin HEAD 2>/dev/null
 # ── Fixture: scratch dir with old-and-substantial vs fresh vs tiny ───
 mkdir -p "$W/.scratch"
 head -c 1024 /dev/zero | tr '\0' 'x' > "$W/.scratch/old-proposal.md"
-touch -d '20 days ago' "$W/.scratch/old-proposal.md"
+touch_ago $(( 20*86400 )) "$W/.scratch/old-proposal.md"
 head -c 1024 /dev/zero | tr '\0' 'y' > "$W/.scratch/fresh-notes.md"
 printf 'tiny\n' > "$W/.scratch/old-tiny.md"
-touch -d '20 days ago' "$W/.scratch/old-tiny.md"
+touch_ago $(( 20*86400 )) "$W/.scratch/old-tiny.md"
 
 test_start "cushions exits 0 (a report, not a gate)"
 run_cushions

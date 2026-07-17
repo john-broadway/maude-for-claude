@@ -203,6 +203,41 @@ source_common() {
   . "$HOOKS_DIR/_maude-common.sh"
 }
 
+# Portable mtime setters — GNU `touch -d` date-strings don't exist on
+# macOS/BSD, so tests set mtimes via python3 stdlib os.utime instead
+# (python3 is already a plugin dependency: the vault floor).
+# Argument order mirrors `touch -d WHEN FILE...`: timestamp first.
+
+# touch_ago <seconds-ago> <file>... — mtime = now - N; creates missing files.
+touch_ago() {
+  local ago="$1"; shift
+  local f
+  for f in "$@"; do [ -e "$f" ] || : > "$f"; done
+  python3 - "$ago" "$@" <<'PY'
+import os, sys, time
+t = time.time() - float(sys.argv[1])
+for p in sys.argv[2:]:
+    os.utime(p, (t, t))
+PY
+}
+
+# touch_at <epoch|ISO8601[Z]> <file>... — absolute mtime; creates missing files.
+touch_at() {
+  local when="$1"; shift
+  local f
+  for f in "$@"; do [ -e "$f" ] || : > "$f"; done
+  python3 - "$when" "$@" <<'PY'
+import os, sys, datetime
+w = sys.argv[1]
+try:
+    t = float(w)
+except ValueError:
+    t = datetime.datetime.fromisoformat(w.replace('Z', '+00:00')).timestamp()
+for p in sys.argv[2:]:
+    os.utime(p, (t, t))
+PY
+}
+
 # Build a PATH directory containing every common binary EXCEPT jq, so a test can
 # exercise the jq-absent degradation path that the plugin promises to handle.
 # Prints the dir. Usage: NOJQ="$(make_nojq_bin)"; PATH="$NOJQ" bash "$SCRIPT"

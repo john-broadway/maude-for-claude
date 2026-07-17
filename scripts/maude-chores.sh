@@ -187,7 +187,7 @@ chore_run_c2_shelves() {
     # Stage for re-roll ONLY .remember/ dailies that are covered (anchor newer).
     case "$f" in
       "$(maude_remember_dir)"/today-*.md)
-        m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+        m="$(maude_mtime "$f")"
         if [ "$anchor" -gt "$m" ]; then printf '%s\n' "$f" >> "$staged"; stagedn=$((stagedn+1)); fi ;;
     esac
   done < <(c2_pile_candidates)
@@ -287,7 +287,7 @@ chore_run_c4_claudemd() {
   local cm days n
   cm="$(maude_project_dir)/CLAUDE.md"
   [ -f "$cm" ] || { chore_fail c4-claudemd "CLAUDE.md missing"; return 1; }
-  days="$(( ( $(date +%s) - $(stat -c %Y "$cm" 2>/dev/null || echo 0) ) / 86400 ))"
+  days="$(( ( $(date +%s) - $(maude_mtime "$cm") ) / 86400 ))"
   n="$(find "$(maude_self_dir)/trace" -maxdepth 1 -name 'today-*.jsonl' -newer "$cm" 2>/dev/null | wc -l | tr -d ' ')"
   chore_stamp c4-claudemd --arg note "CLAUDE.md stale: ${days}d old, ${n} sessions since" \
     '.["c4-claudemd"] += {status:"undone", note:$note, cost:{model:"none", runtime_s:0}}'

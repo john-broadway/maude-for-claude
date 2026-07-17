@@ -12,7 +12,7 @@ test_start "no CLAUDE.md → not due"
 bash "$CH" detect >/dev/null 2>&1
 assert_eq "$(jq -r '.["c4-claudemd"].due' "$LEDGER")" "false" "no CLAUDE.md not due"
 
-printf '# proj\n' > "$TEST_TMP/CLAUDE.md"; touch -d '60 days ago' "$TEST_TMP/CLAUDE.md"
+printf '# proj\n' > "$TEST_TMP/CLAUDE.md"; touch_ago $(( 60*86400 )) "$TEST_TMP/CLAUDE.md"
 
 test_start "old but quiet → not due"
 bash "$CH" detect >/dev/null 2>&1

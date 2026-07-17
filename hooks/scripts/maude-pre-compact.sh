@@ -54,7 +54,7 @@ if [ -d "$REMEMBER" ] && [ ! -f "$REMEMBER/tmp/save.lock" ] && [ -n "$NOW_FILE" 
   HANDOFF="$REMEMBER/remember.md"
   WRITE_HANDOFF=1
   if [ -s "$HANDOFF" ]; then
-    HANDOFF_AGE=$(( $(date +%s) - $(stat -c %Y "$HANDOFF" 2>/dev/null || echo 0) ))
+    HANDOFF_AGE=$(( $(date +%s) - $(maude_mtime "$HANDOFF") ))
     [ "$HANDOFF_AGE" -lt 600 ] && WRITE_HANDOFF=0
   fi
 

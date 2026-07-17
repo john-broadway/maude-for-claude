@@ -37,7 +37,7 @@ case "$CMD" in
       # the lock dir's own mtime, not any counter, so a slow-but-alive worker
       # is never mistaken for dead.
       if [ -d "$LOCK" ]; then
-        LOCK_MTIME="$(stat -c %Y "$LOCK" 2>/dev/null || echo "$NOW")"
+        LOCK_MTIME="$(maude_mtime "$LOCK" "$NOW")"
         if [ $((NOW - LOCK_MTIME)) -ge 120 ]; then
           rmdir "$LOCK" 2>/dev/null
         fi
@@ -65,7 +65,7 @@ case "$CMD" in
       # stat failure -> BORN=0 -> treated as fresh (fail-open to the old
       # behavior; a false print beats a silent swallow of a live catch).
       TTL="${MAUDE_EYE_WHISPER_TTL:-300}"
-      BORN="$(stat -c %Y "$WHISPER_FILE" 2>/dev/null || echo 0)"
+      BORN="$(maude_mtime "$WHISPER_FILE")"
       NOW="$(date +%s)"
       if [ "$BORN" -gt 0 ] && [ $((NOW - BORN)) -gt "$TTL" ]; then
         # Content-free receipt: the trace is metadata-only by design.

@@ -359,6 +359,33 @@ maude_digest_line() {
 # read THESE — never their own copy — so the two ends of the loop can't
 # disagree on what "uncaptured" means.
 
+# ── Portability shims (issue #39) ───────────────────────────────────────
+# macOS/BSD userland speaks different flags than GNU coreutils. All mtime
+# reads and date parsing go through these two helpers: GNU branch first,
+# BSD fallback. Lines carrying a GNU-only construct are tagged
+# `# portability-shim` — tests/test-portability.sh forbids them anywhere else.
+
+# Print FILE's mtime as an epoch, or DEFAULT (0 if omitted) when unreadable.
+# Always exits 0 — call sites treat "no mtime" as a value, not an error.
+maude_mtime() {
+  local f="$1" d="${2:-0}" m
+  m="$(stat -c %Y "$f" 2>/dev/null)"                 # portability-shim (GNU)
+  [ -n "$m" ] || m="$(stat -f %m "$f" 2>/dev/null)"  # portability-shim (BSD)
+  if [ -n "$m" ]; then printf '%s' "$m"; else printf '%s' "$d"; fi
+}
+
+# Print the epoch for a YYYY-MM-DD date at local midnight; empty output and
+# rc 1 on garbage/empty input. Both branches parse the same T00:00:00 form so
+# GNU and BSD agree on the answer.
+maude_date_epoch() {
+  local d="$1" e
+  [ -n "$d" ] || return 1
+  e="$(date -d "${d}T00:00:00" +%s 2>/dev/null)"                                # portability-shim (GNU)
+  [ -n "$e" ] || e="$(date -j -f '%Y-%m-%dT%H:%M:%S' "${d}T00:00:00" +%s 2>/dev/null)"  # portability-shim (BSD)
+  [ -n "$e" ] || return 1
+  printf '%s' "$e"
+}
+
 # Print the capture-anchor epoch (freshest capture mtime), or 0 if nothing
 # was ever captured.
 maude_capture_anchor_epoch() {
@@ -368,7 +395,7 @@ maude_capture_anchor_epoch() {
   remember="$proj/.remember"
   for f in "$mem/now.md" "$remember/now.md" "$remember/remember.md"; do
     [ -s "$f" ] || continue
-    m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+    m="$(maude_mtime "$f")"
     [ "$m" -gt "$anchor" ] && anchor="$m"
   done
   printf '%s' "$anchor"
@@ -527,7 +554,7 @@ maude_retention_sweep() {
   if [ -d "$self/snapshots" ]; then
     anchor="$(maude_capture_anchor_epoch)"
     while IFS= read -r f; do
-      m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+      m="$(maude_mtime "$f")"
       [ "$anchor" -gt "$m" ] && rm -f "$f" 2>/dev/null
     done < <(find "$self/snapshots" -maxdepth 1 -type f -name 'precompact-*.md' -mtime +"$days" 2>/dev/null)
   fi

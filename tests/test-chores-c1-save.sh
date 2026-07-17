@@ -81,9 +81,9 @@ assert_contains "$(cat "$REMEMBER")" "## Maude" "append lands under Maude headin
 # older, .remember/now.md newer.
 NOWEPOCH="$(date +%s)"
 printf '# handoff by John\nrace-survivor content\n' > "$REMEMBER"
-touch -d "@$((NOWEPOCH - 100))" "$REMEMBER"
+touch_at "$((NOWEPOCH - 100))" "$REMEMBER"
 printf 'in progress\n' > "$TEST_TMP/.remember/now.md"
-touch -d "@$NOWEPOCH" "$TEST_TMP/.remember/now.md"
+touch_at "$NOWEPOCH" "$TEST_TMP/.remember/now.md"
 test_start "race: touching a newer anchor sibling after a fresh remember.md must not replace it"
 MAUDE_CHORE_RUNNER_OVERRIDE="$STUB" bash "$CH" run c1-missed-save "$TEST_TMP/t.jsonl" >/dev/null 2>&1
 assert_contains "$(cat "$REMEMBER")" "race-survivor content" "race: human content survives a newer anchor sibling"

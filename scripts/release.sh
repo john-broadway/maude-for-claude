@@ -48,7 +48,7 @@ t="$(mktemp)"; jq --arg v "$V" '.plugins[0].version=$v' .claude-plugin/marketpla
 
 # 2. propagate every markdown Version: header
 while IFS= read -r f; do
-  [ -n "$f" ] && sed -i -E "s|<!-- Version: [0-9][0-9A-Za-z.-]* -->|<!-- Version: $V -->|" "$f"
+  [ -n "$f" ] && sed -i.bak -E "s|<!-- Version: [0-9][0-9A-Za-z.-]* -->|<!-- Version: $V -->|" "$f" && rm -f "$f.bak"
 done < <(grep -rlE '<!-- Version: [0-9]' --include='*.md' . \
   --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
 
@@ -56,14 +56,14 @@ done < <(grep -rlE '<!-- Version: [0-9]' --include='*.md' . \
 #     .claude/CLAUDE.md carries no HTML-comment header, so step 2 never touched it
 #     and it drifted (stranded at 0.8.0). This stamps it from the same source.
 while IFS= read -r f; do
-  [ -n "$f" ] && sed -i -E "s|(> \*\*Version:\*\* )[0-9][0-9A-Za-z.-]*|\1$V|" "$f"
+  [ -n "$f" ] && sed -i.bak -E "s|(> \*\*Version:\*\* )[0-9][0-9A-Za-z.-]*|\1$V|" "$f" && rm -f "$f.bak"
 done < <(grep -rlE '> \*\*Version:\*\* [0-9]' --include='*.md' . \
   --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
 
 # 3. stamp Revised dates to today (release-wide refresh; the convention is "current
 #    as of this release", which also keeps verify's <=14-day check green)
 while IFS= read -r f; do
-  [ -n "$f" ] && sed -i -E "s|<!-- Revised: [0-9]{4}-[0-9]{2}-[0-9]{2}[^>]*-->|<!-- Revised: $TODAY -->|" "$f"
+  [ -n "$f" ] && sed -i.bak -E "s|<!-- Revised: [0-9]{4}-[0-9]{2}-[0-9]{2}[^>]*-->|<!-- Revised: $TODAY -->|" "$f" && rm -f "$f.bak"
 done < <(grep -rlE '<!-- Revised: [0-9]' --include='*.md' . \
   --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
 
