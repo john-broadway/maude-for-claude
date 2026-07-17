@@ -83,7 +83,7 @@ if [ -f .claude-plugin/plugin.json ] && command -v jq >/dev/null 2>&1; then
 
     # CHANGELOG should have an entry for the canonical version
     if [ -f CHANGELOG.md ]; then
-      if ! grep -qE "^## v$CANONICAL\b" CHANGELOG.md; then
+      if ! grep -qE "^## v$CANONICAL([^0-9.]|\$)" CHANGELOG.md; then
         emit "CHANGELOG.md is missing a v$CANONICAL section header"
       fi
     fi

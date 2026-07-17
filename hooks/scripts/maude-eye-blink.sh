@@ -51,9 +51,10 @@ fi
 [ -n "$RUNNER" ] || exit 0
 
 # Wall-clock bound: a hung runner must never block the caller or outlive the
-# session it was spawned from. No `timeout` binary -> dark is safer than an
-# orphaned blink that lives on unbounded (env-overridable for tests).
-command -v timeout >/dev/null 2>&1 || exit 0
+# session it was spawned from. maude_timeout bounds via timeout(1) or python3
+# (macOS ships no timeout binary — issue #39 wave 2 undarkened the eye there).
+# If NEITHER exists, dark is still safer than an unbounded orphaned blink.
+command -v timeout >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1 || exit 0  # portability-shim
 BLINK_TIMEOUT="${MAUDE_EYE_TIMEOUT:-30}"
 
 PROMPT="You are Maude's eye — a quiet observer watching Claude (an AI coding agent) work.
@@ -81,10 +82,10 @@ if [ "$RUNNER" = "claude" ]; then
   # (global + project) to the model. --no-session-persistence: this call must
   # not leave a resumable transcript (containing the digest) on disk.
   # --tools "": the eye only classifies text; it never needs tool access.
-  RAW="$(printf '%s' "$PROMPT" | MAUDE_EYE_BLINK=1 timeout "$BLINK_TIMEOUT" \
+  RAW="$(printf '%s' "$PROMPT" | MAUDE_EYE_BLINK=1 maude_timeout "$BLINK_TIMEOUT" \
     claude -p --model "${MAUDE_EYE_MODEL:-haiku}" --safe-mode --no-session-persistence --tools "" 2>/dev/null | head -c 2000)"
 else
-  RAW="$(printf '%s' "$PROMPT" | MAUDE_EYE_BLINK=1 timeout "$BLINK_TIMEOUT" "$RUNNER" 2>/dev/null | head -c 2000)"
+  RAW="$(printf '%s' "$PROMPT" | MAUDE_EYE_BLINK=1 maude_timeout "$BLINK_TIMEOUT" "$RUNNER" 2>/dev/null | head -c 2000)"
 fi
 [ -n "$RAW" ] || exit 0
 

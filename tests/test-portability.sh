@@ -37,10 +37,16 @@ fi
 REAL_STAT="$(command -v stat)"
 REAL_DATE="$(command -v date)"
 BSD_BIN="$(mktemp -d)"
+# Wrappers delegate to the REAL tool with a GNU-then-BSD fallback of their
+# own, so they behave the same whether the underlying userland is GNU (Linux
+# dev box) or BSD (the macOS CI leg re-running this same test).
 cat > "$BSD_BIN/stat" <<EOF
 #!/usr/bin/env bash
 if [ "\$1" = "-c" ]; then echo "stat: illegal option -- c" >&2; exit 1; fi
-if [ "\$1" = "-f" ] && [ "\$2" = "%m" ]; then exec "$REAL_STAT" -c %Y "\$3"; fi
+if [ "\$1" = "-f" ] && [ "\$2" = "%m" ]; then
+  "$REAL_STAT" -c %Y "\$3" 2>/dev/null || "$REAL_STAT" -f %m "\$3"
+  exit \$?
+fi
 echo "stat: unsupported invocation: \$*" >&2; exit 1
 EOF
 cat > "$BSD_BIN/date" <<EOF
@@ -50,7 +56,13 @@ for a in "\$@"; do
 done
 if [ "\$1" = "-j" ] && [ "\$2" = "-f" ]; then
   # BSD: date -j -f FMT VALUE +OUT  →  GNU: date -d VALUE +OUT
-  exec "$REAL_DATE" -d "\$4" "\$5"
+  "$REAL_DATE" -d "\$4" "\$5" 2>/dev/null || "$REAL_DATE" -j -f "\$3" "\$4" "\$5"
+  exit \$?
+fi
+if [ "\$1" = "-u" ] && [ "\$2" = "-r" ]; then
+  # BSD: date -u -r EPOCH +OUT  →  GNU: date -u -d @EPOCH +OUT
+  "$REAL_DATE" -u -d "@\$3" "\$4" 2>/dev/null || "$REAL_DATE" -u -r "\$3" "\$4"
+  exit \$?
 fi
 exec "$REAL_DATE" "\$@"
 EOF
@@ -107,6 +119,52 @@ test_start "maude_date_epoch falls back to BSD date -j -f"
 E="$(PATH="$BSD_BIN:$PATH" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_date_epoch 2026-01-01')"
 assert_eq "$E" "$WANT" "BSD date parse"
 
+# ── maude_epoch_iso ─────────────────────────────────────────────────────
+test_start "maude_epoch_iso renders epoch as ISO Z (GNU path)"
+assert_eq "$(maude_epoch_iso 1767225600)" "2026-01-01T00:00:00Z" "epoch→ISO"
+
+test_start "maude_epoch_iso falls back to BSD date -r"
+E="$(PATH="$BSD_BIN:$PATH" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_epoch_iso 1767225600')"
+assert_eq "$E" "2026-01-01T00:00:00Z" "BSD epoch→ISO"
+
+test_start "maude_epoch_iso rejects garbage"
+E="$(maude_epoch_iso not-an-epoch)"
+RC=$?
+if [ -z "$E" ] && [ "$RC" -ne 0 ]; then _pass; else _fail "expected empty+nonzero, got '$E' rc=$RC"; fi
+
+# ── maude_timeout ───────────────────────────────────────────────────────
+test_start "maude_timeout runs the command and passes stdout through"
+assert_eq "$(printf 'in\n' | maude_timeout 5 cat)" "in" "passthrough"
+
+test_start "maude_timeout kills an overrunning command"
+T0="$(date +%s)"
+maude_timeout 1 sleep 10 >/dev/null 2>&1
+RC=$?
+T1="$(date +%s)"
+if [ "$RC" -ne 0 ] && [ $((T1 - T0)) -le 5 ]; then
+  _pass
+else
+  _fail "expected nonzero rc within ~1s, got rc=$RC after $((T1 - T0))s"
+fi
+
+test_start "maude_timeout works without a timeout(1) binary (python3 path)"
+NOTMO="$(make_no_binary_bin timeout)"
+OUT="$(PATH="$NOTMO" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; printf x | maude_timeout 5 cat')"
+assert_eq "$OUT" "x" "python3 fallback passthrough"
+rm -rf "$NOTMO"
+
+# ── chores survive a flock-less userland (macOS has no flock(1)) ────────
+test_start "chore ledger stamps without flock(1)"
+NOFLOCK="$(make_no_binary_bin flock)"
+PATH="$NOFLOCK" bash "$ROOT/scripts/maude-chores.sh" detect >/dev/null 2>&1
+L="$TEST_TMP/.maude/plugin/chores.json"
+if [ -f "$L" ] && [ "$(jq -r 'keys | length' "$L" 2>/dev/null)" -ge 1 ]; then
+  _pass
+else
+  _fail "ledger missing or empty without flock: $(cat "$L" 2>/dev/null | head -c 120)"
+fi
+rm -rf "$NOFLOCK"
+
 # ── touch_ago / touch_at (test-harness portability helpers) ─────────────
 test_start "touch_ago sets mtime N seconds back"
 G="$TEST_TMP/aged"
@@ -156,8 +214,24 @@ V="$(lint_product 'stat [-]c')"
 assert_eq "$V" "" "stat -c leaked: $V"
 
 test_start "product: no GNU date -d outside shim"
-V="$(lint_product 'date [-]d([^[:alnum:]]|$)')"
+# Two shapes: adjacent `date -d`, and `-d` as a standalone word later on a
+# date line (catches `date -u -d` — the form that hid from the adjacent-only
+# pattern; requiring whitespace BEFORE -d keeps %Y-%m-%d format strings out).
+DQ='"'
+V="$(lint_product 'date [-]d([^[:alnum:]]|$)'; lint_product "date .*[[:space:]][-]d([[:space:]$DQ@']|$)")"
 assert_eq "$V" "" "date -d leaked: $V"
+
+test_start "product: no bare flock(1) outside shim (absent on macOS)"
+V="$(lint_product '(^|[^a-z_])floc[k]')"
+assert_eq "$V" "" "flock leaked: $V"
+
+test_start "product: no bare timeout(1) outside shim (absent on macOS)"
+V="$(lint_product '(^|[^_a-zA-Z-])timeou[t] ')"
+assert_eq "$V" "" "timeout leaked: $V"
+
+test_start "product: no GNU sed word-boundary escape (BSD sed rejects it)"
+V="$(lint_product '\\b')"
+assert_eq "$V" "" "sed backslash-b leaked: $V"
 
 test_start "product: no GNU sed -i (use sed -i.bak)"
 V="$(lint_product 'sed [-]i([^.]|$)')"

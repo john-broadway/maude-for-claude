@@ -31,10 +31,25 @@ chores_ledger() {
 chore_stamp() {
   local id="$1"; shift
   local ledger lock tmp; ledger="$(chores_ledger)"; lock="$ledger.lock"; tmp="$ledger.tmp.$$"
-  (
-    flock 9
+  if command -v flock >/dev/null 2>&1; then  # portability-shim (util-linux)
+    (
+      flock 9  # portability-shim
+      jq "$@" "$ledger" > "$tmp" 2>/dev/null && mv -f "$tmp" "$ledger" || rm -f "$tmp"
+    ) 9>"$lock"
+  else
+    # macOS ships no flock(1): mkdir spin-lock. The critical section is one jq
+    # over a small file (well under a second); a holder alive past ~10s is
+    # treated as dead and reclaimed. Worst case on reclaim = a lost update,
+    # never a corrupt ledger (tmp is per-PID, mv is atomic).
+    local d="$lock.d" i=0
+    while ! mkdir "$d" 2>/dev/null; do
+      i=$((i+1))
+      [ "$i" -le 200 ] || { rmdir "$d" 2>/dev/null; i=0; }
+      sleep 0.05
+    done
     jq "$@" "$ledger" > "$tmp" 2>/dev/null && mv -f "$tmp" "$ledger" || rm -f "$tmp"
-  ) 9>"$lock"
+    rmdir "$d" 2>/dev/null
+  fi
 }
 
 verb_detect() {
@@ -64,10 +79,10 @@ BLINK_TIMEOUT="${MAUDE_CHORE_BLINK_TIMEOUT:-90}"
 chore_blink() {
   local runner="${MAUDE_CHORE_RUNNER_OVERRIDE:-claude}" raw
   if [ "$runner" = "claude" ]; then
-    raw="$(MAUDE_EYE_BLINK=1 timeout "$BLINK_TIMEOUT" \
+    raw="$(MAUDE_EYE_BLINK=1 maude_timeout "$BLINK_TIMEOUT" \
       claude -p --model "$CHORE_MODEL" --safe-mode --no-session-persistence --tools "" 2>/dev/null | head -c 8000)"
   else
-    raw="$(MAUDE_EYE_BLINK=1 timeout "$BLINK_TIMEOUT" "$runner" 2>/dev/null | head -c 8000)"
+    raw="$(MAUDE_EYE_BLINK=1 maude_timeout "$BLINK_TIMEOUT" "$runner" 2>/dev/null | head -c 8000)"
   fi
   [ -n "$raw" ] || return 1
   printf '%s' "$raw"
@@ -301,22 +316,46 @@ verb_dispatch() {
     [ "$(jq -r ".[\"$id\"].due // false" "$(chores_ledger)")" = "true" ] || continue
     local lock="$self/.chore-$id.lock"
 
-    # Synchronous probe: stamp ONLY if lock is free (tiny TOCTOU window, acceptable).
-    if (flock -n 9 2>/dev/null) 9>"$lock"; then
-      # Lock was free: stamp immediately (synchronous, visible before dispatch returns).
-      chore_stamp "$id" --arg t "$now" ".[\"$id\"] += {status:\"dispatched\", last_run:\$t}"
+    if command -v flock >/dev/null 2>&1; then  # portability-shim (util-linux)
+      # Synchronous probe: stamp ONLY if lock is free (tiny TOCTOU window, acceptable).
+      if (flock -n 9 2>/dev/null) 9>"$lock"; then  # portability-shim
+        # Lock was free: stamp immediately (synchronous, visible before dispatch returns).
+        chore_stamp "$id" --arg t "$now" ".[\"$id\"] += {status:\"dispatched\", last_run:\$t}"
 
-      # Now background the doer with lock held until it completes.
-      (
-        flock -n 9 || exit 0
-        if [ -n "${MAUDE_CHORE_DOER_STUB:-}" ]; then
-          nohup bash -c "$MAUDE_CHORE_DOER_STUB" >/dev/null 2>&1 &
-        else
-          nohup bash "$0" run "$id" "$transcript" >/dev/null 2>&1 &
-        fi
-        # Hold the lock until the doer exits so a second dispatch can't double-fire.
-        wait
-      ) 9>"$lock" &
+        # Now background the doer with lock held until it completes.
+        (
+          flock -n 9 || exit 0  # portability-shim
+          if [ -n "${MAUDE_CHORE_DOER_STUB:-}" ]; then
+            nohup bash -c "$MAUDE_CHORE_DOER_STUB" >/dev/null 2>&1 &
+          else
+            nohup bash "$0" run "$id" "$transcript" >/dev/null 2>&1 &
+          fi
+          # Hold the lock until the doer exits so a second dispatch can't double-fire.
+          wait
+        ) 9>"$lock" &
+      fi
+    else
+      # macOS ships no flock(1): mkdir is the atomic probe+acquire in one step
+      # (no TOCTOU at all on this path). A dir stranded by a kill -9'd doer is
+      # reclaimed by age — doers are minutes-bounded, so >1h means dead.
+      local ld="$lock.d"
+      if [ -d "$ld" ] && [ $(( $(date +%s) - $(maude_mtime "$ld") )) -gt 3600 ]; then
+        rmdir "$ld" 2>/dev/null
+      fi
+      if mkdir "$ld" 2>/dev/null; then
+        chore_stamp "$id" --arg t "$now" ".[\"$id\"] += {status:\"dispatched\", last_run:\$t}"
+        (
+          # Hold the dir until the doer exits; EXIT trap releases on any
+          # normal or signaled death of this holder subshell.
+          trap 'rmdir "$ld" 2>/dev/null' EXIT
+          if [ -n "${MAUDE_CHORE_DOER_STUB:-}" ]; then
+            nohup bash -c "$MAUDE_CHORE_DOER_STUB" >/dev/null 2>&1 &
+          else
+            nohup bash "$0" run "$id" "$transcript" >/dev/null 2>&1 &
+          fi
+          wait
+        ) &
+      fi
     fi
     # If lock is held by running doer, skip: don't stamp, don't dispatch.
   done

@@ -265,6 +265,23 @@ make_nojq_bin() {
   printf '%s' "$d"
 }
 
+# Build a PATH dir carrying the common toolset EXCEPT the named binaries —
+# for exercising absent-tool degradation paths (macOS ships no flock(1),
+# timeout(1), or md5sum). Unlike make_nojq_bin this INCLUDES jq and python3.
+# Usage: D="$(make_no_binary_bin flock)"; PATH="$D" bash "$SCRIPT"
+make_no_binary_bin() {
+  local d b src
+  d="$(mktemp -d)"
+  for b in bash sh env cat date grep sed awk tr head tail wc find xargs \
+           mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
+           sort uniq readlink stat sleep chmod printf jq python3 nohup \
+           tee od uname flock timeout; do
+    case " $* " in (*" $b "*) continue ;; esac
+    src="$(command -v "$b" 2>/dev/null)" && ln -s "$src" "$d/$b" 2>/dev/null
+  done
+  printf '%s' "$d"
+}
+
 # Like make_nojq_bin but ALSO omits grep — exercises the deepest degradation path
 # where the infra-gate cannot identify the tool name at all. Prints the dir.
 make_nojq_nogrep_bin() {
