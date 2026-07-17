@@ -34,5 +34,5 @@ fi
 [ -z "$PROMPT" ] && exit 0
 
 printf '%s' "$PROMPT" | PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m maude_vault page \
-  --db "$DB" --k 5 2>/dev/null
+  --db "$DB" --k 5 --log "$(maude_project_dir)/.maude/plugin/recall-log.jsonl" 2>/dev/null
 exit 0

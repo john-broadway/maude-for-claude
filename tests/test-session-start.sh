@@ -184,6 +184,35 @@ assert_file_absent "$OLD_SNAP" "ancient snapshot pruned"
 test_start "session-start keeps a recent pre-compact snapshot (no over-prune)"
 assert_file_exists "$RECENT_SNAP" "recent snapshot kept"
 
+# ── Value before the dustpan: uncovered snapshots survive the sweep ──
+# A pre-compact snapshot is CONTENT (unlike the metadata-only trace) — if the
+# session never saved afterward, it may be the only copy of that context. Age
+# alone must not delete one: it must ALSO be covered by a later save (capture
+# anchor newer than the snapshot). Isolated env so the anchor is controlled.
+test_start "sweep keeps an old snapshot when no save covers it"
+VB="$(mktemp -d)"
+mkdir -p "$VB/proj/.maude/plugin/snapshots" "$VB/home"
+UNCOV="$VB/proj/.maude/plugin/snapshots/precompact-old-uncovered.md"
+printf 'the only copy of that context\n' > "$UNCOV"
+touch -d '40 days ago' "$UNCOV"
+# No now.md / remember.md anywhere → anchor is 0 → nothing is covered.
+( CLAUDE_PROJECT_DIR="$VB/proj" HOME="$VB/home" bash "$START" >/dev/null 2>&1 </dev/null )
+assert_file_exists "$UNCOV" "uncovered old snapshot survives"
+
+test_start "sweep deletes an old snapshot once a later save covers it"
+mkdir -p "$VB/proj/.remember"
+printf '## saved\ncontent captured\n' > "$VB/proj/.remember/now.md"   # fresh anchor
+( CLAUDE_PROJECT_DIR="$VB/proj" HOME="$VB/home" bash "$START" >/dev/null 2>&1 </dev/null )
+assert_file_absent "$UNCOV" "covered old snapshot swept"
+
+test_start "a covering save does not sweep snapshots inside the window"
+YOUNG="$VB/proj/.maude/plugin/snapshots/precompact-young.md"
+printf 'recent context\n' > "$YOUNG"
+touch -d '2 days ago' "$YOUNG"
+( CLAUDE_PROJECT_DIR="$VB/proj" HOME="$VB/home" bash "$START" >/dev/null 2>&1 </dev/null )
+assert_file_exists "$YOUNG" "young snapshot kept regardless of coverage"
+rm -rf "$VB"
+
 # ── Letter from her last self ────────────────────────────────────────
 # /maude:rest rewrites ~/.claude/maude/letter-from-maude.md; session-start
 # surfaces its first non-header, non-blank line (read-only, like every hook
@@ -216,6 +245,46 @@ rm "$LH/home/.claude/maude/letter-from-maude.md"
 LOUT2="$(printf '{}' | CLAUDE_PROJECT_DIR="$LH/proj" HOME="$LH/home" bash "$START" 2>/dev/null)"
 assert_not_contains "$LOUT2" "Letter from my last self" "silent without letter"
 rm -rf "$LH"
+
+# ── Cross-project pattern hint: rotate headings, never grep bodies ──
+# The old picker grepped patterns.md for the project basename — on any project
+# whose name appeared in an entry BODY (e.g. a path), that one entry pinned
+# forever, truncated mid-sentence into what read like a live alert. The picker
+# now rotates through the ## HEADINGS by day-of-year: every scar gets airtime,
+# and a heading is a complete dated sentence that self-identifies as history.
+test_start "pattern hint surfaces a heading, rotating by day-of-year"
+PH="$(mktemp -d)"
+mkdir -p "$PH/home/.claude/maude" "$PH/proj"
+cat > "$PH/home/.claude/maude/patterns.md" <<EOF
+# Patterns
+
+## 2026-01-01 — HEADZERO first scar
+Body zero mentions $PH/proj to tempt a basename grep. BODYMARKER.
+
+## 2026-01-02 — HEADONE second scar
+Body one. BODYMARKER.
+
+## 2026-01-03 — HEADTWO third scar
+Body two. BODYMARKER.
+EOF
+DAY="$(date +%j | sed 's/^0*//')"
+case "$((DAY % 3))" in
+  0) WANT="HEADZERO" ;;
+  1) WANT="HEADONE" ;;
+  2) WANT="HEADTWO" ;;
+esac
+PHOUT="$(printf '{}' | CLAUDE_PROJECT_DIR="$PH/proj" HOME="$PH/home" bash "$START" 2>/dev/null)"
+assert_contains "$PHOUT" "Cross-project pattern:" "pattern line present"
+assert_contains "$PHOUT" "$WANT" "day-of-year heading selected"
+
+test_start "pattern hint never prints entry bodies (no basename-grep pinning)"
+assert_not_contains "$PHOUT" "BODYMARKER" "body text not surfaced"
+
+test_start "no pattern line when patterns.md is absent"
+rm "$PH/home/.claude/maude/patterns.md"
+PHOUT2="$(printf '{}' | CLAUDE_PROJECT_DIR="$PH/proj" HOME="$PH/home" bash "$START" 2>/dev/null)"
+assert_not_contains "$PHOUT2" "Cross-project pattern" "silent without patterns"
+rm -rf "$PH"
 
 # ── Guaranteed once-per-session voice ────────────────────────────────
 # Her voice is a RAIL, not the (retired) dual-voice toggle: SessionStart must land

@@ -24,4 +24,16 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 
 maude_log_trace "stop" ""
 
+# Chore dispatch (docs/specs/2026-07-16-chore-ledger-design.md). Stop fires on
+# every pause; the detector threshold + per-chore flock make this self-limiting.
+# The old no-handoff-from-Stop rule stands for THIS hook's own writes — the c1
+# doer has its own clobber guard (append-only into a non-empty remember.md,
+# write only into an empty/absent slot — never a replace).
+TRANSCRIPT="$(timeout 2 head -c 4096 2>/dev/null | jq -r '.transcript_path // empty' 2>/dev/null)"
+CHORES="$DIR/../../scripts/maude-chores.sh"
+if [ -f "$CHORES" ]; then
+  bash "$CHORES" detect >/dev/null 2>&1
+  bash "$CHORES" dispatch "$TRANSCRIPT" >/dev/null 2>&1
+fi
+
 exit 0

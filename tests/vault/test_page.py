@@ -12,8 +12,12 @@ def _db(tmp_path):
 
 
 def test_fts_query_tokenizes():
-    assert page.fts_query("How does john think?") == '"how" OR "does" OR "john" OR "think"'
+    assert page.fts_query("How does john think?") == '"john" OR "think"'
     assert page.fts_query("   ??  ") is None
+
+
+def test_fts_query_all_stopwords_is_none():
+    assert page.fts_query("what are the with that this") is None
 
 
 def test_fts_query_bounds_huge_input():
@@ -95,3 +99,50 @@ def test_format_hits_caps_description_and_snippet_length():
     snippet_text = snippet_line.strip()
     assert len(snippet_text) <= 301  # 300 chars + trailing "…"
     assert snippet_text.endswith("…")
+
+
+def test_fresh_note_outranks_stale_twin(tmp_path):
+    import os
+    import time
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    old, new = mem / "old.md", mem / "new.md"
+    old.write_text("---\nname: old-note\ndescription: zebra habits\n---\nzebra zebra\n")
+    new.write_text("---\nname: new-note\ndescription: zebra habits\n---\nzebra zebra\n")
+    now = time.time()
+    os.utime(old, (now - 400 * 86400, now - 400 * 86400))  # ~13 months old
+    os.utime(new, (now - 1 * 86400, now - 1 * 86400))      # yesterday
+    dbp = tmp_path / "v.db"
+    ingest.build(mem, dbp)
+    hits = page.page(dbp, "zebra", k=2, now=now)
+    assert [h["name"] for h in hits] == ["new-note", "old-note"]
+
+
+def test_feedback_type_outranks_untyped_daily(tmp_path):
+    import os
+    import time
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    rule = mem / "feedback_rule.md"
+    daily = mem / "today-x.md"
+    rule.write_text("---\nname: the-rule\ndescription: giraffe rule\nmetadata:\n"
+                    "  type: feedback\n---\ngiraffe giraffe\n")
+    daily.write_text("giraffe giraffe log line\n")
+    now = time.time()
+    os.utime(rule, (now - 10 * 86400, now - 10 * 86400))
+    os.utime(daily, (now - 10 * 86400, now - 10 * 86400))
+    dbp = tmp_path / "v.db"
+    ingest.build(mem, dbp)
+    hits = page.page(dbp, "giraffe", k=2, now=now)
+    assert hits[0]["name"] == "the-rule"
+
+
+def test_superseded_note_never_pages(tmp_path):
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "dead.md").write_text(
+        "---\nname: dead-note\ndescription: kudu rule\nsuperseded_by: new\n---\nkudu\n"
+    )
+    dbp = tmp_path / "v.db"
+    ingest.build(mem, dbp)
+    assert page.page(dbp, "kudu", k=5) == []

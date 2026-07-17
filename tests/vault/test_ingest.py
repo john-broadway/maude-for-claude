@@ -59,3 +59,57 @@ def test_build_skips_one_broken_file_and_keeps_going(tmp_path):
     conn = db.connect(dbp)
     names = {r[0] for r in conn.execute("SELECT name FROM notes")}
     assert names == {"good1", "good2"}
+
+
+def test_superseded_by_marks_note(tmp_path):
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "dead.md").write_text(
+        "---\nname: dead-note\ndescription: an old standing rule\n"
+        "superseded_by: the-new-rule\n---\nThe old rule text.\n"
+    )
+    (mem / "live.md").write_text(
+        "---\nname: live-note\ndescription: the current rule\n---\nStanding rule text.\n"
+    )
+    dbp = tmp_path / "v.db"
+    ingest.build(mem, dbp)
+    import sqlite3
+    conn = sqlite3.connect(dbp)
+    rows = dict(conn.execute("SELECT name, superseded FROM notes").fetchall())
+    assert rows["dead-note"] == "the-new-rule"
+    assert rows["live-note"] == ""
+    fts = [r[0] for r in conn.execute("SELECT name FROM notes_fts").fetchall()]
+    assert "live-note" in fts and "dead-note" not in fts
+    conn.close()
+
+
+def test_status_superseded_also_marks(tmp_path):
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "dead.md").write_text(
+        "---\nname: dead-note\ndescription: x\nstatus: superseded\n---\nbody\n"
+    )
+    dbp = tmp_path / "v.db"
+    ingest.build(mem, dbp)
+    import sqlite3
+    conn = sqlite3.connect(dbp)
+    assert conn.execute("SELECT superseded FROM notes").fetchone()[0] == "superseded"
+    assert conn.execute("SELECT count(*) FROM notes_fts").fetchone()[0] == 0
+    conn.close()
+
+
+def test_old_schema_db_is_rebuilt_not_crashed(tmp_path):
+    # Simulate a vault.db left by 0.17.0 (user_version 0, no superseded column).
+    import sqlite3
+    dbp = tmp_path / "v.db"
+    conn = sqlite3.connect(dbp)
+    conn.execute("CREATE TABLE notes (path TEXT PRIMARY KEY, name TEXT, description TEXT,"
+                 " type TEXT, body TEXT, mtime REAL, links TEXT)")
+    conn.execute("CREATE VIRTUAL TABLE notes_fts USING fts5(path UNINDEXED, name,"
+                 " description, body, tokenize='porter unicode61')")
+    conn.commit()
+    conn.close()
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "a.md").write_text("---\nname: a\ndescription: d\n---\nbody\n")
+    assert ingest.build(mem, dbp) == 1  # must not raise OperationalError

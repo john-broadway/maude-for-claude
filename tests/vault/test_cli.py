@@ -45,3 +45,32 @@ def test_build_then_page_via_stdin(tmp_path):
     )
     assert p.returncode == 0
     assert "user-visual-mind" in p.stdout
+
+
+def test_page_log_appends_jsonl(tmp_path):
+    import json
+    from maude_vault import ingest, __main__ as cli
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "n.md").write_text("---\nname: wildebeest-note\ndescription: wildebeest\n---\nwildebeest\n")
+    dbp = tmp_path / "v.db"
+    ingest.build(mem, dbp)
+    log = tmp_path / "recall-log.jsonl"
+    cli.main(["page", "wildebeest", "--db", str(dbp), "--log", str(log)])
+    cli.main(["page", "wildebeest", "--db", str(dbp), "--log", str(log)])
+    lines = [json.loads(l) for l in log.read_text().splitlines()]
+    assert len(lines) == 2
+    assert lines[0]["hits"] == ["wildebeest-note"]
+    assert isinstance(lines[0]["ts"], int)
+
+
+def test_page_log_no_hits_writes_nothing(tmp_path):
+    from maude_vault import ingest, __main__ as cli
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    (mem / "n.md").write_text("---\nname: n\ndescription: d\n---\nbody\n")
+    dbp = tmp_path / "v.db"
+    ingest.build(mem, dbp)
+    log = tmp_path / "recall-log.jsonl"
+    cli.main(["page", "qqqzz", "--db", str(dbp), "--log", str(log)])
+    assert not log.exists()
