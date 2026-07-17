@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+import time
 
 from . import ingest, page
 
@@ -22,6 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("query", nargs="?", default=None)
     p.add_argument("--db", required=True)
     p.add_argument("--k", type=int, default=5)
+    p.add_argument("--log", default=None)
 
     args = parser.parse_args(argv)
     if args.cmd == "build":
@@ -30,9 +33,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "page":
         query = args.query if args.query is not None else sys.stdin.read()
-        out = page.format_hits(page.page(args.db, query, args.k))
+        hits = page.page(args.db, query, args.k)
+        out = page.format_hits(hits)
         if out:
             print(out)
+        if hits and args.log:
+            # The tally the rest-ritual sweeps: what got served, when. Append-
+            # only JSONL; any failure is swallowed — logging must never break
+            # paging (this runs inside a UserPromptSubmit hook).
+            try:
+                line = json.dumps({"ts": int(time.time()),
+                                   "hits": [h["name"] for h in hits]})
+                with open(args.log, "a", encoding="utf-8") as f:
+                    f.write(line + "\n")
+            except OSError:
+                pass
         return 0
     return 2
 

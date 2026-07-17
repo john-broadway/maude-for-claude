@@ -447,6 +447,17 @@ assert_not_contains "$(redact_one "tok $JWT end")" "$JWT" "raw JWT gone"
 test_start "redact leaves ordinary prose untouched"
 assert_eq "$(redact_one "just a normal sentence about keys and tokens")" "just a normal sentence about keys and tokens" "no over-redaction"
 
+test_start "redact masks bounded-octet IPv4 addresses"
+assert_contains "$(redact_one "built ledger at 192.0.2.71")" "[redacted-ip]" "IPv4 masked"
+test_start "redact removes the raw IPv4 address"
+assert_not_contains "$(redact_one "built ledger at 192.0.2.71")" "192.0.2.71" "raw IPv4 gone"
+
+test_start "redact leaves Chrome version strings untouched"
+assert_eq "$(redact_one "Chrome version 120.0.6099.109")" "Chrome version 120.0.6099.109" "over-255 octets survive"
+
+test_start "redact leaves Windows version strings untouched"
+assert_eq "$(redact_one "Windows 10.0.19045.3803")" "Windows 10.0.19045.3803" "over-255 octets survive"
+
 # ── Slug consistency: the memory-dir slug is INLINED into ~13 command .md files
 # rather than calling maude_slug(). The root cause of the v0.3.0 "computed two ways"
 # bug (dotted paths reading nothing) is that duplication — the fix synced the copies

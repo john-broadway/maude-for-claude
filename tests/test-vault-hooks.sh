@@ -30,5 +30,9 @@ OUT="$(printf '{"prompt":"how do I handle johns metaphors"}' \
   | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
 assert_contains "$OUT" "user-visual-mind" "page hook surfaces the relevant note"
 
+# recall tally: a paged hit appends to recall-log.jsonl
+test_start "page hook tallies recall"
+assert_file_exists "$WORK/proj/.maude/plugin/recall-log.jsonl" "page hook tallies recall"
+
 print_summary
 exit $FAILED

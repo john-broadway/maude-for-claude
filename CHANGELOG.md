@@ -1,11 +1,139 @@
-<!-- Version: 0.16.0 -->
+<!-- Version: 0.20.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-07-13 -->
+<!-- Revised: 2026-07-16 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.20.0 — the chore ledger (her hands)
+
+The housekeeping nobody typed now gets done — or named as undone. New
+`scripts/maude-chores.sh` (detect/dispatch/run/brief) over `chores.json`
+in her closet; Stop dispatches, wake briefs. Chores: **c1** the save nobody
+typed (haiku blink → `remember.md`, appends to any existing handoff, writes
+only into an empty slot, redacted); **c2** the shelves — coupon-cut live
+markers from aging dailies before anything re-rolls (re-roll itself opt-in
+via `MAUDE_REROLL=on`, verbatim verified moves only); **c3** the extension
+agent (new plugins/skills since last look); **c4** CLAUDE.md staleness
+(report-only, stays loud). Every
+doer pins its model; every finished chore stamps its cost, and a failed
+one is stamped failed with the reason — the ledger makes the labor
+visible either way. Kill switch: `MAUDE_CHORES=off`.
+Design: `docs/specs/2026-07-16-chore-ledger-design.md`.
+
+---
+
+## v0.19.0 — 2026-07-15
+
+**Value before the dustpan, and the cushion-flip.**
+
+Two halves of one discipline, from one conversation: *does she look for value
+before trashing, and who checks the places nobody sweeps?*
+
+**The sweep now asks before it trashes.** Pre-compact snapshots are content —
+a capture from a session that never saved may be the only copy of that context.
+Age alone no longer deletes one: it must also be *covered* by a later save
+(capture anchor newer than the snapshot). Uncovered → kept, however old — it
+waits for a save, not a calendar. The metadata-only trace keeps its plain
+age-out; there was never value in that pan by design.
+
+**New ritual: `/maude:cushions` — the cushion-flip.** Change falls on the
+floor and hides in the cushions: commits pushed nowhere, files never
+committed, repos that exist on one disk only (LOCAL-ONLY = sole-copy risk,
+said plainly), scratch that aged past anyone's memory. The flip reaches where
+no sensor watches and reports value candidates — it never deletes, commits, or
+pushes; the trash decision stays human. A `.parked` file (repo root or scratch
+dir; `.` parks the whole repo) names change that's in the cushion *on
+purpose*, so a deliberate park is stated once instead of re-flagged forever.
+First run on a real workspace: 79 repos checked, one 45-commit local-only repo
+surfaced.
+
+20 new tests (3 sweep-coverage, 17 cushion-flip); fleet 32/32 files green.
+
+---
+
+## v0.18.1 — 2026-07-15
+
+**The wake brief stops crying wolf: the pattern hint rotates.**
+
+The session-start brief surfaces one cross-project pattern per wake — a scar-tissue
+reminder. The picker grepped `patterns.md` for the project's basename, so on any
+project whose name appeared inside an entry's *body* (a path was enough), that one
+entry pinned forever — and the raw-body truncation cut it mid-sentence into what
+read like a live alert. Caught live: the same 2026-05-07 scar printed at every wake
+for two months, and it took a human eye on a yellow line to notice, because the
+brief itself was the thing carrying the bug and nothing was measuring it.
+
+The picker now rotates through the entry **headings** by day-of-year: every pattern
+gets airtime, none can pin, and a `##` heading is a complete dated sentence that
+self-identifies as history — it can't truncate into fake breaking news. Three new
+tests pin the rotation, the no-body-text rule, and silence when no patterns file
+exists. Fleet 31/31 green.
+
+---
+
+## v0.18.0 — 2026-07-14
+
+**The memory loop closes: the sweep cut.**
+
+The vault could recall but never revise — a rule superseded weeks ago still
+paged as a live STANDING directive (proven three times in one session), and an
+OR-of-everything query let "the"/"with"/"what" pull letters and dailies into
+every recall. Memory that only accretes isn't memory; it's sediment. This cut
+gives the housekeeper her broom:
+
+- **Supersession** — `superseded_by:` (or `status: superseded`) frontmatter
+  keeps a note in the vault's history table but out of the FTS index, so it
+  can never page again. Mark, don't erase: the markdown is untouched, the old
+  content stays readable, it just stops being served as live. Schema v2 with
+  drop-and-recreate on `PRAGMA user_version` mismatch — the DB is a disposable
+  index and migrations would pretend otherwise.
+- **Ranking learns what BM25 can't see** — candidates are overfetched by BM25
+  then re-ranked: durable rule-notes (`feedback`/`user` ×1.4, `reference`
+  ×1.25, `project` ×1.15) outrank untyped ambient prose, and an age penalty
+  (doubles at ~3 months) stops a 13-month-old letter from tying a fresh
+  decision. A curated stopword set keeps "the" out of the query entirely;
+  an all-stopword prompt now pages nothing instead of noise.
+- **The recall tally** — the pager appends what it served (`{ts, hits}`) to
+  `.maude/plugin/recall-log.jsonl`, append-only, failure-swallowed. New rest
+  step 3b sweeps it: the top-fired notes get asked "still true?" (mark
+  supersession with a dated receipt) and "was it noise?" (sharpen the
+  description). Then the log is truncated. Serve → check → revise — the loop
+  the vault was missing.
+- **The eye unpinned** — `MAUDE_EYE_MODEL` chooses the model for the blink's
+  `claude` branch; haiku stays the default, not a requirement. (The runner
+  override always brought its own model; now the stock path is steerable too.)
+
+9 new tests (6 python, 3 bash assertions); full fleet 31/31 + 28 pytest green.
+
+---
+
+## v0.17.0 — 2026-07-13
+
+**The dispatch whisper learns the drift's second home — workflows.**
+
+A workflow script's `agent()` calls never pass through the Agent tool, so the
+v0.16.0 whisper couldn't see them — and stock/named harnesses set no `model:`
+at all, so every fan-out agent silently inherits the flagship main loop. The
+recurring shape (it fired the same way twice): a *named* workflow launched
+as-registered, dozens of mechanical agents on the top tier.
+
+`maude-dispatch-watch.sh` now covers `Workflow` too:
+- **Inline script / readable `scriptPath`**: `agent(` calls present and no
+  `model:` anywhere → one whisper (tier per stage; verify → small, review →
+  mid). Any `model:` present → silence (the author is already steering).
+- **Named workflow** (script registry-resolved, not inspectable pre-launch)
+  → one whisper carrying the recovery rule: grab the persisted `scriptPath`
+  from the tool result, grep it for `model:`, tier the stages before the
+  expensive phase runs.
+- Separate daily cooldown key from the Agent whisper — one must not silence
+  the other. Still never blocks; still logs as a drift catch the digest counts.
+
+11 new tests (26 in the file); full fleet 31/31, shellcheck clean.
 
 ---
 

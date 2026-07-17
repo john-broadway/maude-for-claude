@@ -82,7 +82,7 @@ if [ "$RUNNER" = "claude" ]; then
   # not leave a resumable transcript (containing the digest) on disk.
   # --tools "": the eye only classifies text; it never needs tool access.
   RAW="$(printf '%s' "$PROMPT" | MAUDE_EYE_BLINK=1 timeout "$BLINK_TIMEOUT" \
-    claude -p --model haiku --safe-mode --no-session-persistence --tools "" 2>/dev/null | head -c 2000)"
+    claude -p --model "${MAUDE_EYE_MODEL:-haiku}" --safe-mode --no-session-persistence --tools "" 2>/dev/null | head -c 2000)"
 else
   RAW="$(printf '%s' "$PROMPT" | MAUDE_EYE_BLINK=1 timeout "$BLINK_TIMEOUT" "$RUNNER" 2>/dev/null | head -c 2000)"
 fi

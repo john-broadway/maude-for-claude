@@ -49,6 +49,20 @@ MAP="$SELF/house-map.md"
    - Was there an associated decision worth logging?
    - If something half-done, surface it: "you started X but didn't finish Y."
 
+3b. **Sweep the pantry (the revise step).** If `$SELF/recall-log.jsonl` exists, tally
+   which notes fired this session (`jq -r '.hits[]' "$SELF/recall-log.jsonl" | sort |
+   uniq -c | sort -rn`). For the top ~5 most-fired notes, open each and ask two questions:
+   - **Is it still true?** If a newer decision replaced it, append supersession
+     frontmatter to the note — `superseded_by: <name-of-what-replaced-it>` — plus one
+     dated receipt line at the top of the body saying what superseded it and when.
+     Never delete, never rewrite the old content: mark, don't erase. (The vault drops
+     marked notes from paging at the next build.)
+   - **Was it noise?** If it kept firing on prompts it didn't help (generic word
+     overlap, wrong topic), the fix is a sharper `description:` line — not deletion.
+   Then truncate the log (`: > "$SELF/recall-log.jsonl"`) so next session's tally is
+   fresh. This is the loop closing: what recall serves gets checked against what
+   stayed true.
+
 4. **Tomorrow's starting point.** Write a one-line "what to come back to" into the sources
    the map says carry it — the `digest-fanout` source's live buffer (`now.md`) and the
    `handoff-only` source's `## Next` section. Don't hard-code paths; use whichever sources

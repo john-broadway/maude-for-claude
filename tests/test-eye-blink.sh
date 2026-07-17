@@ -103,4 +103,27 @@ test_start "no whisper written after a timeout kill"
 [ ! -f "$WHISPER" ] || [ ! -s "$WHISPER" ]
 assert_eq "$?" "0" "no whisper written after a timeout kill"
 
+# claude branch: MAUDE_EYE_MODEL overrides the model flag (default haiku)
+mkdir -p "$WORK/bin"
+cat > "$WORK/bin/claude" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+printf '%s\n' "$*" > "${FAKE_CLAUDE_ARGS:?}"
+printf '{"signal": false}\n'
+EOF
+chmod +x "$WORK/bin/claude"
+
+test_start "eye model defaults to haiku"
+rm -f "$WORK/args"
+FAKE_CLAUDE_ARGS="$WORK/args" PATH="$WORK/bin:/usr/bin:/bin" MAUDE_EYE_RUNNER_OVERRIDE="" \
+  bash "$ROOT/hooks/scripts/maude-eye-blink.sh" "$WORK/t.jsonl" >/dev/null 2>&1
+assert_contains "$(cat "$WORK/args" 2>/dev/null)" "--model haiku" "eye model defaults to haiku"
+
+test_start "MAUDE_EYE_MODEL unpins the model"
+rm -f "$WORK/args"
+FAKE_CLAUDE_ARGS="$WORK/args" PATH="$WORK/bin:/usr/bin:/bin" MAUDE_EYE_RUNNER_OVERRIDE="" \
+  MAUDE_EYE_MODEL="sonnet" \
+  bash "$ROOT/hooks/scripts/maude-eye-blink.sh" "$WORK/t.jsonl" >/dev/null 2>&1
+assert_contains "$(cat "$WORK/args" 2>/dev/null)" "--model sonnet" "MAUDE_EYE_MODEL unpins the model"
+
 print_summary; exit $FAILED

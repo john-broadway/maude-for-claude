@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 240" role="img" aria-label="Maude — she keeps the house. Household engineering for your Claude.">
+  <defs>
+    <!-- classic three-tone gingham -->
+    <pattern id="gingham" width="24" height="24" patternUnits="userSpaceOnUse">
+      <rect width="24" height="24" fill="#F7F1E3"/>
+      <rect x="0" y="0" width="12" height="24" fill="#8FBCA8" opacity="0.55"/>
+      <rect x="0" y="0" width="24" height="12" fill="#8FBCA8" opacity="0.55"/>
+    </pattern>
+  </defs>
+
+  <rect width="880" height="240" fill="#F7F1E3"/>
+  <!-- gingham bands, top and bottom -->
+  <rect x="0" y="0" width="880" height="26" fill="url(#gingham)"/>
+  <rect x="0" y="214" width="880" height="26" fill="url(#gingham)"/>
+
+  <!-- stitched border, like the hem of an apron -->
+  <rect x="22" y="40" width="836" height="160" fill="none" stroke="#B5402F" stroke-width="1.6" stroke-dasharray="7,5"/>
+
+  <!-- eyebrow -->
+  <text x="440" y="72" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="13" letter-spacing="5" fill="#5E8A74">SHE KEEPS THE HOUSE</text>
+
+  <!-- her name, in her hand -->
+  <text x="440" y="140" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="74" font-style="italic" fill="#40352A">Maude</text>
+
+  <!-- cherries, because it's her kitchen -->
+  <g transform="translate(560,118)">
+    <path d="M0,-14 Q6,-30 18,-34 M0,-14 Q14,-26 26,-24" fill="none" stroke="#5E8A74" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="-1" cy="-8" r="7.5" fill="#B5402F"/>
+    <circle cx="12" cy="-4" r="7.5" fill="#B5402F"/>
+    <circle cx="-3.5" cy="-10.5" r="2" fill="#F7F1E3" opacity="0.7"/>
+    <circle cx="9.5" cy="-6.5" r="2" fill="#F7F1E3" opacity="0.7"/>
+  </g>
+
+  <!-- what she is -->
+  <text x="440" y="172" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="17" font-style="italic" fill="#40352A">household engineering for your Claude</text>
+
+  <!-- hem line -->
+  <text x="440" y="193" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="11.5" letter-spacing="2" fill="#5E8A74">walks in fresh every session &#183; quiet until it matters &#183; apache-2.0</text>
+</svg>

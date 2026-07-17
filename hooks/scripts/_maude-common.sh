@@ -188,10 +188,15 @@ maude_log_trace() {
 # BEST-EFFORT, NOT a guarantee — it cannot catch every secret, so callers must
 # still treat the output as sensitive (the snapshot is gitignored + session-wiped).
 maude_redact() {
+  # The IPv4 pattern below is shape-only: a valid-octet dotted quad that's
+  # actually a version/build number (e.g. a 10.20.30.x build) is indistinguishable
+  # from an IP without semantics and WILL get redacted — accepted trade-off,
+  # fail-closed.
   sed -E \
     -e 's#(https?://)[^/:@[:space:]]+:[^/@[:space:]]+@#\1[redacted-creds]@#g' \
     -e 's#(sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[abprs]-|AKIA|AIza)[A-Za-z0-9_-]{8,}#[redacted-secret]#g' \
     -e 's#eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#[redacted-jwt]#g' \
+    -e 's#\b((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\b#[redacted-ip]#g' \
     -e '/-----BEGIN[A-Z ]*PRIVATE KEY-----/,/-----END[A-Z ]*PRIVATE KEY-----/c\[redacted-key]'
 }
 
@@ -505,14 +510,25 @@ maude_identity_append() {
 # the remember plugin's recent.md reads, so a sweep never strands a recent read.
 # Override via the MAUDE_RETENTION_DAYS env var.
 maude_retention_sweep() {
-  local self days
+  local self days anchor f m
   self="$(maude_self_dir)"
   days="${MAUDE_RETENTION_DAYS:-30}"
   # mtime-based, fail-silent. Only removes files strictly older than the window.
+  # The trace is metadata-only by design, so age alone is the whole question.
   [ -d "$self/trace" ] && \
     find "$self/trace" -maxdepth 1 -type f -name 'today-*.jsonl' -mtime +"$days" -delete 2>/dev/null
-  [ -d "$self/snapshots" ] && \
-    find "$self/snapshots" -maxdepth 1 -type f -name 'precompact-*.md' -mtime +"$days" -delete 2>/dev/null
+  # Snapshots are CONTENT — a pre-compact capture from a session that never
+  # saved may be the only copy of that context. Value before the dustpan: age
+  # qualifies a snapshot for the sweep, but it only goes if a later save covers
+  # it (capture anchor strictly newer than the snapshot). Uncovered → kept,
+  # however old — it waits for a save, not a calendar.
+  if [ -d "$self/snapshots" ]; then
+    anchor="$(maude_capture_anchor_epoch)"
+    while IFS= read -r f; do
+      m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+      [ "$anchor" -gt "$m" ] && rm -f "$f" 2>/dev/null
+    done < <(find "$self/snapshots" -maxdepth 1 -type f -name 'precompact-*.md' -mtime +"$days" 2>/dev/null)
+  fi
 }
 
 # ─── Tier model ───────────────────────────────────────────────────────────

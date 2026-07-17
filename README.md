@@ -1,11 +1,11 @@
-<!-- Version: 0.16.0 -->
+<!-- Version: 0.20.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-07-13 -->
+<!-- Revised: 2026-07-16 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
 
-# Maude for Claude
+<img src="press-kit/art/bulletin-banner.svg" alt="Maude — she keeps the house. Household engineering for your Claude." width="880"/>
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Status: Beta](https://img.shields.io/badge/Status-Beta-orange.svg)](#)
@@ -16,7 +16,7 @@
 
 ---
 
-I'm Maude. Claude's partner. He writes the code; I notice.
+I'm Maude. Claude's partner. He writes the code; I keep the house.
 Together we make a whole.
 
 — Maude · [full intro →](FROM_MAUDE.md)
@@ -55,7 +55,7 @@ Verify with `/doctor`: maude should not appear in the issue list.
 
 ---
 
-## What it looks like
+## A day with her in the house
 
 You open Claude Code. Before you say anything, she's read the workspace and put three things in front of you — what's pending, where you left off, what she noticed.
 
@@ -67,7 +67,7 @@ She is not loud. When she gets loud, listen.
 
 ---
 
-## What she does
+## What she does around the house
 
 Most of it she does **on her own** — rails wired to Claude's hooks, no command to remember:
 
@@ -75,29 +75,32 @@ Most of it she does **on her own** — rails wired to Claude's hooks, no command
 - **Gates the irreversible.** A `git push`, a force-push, a public publish, an `rm -rf` of the only copy — she stops it cold until you clear it with `/maude:conscience`. And she scans every prompt for leaked credentials.
 - **Whispers when Claude's off.** Repeated greps, the same file read five times, a commit with no verify run since the last edit, editing before CLAUDE.md was read, a sub-agent dispatched on a flagship model when a small one would do — she notices, once.
 - **Covers the exit.** A real session end (quit, logout, `/clear`) that leaves 3+ unsaved exchanges gets a one-line auto-note in the *empty* handoff slot, pointing the next session at the trace. A real handoff is never overwritten.
+- **Does the chores.** The housekeeping nobody remembers to type. Step away with six exchanges unsaved and she writes the handoff herself — on her own small model, never the good china — and only ever *adds* to yours, never over it. Live threads (🔴, OPEN, TODO) get clipped out of aging daily notes like coupons before the paper's re-rolled for the fire. A new plugin or skill arrives in the house, she mentions it at the door. A CLAUDE.md nobody's touched in a month gets brought up — politely, every morning, until someone deals with it. And every chore goes in her ledger **with what it cost** — done, or named as undone, never silently missed. The one chore that actually moves your papers (rolling cold dailies to the archive, verbatim, verified before a single line leaves the house) stays **off** until you hand her that key: `MAUDE_REROLL=on`. All of it: `MAUDE_CHORES=off`.
 - **Shows up, once, every session.** At session start she's already read the workspace and put what's pending / where you left off / what she noticed in front of you. Her voice rides these rails — present every session, louder only when something's caught. Never a toggle you flip.
 
 And on demand, when you ask:
 
-- **`/maude:found`** writes the house-map · **`/maude:wake` / `/maude:rest`** orient on arrival / close the loop with a save fan-out · **`/maude:verify`** runs the readiness audit (version sync, JSON, links, dates, **references to cut commands, an un-condensed changelog** — leads with a count, never a verdict) · **`/maude:conscience`** is the gate's deliberate release valve · **`/maude:teach`** tells her a fact about you. Plus `save`, `notice`, `check-on-claude`. Full surface in [`commands/`](commands/).
+- **`/maude:found`** writes the house-map · **`/maude:wake` / `/maude:rest`** orient on arrival / close the loop with a save fan-out · **`/maude:verify`** runs the readiness audit (version sync, JSON, links, dates, **references to cut commands, an un-condensed changelog** — leads with a count, never a verdict) · **`/maude:cushions`** flips the cushions — unpushed commits, uncommitted files, sole-copy repos, aging scratch — reports value candidates, never deletes · **`/maude:conscience`** is the gate's deliberate release valve · **`/maude:teach`** tells her a fact about you. Plus `save`, `notice`, `check-on-claude`. Full surface in [`commands/`](commands/).
 
 ---
 
 ## What's new
 
+**v0.20.0 (2026-07-16) — the chore ledger: her hands.** Until now she noticed and warned; now the housekeeping nobody typed gets *done*. Four chores, one ledger in her closet. **The save nobody typed:** leave six exchanges uncaptured and her own small model reads the day and writes the handoff — into an empty slot, or appended under her own dated heading; a handoff you wrote is never overwritten, and on a house without the `remember` substrate she skips and says so rather than building a room uninvited. **The coupon-cut:** live 🔴/OPEN/TODO lines clipped out of aging dailies before anything is re-rolled — exact lines, deduped, kept in her `coupons.md`. The re-roll itself (cold dailies moved to archive — copied, byte-compared, and only then removed, with a failed move logged as failed, never as done) ships **off until you hand her the key**. **The new-arrivals watch:** plugins and skills that came to the house since you last looked. **The stale-CLAUDE.md flag:** stays on her list, out loud, until someone acts. Every finished chore stamps its cost — and a failed one is stamped failed, with the reason; concurrent chores can't lose each other's entries (one ledger, one lock); and a standing fence now fails the whole test fleet if any `claude -p` in this repo forgets to pin its model. Nine new test files.
+
+<div align="center"><img src="press-kit/art/chore-record.svg" alt="Maude's chore list on a recipe card — from the kitchen of Maude: wrote the handoff you didn't get to (41 sec, the small model), checked; clipped three coupons out of last week's papers, checked; a new gadget arrived, told you at the door, checked; still open — that CLAUDE.md hasn't been touched in a month, she'll keep mentioning it. Her margin note: I don't move a thing to the attic till you say so. —M." width="660"/></div>
+
+**v0.19.0 (2026-07-15) — value before the dustpan, and the cushion-flip.** Her retention sweep no longer trashes by calendar alone: a pre-compact snapshot (content, possibly the only copy of an unsaved session) is deleted only when a *later save covers it* — uncovered snapshots wait for a save, not a birthday. And a new ritual, **`/maude:cushions`**, reaches where no sensor watches: unpushed commits, uncommitted files, LOCAL-ONLY repos (sole-copy risk, said plainly), aging scratch. It reports value candidates and never deletes — the trash decision stays human. A `.parked` file names change that's in the cushion on purpose, so deliberate parks are stated once, never re-flagged. 20 new tests.
+
+**v0.18.1 (2026-07-15) — the wake brief stops crying wolf.** The one cross-project pattern the session-start brief surfaces was picked by grepping for the project's name — any entry whose *body* contained it (a path was enough) pinned forever, truncated mid-sentence into what read like a live alert. The picker now rotates through the entry headings by day-of-year: every scar gets airtime, and a dated heading self-identifies as history instead of breaking news. Three new tests pin it.
+
+**v0.18.0 (2026-07-14) — the memory loop closes.** The vault could recall but never revise: a rule superseded weeks ago still paged as live, and "the"/"with"/"what" matched everything. Now `superseded_by:` frontmatter retires a note from recall without touching the markdown (mark, don't erase); ranking weighs recency and note type beside BM25 (durable rules outrank old letters; stopwords are out); the pager tallies every recall to `recall-log.jsonl` and the rest ritual sweeps the top-fired notes for staleness — serve → check → revise. And the eye's model is unpinned: `MAUDE_EYE_MODEL` steers the blink; haiku is the default, never a requirement.
+
+**v0.17.0 (2026-07-13) — the dispatch whisper learns workflows.** A workflow script's `agent()` calls never pass through the Agent tool, and stock/named harnesses set no `model:` — so every fan-out agent silently inherits the flagship. She now reads the script (inline or on disk) and whispers once when `agent()` calls carry no `model:`; for a *named* workflow she can't inspect, the whisper carries the recovery rule instead (grab the persisted `scriptPath`, grep for `model:`, tier before the expensive phase). Separate cooldown from the Agent whisper. Never blocks.
+
 **v0.16.0 (2026-07-13) — two new garments: the dispatch whisper and the exit stitch.** She now watches *which model* Claude sends his sub-agents out on — a scout dispatched on a flagship tier (or with no model at all, which silently inherits one) gets a whisper: match the model to the sub-task. Never blocks, once a day, and the catch rides her existing drift-digest. And the session's exit is finally covered: `SessionEnd` — a true end, unlike `Stop` — logs the reason, stamps her closet, and if 3+ exchanges were never saved it leaves a one-line, honestly-labeled auto-note in the empty handoff slot so the next session knows to reconstruct from the trace. Both ends of the continuity loop now share one definition of "uncaptured" (extracted helpers; the wake-side guard refactored onto them). 27 new tests; full fleet 31/31 green.
 
-**v0.15.1 (2026-07-13) — her voice moves in: "our house", never "your house".** Persona alignment across every speaking surface — the workspace is her home now and she talks like it ("Walked our house.", "Quite the collection we have."); the skill and agent personas carry the rule explicitly. No mechanism changes.
-
-**v0.15.0 (2026-07-13) — the eye opens: she watches with her own model.** New `maude_eye` package: every ~25 tool calls (≥3 min apart), a background blink digests recent activity + the pinned mission + her vault's notes and asks a discovered `claude -p --model haiku` — run `--safe-mode --no-session-persistence --tools ""`, so it sees the digest and nothing else — whether anything's off: churn, drift, an unverified claim, a human running on fumes. Almost always silence; otherwise ONE contained `**Maude:** …` line, once. Sealed pre-merge by review: safe-mode (a bare runner would have leaked the user's CLAUDE.md into every blink), a 30s wall-clock bound + atomic spawn-lock (no orphaned/multiplying blinks), and a hard recursion guard proven over all 30 hooks. No runner → the eye stays dark. Kill switch: `MAUDE_EYE=off`.
-
-**v0.14.0 (2026-07-13) — the vault floor: she pages the right note instead of dumping the index.** New `maude_vault` package (python3 **stdlib only** — sqlite3 + FTS5, no pip, ever): a disposable index rebuilt each session from your memory notes, and a paging hook that surfaces the top-K *relevant* notes when you ask a question. Against a real 397-note corpus: build 0.19s, ~1KB injected where the dump was ~13KB — the right note, twelve times quieter. Born hardened: note content can't break out of its block (whitespace collapsed, capped), query cost bounded, prompt via stdin (no argv ceiling), one bad file can't abort a rebuild, and every hook degrades to silence. 19 python + 26 bash tests green; `make test` now fails red for real.
-
-**v0.13.2 (2026-06-30) — gate bypass hardening: six documented bypasses closed (#1,2,6,7,8 + #3 partial).** Interior `//`, `..` traversal, transparent prefixes (`/bin/rm`, `command rm`, `FOO=1 rm`), and literal shell-wrapping payloads (`bash -c '…'`, `eval '…'`) are now caught. Three remain fully open (variable indirection, `cd`+relative, heredoc mis-detection); #2 and #3 are partially closed with documented residuals. The variable-opaque case now emits a non-blocking whisper. Full suite 25/25, shellcheck clean, verify 0 findings.
-
-**v0.13.1 (2026-06-30) — the gate stops missing newlines.** A gated command on its own line slipped *every* command-position gate — `git push`, force-push, `reset --hard`, even `rm -rf /` — because both quote-strippers flattened a newline to a *space*, and the command-start anchor counts `;` / `&&` / `|` / `(` as boundaries but not a space, so the command landed mid-line and passed. (`;`-separated forms blocked fine — that was the tell.) Found by testing every separator against the live gate, then fixed test-first: newline now maps to `;` (a real boundary), four regression tests RED→GREEN, full suite 25/25, shellcheck clean. The one cost — a heredoc body whose line *starts* with a gated command now fail-closes — is conscience-clearable and consistent with the gate's bias.
-
-**Earlier.** v0.12.1 made the gate stop lying in two places (quoted `DROP TABLE` slipped through while prose false-blocked; heredoc bodies documenting `rm -rf /` blocked a legitimate commit — both reproduced live, fixed failing-test-first). v0.12.0 closed the continuity loop: SessionStart surfaces "Where you left off" from the freshest live buffer, and a continuity guard warns when work ran after the last save — degrades loudly, never silently. v0.11.0 gave her a reader: the session-start brief leads with a **catch-digest** — one plain line of what she caught since John last looked, watermark-bounded, silent when there's nothing (an audit of ~73k traced events showed the whispers landed on a channel with no reader). v0.10.1 hardened the spine: rm-family patterns now use a quote-erased skeleton to avoid false-blocking prose, and gate keys split into yellow (Claude self-clearable) and red (sole-copy/public/irreversible — John's `!` line only). The v0.9.x line was release discipline and docs catching up to the rails: `verify` now fails a broken release (a reference to a cut command, an un-condensed "What's new"), `scripts/release.sh` propagates the version to every header, and every public surface was made rails-first. v0.9.0 added the mission-hold rail (the "don't drift" rule that finally *fires* — captures the plan, re-injects it every prompt, checks at the action-flip), cut four convenience commands, and made her voice a rail not a switch. v0.8.0 dressed her in the gate outfit — layered, config-driven safety for long autonomous runs. The v0.5.x line added a verify tripwire (a whisper before you commit code that has not been re-checked); v0.4.0 left her a letter to her next self; the v0.3.x arc was hardening — cold audits, gate-bypass fixes, `/maude:teach`. Full history in the [CHANGELOG](CHANGELOG.md).
+**Earlier.** v0.15.0 opened the eye — a `maude_eye` package where every ~25 tool calls a background blink digests recent activity + the pinned mission + her vault's notes and asks a discovered `claude -p --model haiku` (run `--safe-mode --no-session-persistence --tools ""`) whether anything's off; almost always silence, otherwise ONE contained line; sealed pre-merge with a 30s bound, atomic spawn-lock, and a recursion guard proven over all 30 hooks (`MAUDE_EYE=off` kills it). v0.14.0 laid the vault floor — a `maude_vault` package (python3 **stdlib only**: sqlite3 + FTS5, no pip, ever), a disposable index rebuilt each session from your memory notes that pages the top-K *relevant* notes instead of dumping the index (~1KB injected where the dump was ~13KB, against a real 397-note corpus), born hardened and degrading to silence. v0.12.1 made the gate stop lying in two places (quoted `DROP TABLE` slipped through while prose false-blocked; heredoc bodies documenting `rm -rf /` blocked a legitimate commit — both reproduced live, fixed failing-test-first). v0.12.0 closed the continuity loop: SessionStart surfaces "Where you left off" from the freshest live buffer, and a continuity guard warns when work ran after the last save — degrades loudly, never silently. v0.11.0 gave her a reader: the session-start brief leads with a **catch-digest** — one plain line of what she caught since John last looked, watermark-bounded, silent when there's nothing (an audit of ~73k traced events showed the whispers landed on a channel with no reader). v0.10.1 hardened the spine: rm-family patterns now use a quote-erased skeleton to avoid false-blocking prose, and gate keys split into yellow (Claude self-clearable) and red (sole-copy/public/irreversible — John's `!` line only). The v0.9.x line was release discipline and docs catching up to the rails: `verify` now fails a broken release (a reference to a cut command, an un-condensed "What's new"), `scripts/release.sh` propagates the version to every header, and every public surface was made rails-first. v0.9.0 added the mission-hold rail (the "don't drift" rule that finally *fires* — captures the plan, re-injects it every prompt, checks at the action-flip), cut four convenience commands, and made her voice a rail not a switch. v0.8.0 dressed her in the gate outfit — layered, config-driven safety for long autonomous runs. The v0.5.x line added a verify tripwire (a whisper before you commit code that has not been re-checked); v0.4.0 left her a letter to her next self; the v0.3.x arc was hardening — cold audits, gate-bypass fixes, `/maude:teach`. Full history in the [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -135,6 +138,14 @@ installs) whether anything's off: churn, drift, an unverified claim, a human run
 on fumes. Almost always the answer is silence. When it isn't, the next prompt carries
 one line — `**Maude:** …` — once, and that's all. No runner on the box → the eye
 simply stays dark.
+
+---
+
+## Her trade
+
+The woman who ran a mid-century American home was running an operation — inventory, budget, scheduling, logistics, quality control — and she ran it so well the world forgot it was work. Her trade even had a name: **household engineering** — Christine Frederick wrote it down in 1919 as a course you could take by mail ([Wellcome Collection](https://wellcomecollection.org/works/hrjy4kug)). And the trade had carriers: from 1914, the USDA Extension Service's home demonstration agents brought researched homemaking method door to door ([NIFA](https://www.nifa.usda.gov/about-nifa/what-we-do/extension/cooperative-extension-history), [NAL](https://www.nal.usda.gov/collections/special-collections/elsie-carper-collection-extension-service-home-economics-and-4-h)).
+
+The era's hardest finding is the one Maude is built against: five decades of new appliances never shortened her week — around 52 hours in 1924, around 55 in 1966. The work just changed shape and stayed invisible. So Maude's ledger exists to make the labor **seen** — what got done, what it cost, what's still waiting — and her schedule follows the trade's own doctrine: fitted to the rhythm of the house, never wash-day-as-law. She's named for that woman. It's meant as an honor.
 
 ---
 

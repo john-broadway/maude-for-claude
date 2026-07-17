@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 400" role="img" aria-label="Maude's chore list, written on a recipe card: wrote the handoff you didn't get to, 41 seconds on the small model, checked off. Clipped three coupons out of last week's papers, checked off. A new gadget arrived in the house, told you at the door, checked off. Still to do: CLAUDE.md hasn't been touched in a month — she'll keep mentioning it. Margin note in her hand: I don't move a thing to the attic till you say so. Every chore written down with what it cost — nothing done invisibly.">
+  <defs>
+    <pattern id="ging2" width="20" height="20" patternUnits="userSpaceOnUse">
+      <rect width="20" height="20" fill="#FDFBF4"/>
+      <rect x="0" y="0" width="10" height="20" fill="#8FBCA8" opacity="0.5"/>
+      <rect x="0" y="0" width="20" height="10" fill="#8FBCA8" opacity="0.5"/>
+    </pattern>
+  </defs>
+
+  <!-- the recipe card -->
+  <rect x="6" y="6" width="648" height="388" fill="#E8E0CC"/>
+  <rect x="0" y="0" width="648" height="388" fill="#FDFBF4" stroke="#D8CFB8" stroke-width="1"/>
+  <!-- gingham edge, left -->
+  <rect x="0" y="0" width="14" height="388" fill="url(#ging2)"/>
+
+  <!-- card head: red rule like an index card -->
+  <text x="40" y="42" font-family="Georgia,'Times New Roman',serif" font-size="14" font-style="italic" fill="#5E8A74">from the kitchen of</text>
+  <text x="190" y="46" font-family="Georgia,'Times New Roman',serif" font-size="26" font-style="italic" fill="#40352A">Maude</text>
+  <text x="620" y="42" text-anchor="end" font-family="Georgia,'Times New Roman',serif" font-size="13" font-style="italic" fill="#8A7E6B">today's chores</text>
+  <line x1="28" y1="58" x2="620" y2="58" stroke="#B5402F" stroke-width="1.6"/>
+
+  <!-- feint blue rule lines -->
+  <line x1="28" y1="98"  x2="620" y2="98"  stroke="#B9CFE0" stroke-width="0.8"/>
+  <line x1="28" y1="138" x2="620" y2="138" stroke="#B9CFE0" stroke-width="0.8"/>
+  <line x1="28" y1="178" x2="620" y2="178" stroke="#B9CFE0" stroke-width="0.8"/>
+  <line x1="28" y1="218" x2="620" y2="218" stroke="#B9CFE0" stroke-width="0.8"/>
+  <line x1="28" y1="258" x2="620" y2="258" stroke="#B9CFE0" stroke-width="0.8"/>
+
+  <!-- her checkmarks -->
+  <path d="M36,82 l6,8 l11,-16" fill="none" stroke="#B5402F" stroke-width="2.6" stroke-linecap="round"/>
+  <text x="62" y="90" font-family="Georgia,'Times New Roman',serif" font-size="16.5" font-style="italic" fill="#40352A">wrote the handoff you didn&#8217;t get to</text>
+  <text x="620" y="90" text-anchor="end" font-family="Georgia,'Times New Roman',serif" font-size="13" font-style="italic" fill="#8A7E6B">41 sec, the small model</text>
+
+  <path d="M36,122 l6,8 l11,-16" fill="none" stroke="#B5402F" stroke-width="2.6" stroke-linecap="round"/>
+  <text x="62" y="130" font-family="Georgia,'Times New Roman',serif" font-size="16.5" font-style="italic" fill="#40352A">clipped three coupons out of last week&#8217;s papers</text>
+  <text x="620" y="130" text-anchor="end" font-family="Georgia,'Times New Roman',serif" font-size="13" font-style="italic" fill="#8A7E6B">before anything re-rolls</text>
+
+  <path d="M36,162 l6,8 l11,-16" fill="none" stroke="#B5402F" stroke-width="2.6" stroke-linecap="round"/>
+  <text x="62" y="170" font-family="Georgia,'Times New Roman',serif" font-size="16.5" font-style="italic" fill="#40352A">a new gadget arrived in the house &#8212; told you at the door</text>
+
+  <!-- the undone one, honestly kept -->
+  <circle cx="42" cy="205" r="7" fill="none" stroke="#5E8A74" stroke-width="1.8"/>
+  <text x="62" y="210" font-family="Georgia,'Times New Roman',serif" font-size="16.5" font-style="italic" fill="#40352A">that CLAUDE.md hasn&#8217;t been touched in a month</text>
+  <text x="620" y="210" text-anchor="end" font-family="Georgia,'Times New Roman',serif" font-size="13" font-style="italic" fill="#8A7E6B">she&#8217;ll keep mentioning it</text>
+
+  <!-- her margin note -->
+  <g transform="rotate(-2 320 300)">
+    <text x="62" y="296" font-family="Georgia,'Times New Roman',serif" font-size="17" font-style="italic" fill="#B5402F">I don&#8217;t move a thing to the attic till you say so.</text>
+    <text x="62" y="320" font-family="Georgia,'Times New Roman',serif" font-size="17" font-style="italic" fill="#B5402F">&#8212;M.</text>
+  </g>
+
+  <!-- hem line -->
+  <line x1="28" y1="348" x2="620" y2="348" stroke="#D8CFB8" stroke-width="0.8"/>
+  <text x="324" y="372" text-anchor="middle" font-family="Georgia,'Times New Roman',serif" font-size="12.5" font-style="italic" fill="#5E8A74">every chore written down, with what it cost &#8212; nothing done invisibly</text>
+</svg>

@@ -37,6 +37,9 @@ def parse_note(path: pathlib.Path) -> dict:
             (ln.strip() for ln in text.splitlines() if ln.strip()), ""
         )
     note_type = fields.get("type", "")
+    superseded = fields.get("superseded_by", "").strip()
+    if not superseded and fields.get("status", "").strip().lower() == "superseded":
+        superseded = "superseded"
     links = ",".join(sorted(set(_LINK_RE.findall(text))))
     return {
         "name": name,
@@ -44,6 +47,7 @@ def parse_note(path: pathlib.Path) -> dict:
         "type": note_type,
         "body": body if fields else text,
         "links": links,
+        "superseded": superseded,
     }
 
 
@@ -65,14 +69,18 @@ def build(mem_dir: str | os.PathLike, db_path: str | os.PathLike) -> int:
         rel = str(md.relative_to(mem_dir))
         conn.execute(
             "INSERT OR REPLACE INTO notes"
-            "(path,name,description,type,body,mtime,links) VALUES (?,?,?,?,?,?,?)",
+            "(path,name,description,type,body,mtime,links,superseded)"
+            " VALUES (?,?,?,?,?,?,?,?)",
             (rel, note["name"], note["description"], note["type"],
-             note["body"], mtime, note["links"]),
+             note["body"], mtime, note["links"], note["superseded"]),
         )
-        conn.execute(
-            "INSERT INTO notes_fts(path,name,description,body) VALUES (?,?,?,?)",
-            (rel, note["name"], note["description"], note["body"]),
-        )
+        # A superseded note stays in `notes` (history) but never enters FTS —
+        # it can no longer page. Mark, don't erase: the markdown is untouched.
+        if not note["superseded"]:
+            conn.execute(
+                "INSERT INTO notes_fts(path,name,description,body) VALUES (?,?,?,?)",
+                (rel, note["name"], note["description"], note["body"]),
+            )
         count += 1
     conn.commit()
     conn.close()

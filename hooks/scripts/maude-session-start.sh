@@ -69,9 +69,16 @@ if [ -s "$REMEMBER/remember.md" ]; then
   [ -z "$REMEMBER_HANDOFF" ] && REMEMBER_HANDOFF="$(head -3 "$REMEMBER/remember.md" | tail -1 | head -c 200)"
 fi
 
-# Tier 3: cross-project patterns (her own home base)
+# Tier 3: cross-project patterns (her own home base) — one scar per wake, rotating.
+# Day-of-year cycles through the entry HEADINGS: every pattern gets airtime and none
+# pins forever (the old basename-grep locked onto any entry whose BODY contained the
+# project name — e.g. a path — and truncated it mid-sentence into what read like a
+# live alert). A ## heading is a complete dated sentence; history stays history.
 if [ -s "$USER_DIR/patterns.md" ]; then
-  PATTERN_HINT="$(grep -m1 -i "$(basename "$PROJ")" "$USER_DIR/patterns.md" 2>/dev/null | head -c 160)"
+  PATTERN_HINT="$(awk -v day="$(date +%j | sed 's/^0*//')" '
+    /^## / { h[n++] = substr($0, 4) }
+    END { if (n > 0) print h[day % n] }
+  ' "$USER_DIR/patterns.md" 2>/dev/null | head -c 200)"
 fi
 
 # Tier 3b: her letter to her next self (written at /maude:rest — read-only here,
@@ -121,5 +128,13 @@ GREETING="$(maude_greeting)"
   [ "$TOPIC_COUNT" -gt 0 ]    && printf '  %s memory file(s) on hand.\n' "$TOPIC_COUNT"
   [ -z "$HAS_MAP" ] && printf '  No house-map yet — run /maude:found.\n'
 } 2>/dev/null
+
+# Chore brief — the ledger makes the labor visible (one line, silent when idle).
+CHORES="$DIR/../../scripts/maude-chores.sh"
+if [ -f "$CHORES" ]; then
+  bash "$CHORES" detect >/dev/null 2>&1
+  CHORE_LINE="$(bash "$CHORES" brief 2>/dev/null)"
+  [ -n "$CHORE_LINE" ] && printf '  %s\n' "$CHORE_LINE"
+fi
 
 exit 0

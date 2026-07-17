@@ -23,7 +23,7 @@ run_watch() {
 # Reset the daily cooldown between scenarios (single key, like drift-watch).
 clear_cooldown() {
   local care; care="$(care_path)"
-  [ -f "$care" ] && jq 'del(.dispatch_warned)' "$care" > "$care.tmp" && mv "$care.tmp" "$care"
+  [ -f "$care" ] && jq 'del(.dispatch_warned, .dispatch_warned_workflow)' "$care" > "$care.tmp" && mv "$care.tmp" "$care"
 }
 
 # ── Whisper fires: flagship / unset ────────────────────────────────────
@@ -80,6 +80,63 @@ assert_eq "$ERR" "" "stderr empty on repeat"
 test_start "cooldown is shared across flagship and unset (one drift class)"
 run_watch '{"description":"c","prompt":"d"}'
 assert_eq "$ERR" "" "stderr empty"
+
+# ── Workflow dispatches (the drift's second home) ──────────────────────
+# A workflow script's agent() calls never pass through the Agent tool, so
+# the Agent|Task whisper can't see them. Stock/named harnesses set no
+# model: at all — every agent() inherits the flagship main loop.
+
+test_start "whispers on inline workflow script with agent() calls and no model:"
+clear_cooldown
+run_watch '{"script":"export const meta={name:\"x\"}\nconst r = await agent(\"find bugs\")\nreturn r"}' "Workflow"
+assert_contains "$ERR" "Maude:" "stderr"
+
+test_start "workflow whisper says the agents inherit the flagship"
+assert_contains "$ERR" "model:" "stderr"
+
+test_start "silent when the workflow script sets model: somewhere"
+clear_cooldown
+run_watch '{"script":"const r = await agent(\"verify\", {model: \"haiku\"})"}' "Workflow"
+assert_eq "$ERR" "" "stderr empty"
+
+test_start "silent when the script has no agent() calls at all"
+clear_cooldown
+run_watch '{"script":"log(\"hello\"); return 1"}' "Workflow"
+assert_eq "$ERR" "" "stderr empty"
+
+test_start "whispers on a NAMED workflow (script not inspectable — grep before launch)"
+clear_cooldown
+run_watch '{"name":"deep-research","args":{"q":"x"}}' "Workflow"
+assert_contains "$ERR" "Maude:" "stderr"
+
+test_start "named-workflow whisper carries the grep-the-script rule"
+assert_contains "$ERR" "scriptPath" "stderr"
+
+test_start "whispers on scriptPath whose file has agent() and no model:"
+clear_cooldown
+printf 'const a = await agent("scan")\n' > "$TEST_TMP/wf.js"
+run_watch "{\"scriptPath\":\"$TEST_TMP/wf.js\"}" "Workflow"
+assert_contains "$ERR" "Maude:" "stderr"
+
+test_start "silent on scriptPath whose file tiers its agents"
+clear_cooldown
+printf 'const a = await agent("scan", {model: "haiku"})\n' > "$TEST_TMP/wf2.js"
+run_watch "{\"scriptPath\":\"$TEST_TMP/wf2.js\"}" "Workflow"
+assert_eq "$ERR" "" "stderr empty"
+
+test_start "workflow cooldown is separate from the Agent cooldown"
+clear_cooldown
+run_watch '{"description":"a","prompt":"b","model":"opus"}'      # burns the Agent key
+run_watch '{"script":"await agent(\"x\")"}' "Workflow"           # workflow key still fresh
+assert_contains "$ERR" "Maude:" "stderr"
+
+test_start "second workflow whisper same day is silent"
+run_watch '{"script":"await agent(\"y\")"}' "Workflow"
+assert_eq "$ERR" "" "stderr empty"
+
+test_start "workflow whisper is logged to the trace as a drift catch"
+TRACE_LINE="$(grep '"kind":"drift"' "$(trace_path)" | grep workflow | head -1)"
+assert_contains "$TRACE_LINE" "workflow" "trace"
 
 # ── Defensive guards ───────────────────────────────────────────────────
 
