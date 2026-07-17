@@ -79,7 +79,8 @@ else
     | ( [ $ev[] | select(.kind=="gate-cleared" and ((.payload // "")|test("git-push"))) ]|length ) as $pushclears
     # Only WHISPERS are flags. kind=="verify" also carries routine success
     # stamps and stamp-failure bookkeeping — counting those as "flags"
-    # inflated the number ~1000x on real data (review finding #1). And the
+    # inflated the number ~10x on real data (~5,100 vs ~525; review finding
+    # #1 — the original comment overstated this as ~1000x). And the
     # two whisper classes are NOT the same shape: a commit-whisper is one
     # distinct act (a commit that landed unverified); a stop-whisper fires
     # per TURN while a session merely sits in an unverified state — the same

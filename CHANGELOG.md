@@ -1,4 +1,4 @@
-<!-- Version: 0.21.0 -->
+<!-- Version: 0.22.0 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-07-17 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -8,6 +8,42 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.22.0 — every door, and an honest count
+
+She reaches more houses, and she shows her work.
+
+**macOS is a first-class platform now (#39).** The hooks carried GNU-isms —
+`stat -c`, `date -d`, GNU `touch -d`, a `sed` word-boundary — that BSD userland
+silently rejects, so on a Mac her redaction emitted *nothing*, her continuity
+guard stayed quiet, and the eye ran dark for want of a `timeout` binary. Every
+one now speaks both dialects (GNU first, BSD fallback, tagged shim lines a lint
+holds in place), the test harness stopped assuming GNU (`touch_ago`/`touch_at`/
+`file_digest` on python3 stdlib), and a `macos-latest` CI leg proves it on real
+BSD — a leg that failed red on the first honest run and caught what the
+Linux-only fakes could not. She does on a Mac exactly what she promises.
+
+**`/maude:receipts` — the measured table (#43).** The measure of a protector is
+the disaster that didn't happen, and until now that was a sentence. It's a
+table: sole-copy saves, gate blocks, drift caught at the flip — counted from
+her own trace and ledger, with the discipline that makes a number credible.
+Friction (a routine push-clear) is fenced from value by rule; there are no
+percentages, because a rate needs a denominator and there is none for disasters
+that never happened; payloads classify events but never surface as content. The
+feature's own review caught its first headline counting routine success-stamps
+and per-turn repetition as if they were catches — roughly a tenfold overcount
+(about 5,100 events where ~525 were real) — and the fix is why the table is
+small and true instead of large and flattering.
+
+**Everything stays in your house — now in writing.** A `PRIVACY.md` states it
+plainly: her records are local markdown and a disposable index; the one network
+call is the model *you* already configured, and it names the loopback probes it
+makes rather than rounding them away.
+
+Under the hood: a one-button ship rail (`scripts/ship.sh`) that builds a clean
+public tree, audits it for leaks locally, and refuses to self-merge without a
+documented review — and a social card, so a link to her finally unfurls with
+her face on it. Three new test files; fleet 46.
 
 ## v0.21.0 — the punch list and the proving ground
 
