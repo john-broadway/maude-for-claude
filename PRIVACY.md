@@ -5,11 +5,13 @@
 
 # Privacy Policy — Maude for Claude
 
-The short version: **everything stays in your house.** Maude makes zero network
-calls, sends zero telemetry, and has zero external dependencies. There is no
-server, no account, no analytics, and nothing that phones home. This document
-exists so you don't have to take that on faith — every claim below is
-verifiable in this repository's source.
+The short version: **everything stays in your house.** Maude contacts no
+remote host, sends zero telemetry, and has zero external dependencies. There
+is no server, no account, no analytics, and nothing that phones home. This
+document exists so you don't have to take that on faith — every claim below
+is verifiable in this repository's source, and this policy was corrected once
+(2026-07-17) when an independent review found its first draft overstated;
+the diff is in the history.
 
 ## What Maude stores, and where
 
@@ -27,14 +29,23 @@ All of it on your machine, all of it yours:
   your markdown remains the only canon.
 
 Deleting `<project>/.maude/` and `~/.claude/maude/` removes everything Maude
-has ever recorded. There is no copy anywhere else.
+has ever recorded. There is no copy anywhere else. (One opt-in exception,
+off by default: the `MAUDE_REROLL=on` chore moves your own aging
+`.remember/today-*.md` notes into `.remember/archive/` — your files, moved
+not copied, inside your project.)
 
 ## What Maude transmits
 
-Nothing. No HTTP requests, no DNS lookups, no update checks, no crash
-reports. The plugin surface is bash and python3-stdlib scripts operating on
-local files. (CI enforces this posture: the codebase ships with no network
-client and no third-party dependency to smuggle one in.)
+Nothing to any remote host. No requests to any server, no DNS lookups, no
+update checks, no crash reports. Stated precisely rather than rounded: at
+session start she probes a few **loopback-only** ports (`127.0.0.1` —
+redis/qdrant/neo4j-shaped local dev services) to detect what's running in
+your own house; no name resolution, no payload, nothing beyond your machine
+(`hooks/scripts/maude-probe-tier1.sh` — read it). Beyond that, the plugin
+surface is bash and python3-stdlib scripts operating on local files. There
+is no dedicated CI gate asserting "no network client" — the claim is
+verifiable by inspection: no HTTP library is imported anywhere and the repo
+carries no dependency manifest to smuggle one in.
 
 ## Model calls
 
