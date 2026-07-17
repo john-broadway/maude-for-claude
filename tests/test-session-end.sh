@@ -66,7 +66,7 @@ assert_contains "$(cat "$HANDOFF" 2>/dev/null)" "Auto-note from Maude" "honest l
 # ── Never clobber a fresh handoff ──────────────────────────────────────
 
 printf '# Handoff\n\n## Next\n- the real thread\n' > "$HANDOFF"
-touch -d "2026-06-23T23:00:00Z" "$HANDOFF"
+touch_at "2026-06-23T23:00:00Z" "$HANDOFF"
 run_hook "exit"
 
 test_start "a non-empty handoff is never overwritten"

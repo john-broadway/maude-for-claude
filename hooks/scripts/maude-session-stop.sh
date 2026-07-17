@@ -29,7 +29,7 @@ maude_log_trace "stop" ""
 # The old no-handoff-from-Stop rule stands for THIS hook's own writes — the c1
 # doer has its own clobber guard (append-only into a non-empty remember.md,
 # write only into an empty/absent slot — never a replace).
-TRANSCRIPT="$(timeout 2 head -c 4096 2>/dev/null | jq -r '.transcript_path // empty' 2>/dev/null)"
+TRANSCRIPT="$(maude_timeout 2 head -c 4096 2>/dev/null | jq -r '.transcript_path // empty' 2>/dev/null)"
 CHORES="$DIR/../../scripts/maude-chores.sh"
 if [ -f "$CHORES" ]; then
   bash "$CHORES" detect >/dev/null 2>&1

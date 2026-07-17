@@ -24,7 +24,10 @@ fi
 # Every distinct "command" registered anywhere in hooks.json — each script,
 # with each argument shape it's actually invoked with (e.g. `maude-mission.sh
 # clear|hold|verify|capture` are 4 separate invocations of one script).
-mapfile -t COMMANDS < <(jq -r '[.hooks[][].hooks[].command] | .[]' "$ROOT/hooks/hooks.json" | sort -u)
+# bash-3 compatible (macOS): no mapfile
+COMMANDS=()
+while IFS= read -r _c; do COMMANDS+=("$_c"); done \
+  < <(jq -r '[.hooks[][].hooks[].command] | .[]' "$ROOT/hooks/hooks.json" | sort -u)
 
 test_start "hooks.json yields registered commands to check"
 [ "${#COMMANDS[@]}" -gt 0 ]

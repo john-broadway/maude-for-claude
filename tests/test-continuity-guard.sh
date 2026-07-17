@@ -26,7 +26,7 @@ reset_trace() { : > "$TRACE"; }
 make_handoff_at() {  # make_handoff_at <iso-mtime>
   mkdir -p "$REMEMBER"
   printf '# Handoff\n\n## Next\n- pick up the thread\n' > "$HANDOFF"
-  touch -d "$1" "$HANDOFF"
+  touch_at "$1" "$HANDOFF"
 }
 
 # ── Scenario 1: 3+ exchanges ran after the last save → warn (stale handoff) ──
@@ -97,7 +97,7 @@ emit_prompt "2026-06-23T10:00:00Z"
 emit_prompt "2026-06-23T11:00:00Z"
 emit_prompt "2026-06-23T12:00:00Z"
 printf '\n## 12:30 | unknown\nfresh live buffer\n' > "$REMEMBER/now.md"
-touch -d "2026-06-23T12:30:00Z" "$REMEMBER/now.md"
+touch_at "2026-06-23T12:30:00Z" "$REMEMBER/now.md"
 OUT7="$(maude_continuity_guard)"
 
 test_start "silent when remember.md is drained but the live buffer is fresh (no false alarm)"

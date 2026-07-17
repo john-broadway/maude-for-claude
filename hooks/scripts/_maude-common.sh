@@ -192,12 +192,31 @@ maude_redact() {
   # actually a version/build number (e.g. a 10.20.30.x build) is indistinguishable
   # from an IP without semantics and WILL get redacted — accepted trade-off,
   # fail-closed.
+  #
+  # Portability (issue #39 wave 2): sed `\b` and the one-line `c\text` form are
+  # GNU-only — BSD sed rejected the whole expression and every redact caller
+  # emitted EMPTY on macOS. Word edges are now explicit (^|[^0-9.]) groups
+  # (slightly MORE aggressive than \b at wordchar-adjacent quads, e.g. a
+  # v-prefixed v1.2.3.x quad now redacts — fail-closed, accepted; the example
+  # here ends in .x so the pre-push guard never lexes its own documentation
+  # as an IP), and the PEM range keeps
+  # the BEGIN line and rewrites it to the marker instead of using `c\`.
+  # The IP substitution runs twice: `g` can't re-match an adjacent quad whose
+  # leading boundary char was consumed by the previous match.
+  local ip='((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])'
   sed -E \
     -e 's#(https?://)[^/:@[:space:]]+:[^/@[:space:]]+@#\1[redacted-creds]@#g' \
     -e 's#(sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[abprs]-|AKIA|AIza)[A-Za-z0-9_-]{8,}#[redacted-secret]#g' \
     -e 's#eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#[redacted-jwt]#g' \
-    -e 's#\b((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\b#[redacted-ip]#g' \
-    -e '/-----BEGIN[A-Z ]*PRIVATE KEY-----/,/-----END[A-Z ]*PRIVATE KEY-----/c\[redacted-key]'
+    -e "s#(^|[^0-9.])${ip}(\$|[^0-9.])#\\1[redacted-ip]\\5#g" \
+    -e "s#(^|[^0-9.])${ip}(\$|[^0-9.])#\\1[redacted-ip]\\5#g" \
+    -e '/-----BEGIN[A-Z ]*PRIVATE KEY-----/,/-----END[A-Z ]*PRIVATE KEY-----/{' \
+    -e '/-----BEGIN/!d' \
+    -e 's#.*#[redacted-key]#' \
+    -e '}'
+  # ^ the brace block is split across -e fragments: sed joins them with real
+  #   newlines, which is the form BSD sed's grammar requires ("the terminating
+  #   '}' must be preceded by a newline") — a ;} one-liner is GNU-tolerated only.
 }
 
 # Ensure her project closet exists, including the auto-gitignore.
@@ -359,6 +378,82 @@ maude_digest_line() {
 # read THESE — never their own copy — so the two ends of the loop can't
 # disagree on what "uncaptured" means.
 
+# ── Portability shims (issue #39) ───────────────────────────────────────
+# macOS/BSD userland speaks different flags than GNU coreutils. All mtime
+# reads and date parsing go through these two helpers: GNU branch first,
+# BSD fallback. Lines carrying a GNU-only construct are tagged
+# `# portability-shim` — tests/test-portability.sh forbids them anywhere else.
+
+# Print FILE's mtime as an epoch, or DEFAULT (0 if omitted) when unreadable.
+# Always exits 0 — call sites treat "no mtime" as a value, not an error.
+maude_mtime() {
+  local f="$1" d="${2:-0}" m
+  m="$(stat -c %Y "$f" 2>/dev/null)"                 # portability-shim (GNU)
+  [ -n "$m" ] || m="$(stat -f %m "$f" 2>/dev/null)"  # portability-shim (BSD)
+  # Numeric guard: GNU stat -f means "filesystem status" and can emit non-epoch
+  # text to stdout even on failure — anything but pure digits becomes DEFAULT,
+  # so callers' arithmetic never sees garbage.
+  case "$m" in (''|*[!0-9]*) m="$d" ;; esac
+  printf '%s' "$m"
+}
+
+# Print the epoch for a YYYY-MM-DD date at local midnight; empty output and
+# rc 1 on garbage/empty input. Both branches parse the same T00:00:00 form so
+# GNU and BSD agree on the answer.
+maude_date_epoch() {
+  local d="$1" e
+  [ -n "$d" ] || return 1
+  e="$(date -d "${d}T00:00:00" +%s 2>/dev/null)"                                # portability-shim (GNU)
+  [ -n "$e" ] || e="$(date -j -f '%Y-%m-%dT%H:%M:%S' "${d}T00:00:00" +%s 2>/dev/null)"  # portability-shim (BSD)
+  [ -n "$e" ] || return 1
+  printf '%s' "$e"
+}
+
+# Print EPOCH as UTC ISO (YYYY-MM-DDTHH:MM:SSZ); empty output + rc 1 on
+# garbage. GNU spells epoch input `-d @E`; BSD spells it `-r E`.
+maude_epoch_iso() {
+  local e="$1" s
+  case "$e" in (''|*[!0-9]*) return 1 ;; esac
+  s="$(date -u -d "@$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"                # portability-shim (GNU)
+  [ -n "$s" ] || s="$(date -u -r "$e" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)"  # portability-shim (BSD)
+  [ -n "$s" ] || return 1
+  printf '%s' "$s"
+}
+
+# Run CMD... bounded to SECS wall-clock. timeout(1) where present; python3
+# subprocess elsewhere (macOS ships no timeout). rc 124 on overrun (matching
+# GNU timeout), the command's own rc otherwise. Caller's stdin/stdout pass
+# straight through to the child on both paths.
+maude_timeout() {
+  local t="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then  # portability-shim (GNU/util-linux)
+    timeout "$t" "$@"                          # portability-shim
+  else
+    # GNU-parity contract: 124 on overrun, 125 on a bad duration, 127 when the
+    # command can't start. The child gets its own session and the WHOLE process
+    # group dies on overrun — subprocess.run alone only kills the direct child
+    # and orphans anything the runner shelled out to.
+    python3 -c 'import os, signal, subprocess, sys
+try:
+    limit = float(sys.argv[1])
+except ValueError:
+    sys.exit(125)
+try:
+    p = subprocess.Popen(sys.argv[2:], start_new_session=True)
+except OSError:
+    sys.exit(127)
+try:
+    sys.exit(p.wait(timeout=limit))
+except subprocess.TimeoutExpired:
+    try:
+        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+    except OSError:
+        p.kill()
+    p.wait()
+    sys.exit(124)' "$t" "$@"
+  fi
+}
+
 # Print the capture-anchor epoch (freshest capture mtime), or 0 if nothing
 # was ever captured.
 maude_capture_anchor_epoch() {
@@ -368,7 +463,7 @@ maude_capture_anchor_epoch() {
   remember="$proj/.remember"
   for f in "$mem/now.md" "$remember/now.md" "$remember/remember.md"; do
     [ -s "$f" ] || continue
-    m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+    m="$(maude_mtime "$f")"
     [ "$m" -gt "$anchor" ] && anchor="$m"
   done
   printf '%s' "$anchor"
@@ -386,7 +481,7 @@ maude_uncaptured_prompt_count() {
   [ -d "$tdir" ] || { printf '0'; return 0; }
   anchor="$(maude_capture_anchor_epoch)"
   if [ "$anchor" -gt 0 ]; then
-    since_iso="$(date -u -d "@$anchor" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" || { printf '0'; return 0; }
+    since_iso="$(maude_epoch_iso "$anchor")" || { printf '0'; return 0; }
   else
     since_iso=""   # nothing captured at all → count ALL prior prompts
   fi
@@ -527,7 +622,7 @@ maude_retention_sweep() {
   if [ -d "$self/snapshots" ]; then
     anchor="$(maude_capture_anchor_epoch)"
     while IFS= read -r f; do
-      m="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+      m="$(maude_mtime "$f")"
       [ "$anchor" -gt "$m" ] && rm -f "$f" 2>/dev/null
     done < <(find "$self/snapshots" -maxdepth 1 -type f -name 'precompact-*.md' -mtime +"$days" 2>/dev/null)
   fi

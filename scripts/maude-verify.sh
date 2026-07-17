@@ -83,7 +83,7 @@ if [ -f .claude-plugin/plugin.json ] && command -v jq >/dev/null 2>&1; then
 
     # CHANGELOG should have an entry for the canonical version
     if [ -f CHANGELOG.md ]; then
-      if ! grep -qE "^## v$CANONICAL\b" CHANGELOG.md; then
+      if ! grep -qE "^## v$CANONICAL([^0-9.]|\$)" CHANGELOG.md; then
         emit "CHANGELOG.md is missing a v$CANONICAL section header"
       fi
     fi
@@ -127,7 +127,9 @@ if [ -n "$HDRS" ]; then
     # Extract date in YYYY-MM-DD form from the first Revised: line
     REVDATE=$(grep -m1 -oE 'Revised:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}' "$f" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
     if [ -n "$REVDATE" ]; then
-      REV_EPOCH=$(date -d "$REVDATE" +%s 2>/dev/null)
+      # 2>/dev/null: if common wasn't sourced (guarded above) this fails open
+      # exactly like the old raw-date parse did — empty REV_EPOCH, no noise.
+      REV_EPOCH=$(maude_date_epoch "$REVDATE" 2>/dev/null)
       if [ -n "$REV_EPOCH" ]; then
         DAYS=$(( (TODAY_EPOCH - REV_EPOCH) / 86400 ))
         if [ "$DAYS" -gt "$STALE_LIMIT_DAYS" ]; then

@@ -12,7 +12,7 @@ mkdir -p "$TEST_TMP/.remember"
 
 OLD="$TEST_TMP/.remember/today-2026-06-01.md"
 printf '# old day\n🔴 verify the offsite backup copy\ndone stuff\n' > "$OLD"
-touch -d '20 days ago' "$OLD"
+touch_ago $(( 20*86400 )) "$OLD"
 FRESH="$TEST_TMP/.remember/today-$(date -u +%Y-%m-%d).md"
 printf '# fresh day\nTODO not aged yet\n' > "$FRESH"
 # Coverage anchor newer than OLD: a fresh remember.md
@@ -39,9 +39,10 @@ assert_contains "$(cat "$STAGED" 2>/dev/null)" "today-2026-06-01.md" "aged+cover
 test_start "uncovered daily is NOT staged"
 rm -f "$TEST_TMP/.remember/remember.md"
 UNCOV="$TEST_TMP/.remember/today-2026-06-02.md"
-printf 'lonely uncovered day\n' > "$UNCOV"; touch -d '20 days ago' "$UNCOV"
+printf 'lonely uncovered day\n' > "$UNCOV"; touch_ago $(( 20*86400 )) "$UNCOV"
 # make everything else older than any anchor source
-find "$TEST_TMP/.maude" -name '*.json' -exec touch -d '30 days ago' {} \; 2>/dev/null
+while IFS= read -r _j; do touch_ago $(( 30*86400 )) "$_j"; done \
+  < <(find "$TEST_TMP/.maude" -name '*.json' 2>/dev/null)
 bash "$CH" run c2-shelves >/dev/null 2>&1
 assert_not_contains "$(cat "$STAGED" 2>/dev/null)" "today-2026-06-02.md" "uncovered daily is NOT staged"
 
@@ -55,11 +56,11 @@ assert_eq "$(jq -r '.["c2-shelves"].status' "$LEDGER")" "done" "c2 stamped done"
 test_start "dedup exact-line: a longer marker clipped first doesn't swallow a distinct shorter one"
 LONG="$TEST_TMP/.remember/today-2026-06-03.md"
 printf '# aged day\nTODO fix login page thoroughly and add tests\n' > "$LONG"
-touch -d '20 days ago' "$LONG"
+touch_ago $(( 20*86400 )) "$LONG"
 bash "$CH" run c2-shelves >/dev/null 2>&1
 SHORT="$TEST_TMP/.remember/today-2026-06-04.md"
 printf '# aged day\nTODO fix login\n' > "$SHORT"
-touch -d '20 days ago' "$SHORT"
+touch_ago $(( 20*86400 )) "$SHORT"
 bash "$CH" run c2-shelves >/dev/null 2>&1
 COUPONS_NOW="$(cat "$COUPONS" 2>/dev/null)"
 assert_contains "$COUPONS_NOW" "today-2026-06-03.md: TODO fix login page thoroughly and add tests" \
@@ -74,7 +75,7 @@ MANY="$TEST_TMP/.remember/today-2026-06-06.md"
   printf '# aged day\n'
   for i in $(seq 1 25); do printf 'TODO marker number %02d\n' "$i"; done
 } > "$MANY"
-touch -d '20 days ago' "$MANY"
+touch_ago $(( 20*86400 )) "$MANY"
 bash "$CH" run c2-shelves >/dev/null 2>&1
 assert_contains "$(cat "$COUPONS" 2>/dev/null)" "TODO marker number 25" \
   "marker beyond the old 20-cap still clips"
@@ -85,7 +86,7 @@ LONGLINE="$TEST_TMP/.remember/today-2026-06-07.md"
   printf '# aged day\n'
   printf 'TODO %s TAIL-MARKER-BEYOND-400\n' "$(printf 'x%.0s' $(seq 1 450))"
 } > "$LONGLINE"
-touch -d '20 days ago' "$LONGLINE"
+touch_ago $(( 20*86400 )) "$LONGLINE"
 bash "$CH" run c2-shelves >/dev/null 2>&1
 assert_not_contains "$(cat "$COUPONS" 2>/dev/null)" "TAIL-MARKER-BEYOND-400" \
   "line length bounded — tail beyond char 400 truncated"
@@ -97,13 +98,13 @@ mkdir -p "$MEMDIR"
 export MAUDE_MEM_DIR_OVERRIDE="$MEMDIR"
 MEMFILE="$MEMDIR/today-2026-06-05.md"
 printf '# mem day\n🔴 mem-pile marker survives\n' > "$MEMFILE"
-touch -d '20 days ago' "$MEMFILE"
+touch_ago $(( 20*86400 )) "$MEMFILE"
 # Fresh anchor present (remember.md exists) — covers .remember/ dailies for
 # staging; irrelevant to the mem-pile file, which the case-guard never matches.
 printf 'handoff\n' > "$TEST_TMP/.remember/remember.md"
-MD5_BEFORE="$(md5sum "$MEMFILE" | awk '{print $1}')"
+MD5_BEFORE="$(file_digest "$MEMFILE")"
 bash "$CH" run c2-shelves >/dev/null 2>&1
-MD5_AFTER="$(md5sum "$MEMFILE" | awk '{print $1}')"
+MD5_AFTER="$(file_digest "$MEMFILE")"
 assert_contains "$(cat "$COUPONS" 2>/dev/null)" "mem-pile marker survives" \
   "mem-pile marker IS clipped to coupons.md"
 assert_not_contains "$(cat "$STAGED" 2>/dev/null)" "today-2026-06-05.md" \
