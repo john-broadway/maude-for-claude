@@ -18,7 +18,7 @@ test_start "brief silent on empty ledger"
 assert_eq "$(bash "$CH" brief 2>/dev/null)" "" "brief silent on empty ledger"
 
 test_start "stamp merges status"
-bash "$CH" stamp c9-test --arg s done --arg n "hi" '.["c9-test"] += {status:$s, note:$n}' >/dev/null 2>&1
+bash "$CH" stamp c9-test --arg s "done" --arg n "hi" '.["c9-test"] += {status:$s, note:$n}' >/dev/null 2>&1
 assert_eq "$(jq -r '.["c9-test"].status' "$LEDGER")" "done" "stamp merges status"
 
 test_start "brief voices a done chore"
@@ -35,9 +35,10 @@ assert_eq "$(MAUDE_CHORES=off bash "$CH" brief 2>/dev/null)" "" "kill switch sil
 # MAUDE_CHORES_LIB seam and confirm every single one lands.
 test_start "10 parallel chore_stamp calls on distinct keys all land"
 (
+  # shellcheck source=/dev/null
   MAUDE_CHORES_LIB=1 . "$CH"
   for i in $(seq 1 10); do
-    chore_stamp "race-$i" --arg s done ".[\"race-$i\"] += {status:\$s}" &
+    chore_stamp "race-$i" --arg s "done" ".[\"race-$i\"] += {status:\$s}" &
   done
   wait
 )

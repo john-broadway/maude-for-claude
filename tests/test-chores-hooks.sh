@@ -6,7 +6,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 setup_test_env
 LEDGER="$TEST_TMP/.maude/plugin/chores.json"
 TRACE="$TEST_TMP/.maude/plugin/trace/today-$(date -u +%Y-%m-%d).jsonl"
-for i in 1 2 3 4 5 6 7; do
+for _ in 1 2 3 4 5 6 7; do
   printf '{"ts":"%s","kind":"prompt","hook":"UserPromptSubmit","tool":null,"target":null}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TRACE"
 done
@@ -22,7 +22,7 @@ printf '{"transcript_path":"%s"}\n' "$TEST_TMP/t.jsonl" | \
 assert_eq "$(jq -r '.["c1-missed-save"].status // ""' "$LEDGER")" "dispatched" "stop hook dispatches due chore"
 
 test_start "session start prints chores brief"
-bash "$SCRIPTS_DIR/maude-chores.sh" stamp c1-missed-save --arg s done \
+bash "$SCRIPTS_DIR/maude-chores.sh" stamp c1-missed-save --arg s "done" \
   '.["c1-missed-save"] += {status:$s, note:"handoff written"}' >/dev/null 2>&1
 OUT="$(bash "$HOOKS_DIR/maude-session-start.sh" 2>/dev/null)"
 assert_contains "$OUT" "Chores:" "session start prints chores brief"

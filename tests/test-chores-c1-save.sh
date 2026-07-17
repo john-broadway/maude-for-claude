@@ -13,7 +13,7 @@ printf '{"type":"user","message":{"role":"user","content":"build the ledger"}}\n
 # and .remember/ is never manufactured uninvited. setup_test_env creates
 # .maude/plugin/ only — NO .remember/ exists yet at this point in the file.
 TRACE="$TEST_TMP/.maude/plugin/trace/today-$(date -u +%Y-%m-%d).jsonl"
-for i in 1 2 3 4 5 6 7; do
+for _ in 1 2 3 4 5 6 7; do
   printf '{"ts":"%s","kind":"prompt","hook":"UserPromptSubmit","tool":null,"target":null}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TRACE"
 done
@@ -98,6 +98,7 @@ assert_eq "$(jq -r '.["c1-missed-save"].status' "$LEDGER")" "failed" "blink fail
 # Safety net: a doer that died before stamping leaves 'dispatched' — the net converts it.
 test_start "safety net converts dispatched to failed"
 (
+  # shellcheck source=/dev/null
   MAUDE_CHORES_LIB=1 . "$CH"
   chore_stamp c1-missed-save --arg s dispatched '.["c1-missed-save"] += {status:$s}'
   chore_fail_if_unstamped c1-missed-save
@@ -109,8 +110,9 @@ assert_contains "$(jq -r '.["c1-missed-save"].note' "$LEDGER")" "doer crashed" "
 
 test_start "safety net preserves done"
 (
+  # shellcheck source=/dev/null
   MAUDE_CHORES_LIB=1 . "$CH"
-  chore_stamp c1-missed-save --arg s done '.["c1-missed-save"] += {status:$s}'
+  chore_stamp c1-missed-save --arg s "done" '.["c1-missed-save"] += {status:$s}'
   chore_fail_if_unstamped c1-missed-save
 )
 assert_eq "$(jq -r '.["c1-missed-save"].status' "$LEDGER")" "done" "safety net preserves done"

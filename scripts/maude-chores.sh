@@ -194,7 +194,8 @@ chore_run_c2_shelves() {
 
   # Re-roll (rigid until known): opt-in, verbatim, verified, logged.
   if [ "${MAUDE_REROLL:-off}" = "on" ]; then
-    local arch="$(maude_remember_dir)/archive" rolled=0 dest
+    local arch rolled=0 dest
+    arch="$(maude_remember_dir)/archive"
     mkdir -p "$arch" 2>/dev/null
     if [ ! -d "$arch" ]; then
       printf '%s ARCHIVE-DIR-UNCREATABLE %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$arch" \
@@ -240,7 +241,8 @@ c3_current_roster() {
 }
 
 chore_detect_c3_extension() {
-  local roster="$(maude_self_dir)/roster.txt"
+  local roster
+  roster="$(maude_self_dir)/roster.txt"
   [ -f "$roster" ] || return 0   # no roster yet → due (run will seed silently)
   ! c3_current_roster | diff -q "$roster" - >/dev/null 2>&1
 }

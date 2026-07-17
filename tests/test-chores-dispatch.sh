@@ -19,7 +19,7 @@ export MAUDE_PLUGIN_CACHE="$CACHE"
 bash "$CH" run c3-extension >/dev/null 2>&1
 
 # Plant 7 uncaptured prompt events (no capture anchor exists → all uncaptured).
-for i in 1 2 3 4 5 6 7; do
+for _ in 1 2 3 4 5 6 7; do
   printf '{"ts":"%s","kind":"prompt","hook":"UserPromptSubmit","tool":null,"target":null}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$TRACE"
 done
