@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 jobs:
-  tests:
+  test-matrix:
     strategy:
       fail-fast: false          # a macOS-only break must not mask the Linux result
       matrix:
@@ -42,6 +42,17 @@ jobs:
 
       - name: Run hook test suite (make test)
         run: make test
+
+  # Summary gate: branch protection requires a check literally named "tests".
+  # A matrix job publishes per-leg names ("test-matrix (macos-latest)"), so
+  # this job restores the contracted name — green iff EVERY leg is green.
+  tests:
+    needs: test-matrix
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: All test legs green
+        run: test "${{ needs.test-matrix.result }}" = "success"
 
   verify:
     runs-on: ubuntu-latest
