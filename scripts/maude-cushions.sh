@@ -23,7 +23,14 @@
 
 set +e
 
-PROJ="${1:-${CLAUDE_PROJECT_DIR:-$(pwd)}}"
+DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$DIR/../hooks/scripts/_maude-common.sh"
+
+# Resolve the project the way the HOOKS do (maude_project_dir: env → /proc
+# walk → filesystem walk → pwd), never bare pwd: the session-start brief
+# reads this flip's stamp from maude_self_dir, and a writer that guesses a
+# different closet leaves the brief saying "never flipped" forever.
+PROJ="${1:-$(maude_project_dir)}"
 cd "$PROJ" || { echo "cushions: cannot cd to $PROJ" >&2; exit 1; }
 DAYS="${MAUDE_CUSHION_DAYS:-14}"
 
@@ -119,4 +126,12 @@ fi
 
 printf '\n%s\n' "----------------------------------------"
 printf '%d value candidates\n' "$CANDIDATES"
+
+# Stamp the closet so the wake brief can read the last flip (issue #36):
+# one line, "<epoch> <candidates>" — the brief renders count + age without
+# re-walking every repo at session-start.
+SELF="$PROJ/.maude/plugin"
+mkdir -p "$SELF" 2>/dev/null
+printf '%s %s\n' "$(date +%s)" "$CANDIDATES" > "$SELF/cushions-last" 2>/dev/null
+
 exit 0

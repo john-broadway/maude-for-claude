@@ -236,7 +236,15 @@ c3_current_roster() {
   local cache="${MAUDE_PLUGIN_CACHE:-$HOME/.claude/plugins/cache}"
   [ -d "$cache" ] || return 0
   # cache/<marketplace>/<plugin>/<version>/ → "<marketplace>/<plugin>@<version>"
-  find "$cache" -mindepth 3 -maxdepth 3 -type d 2>/dev/null \
+  # Only a dir carrying its manifest is a plugin. Installer transients
+  # (temp_git_*/.git/*, temp_subdir_*/…) land in the cache at the same depth
+  # and would otherwise walk into the roster as phantom arrivals (issue #34 —
+  # a live roster was 191 lines, mostly .git@objects garbage).
+  # Portability: {} embedded in a larger -exec arg is implementation-defined
+  # per POSIX, but GNU and BSD find (this plugin's install base: Linux/macOS)
+  # both document full substitution — verified, not assumed.
+  find "$cache" -mindepth 3 -maxdepth 3 -type d \
+       -exec test -f '{}/.claude-plugin/plugin.json' ';' -print 2>/dev/null \
     | awk -F/ '{n=NF; print $(n-2)"/"$(n-1)"@"$n}' | sort
 }
 

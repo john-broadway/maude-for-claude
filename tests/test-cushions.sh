@@ -106,6 +106,33 @@ test_start "cushions never deletes anything (report only)"
 assert_file_exists "$W/.scratch/old-proposal.md" "scratch intact"
 assert_file_exists "$W/dirty/loose.txt" "loose file intact"
 
+# ── The flip stamps the closet so the wake brief can read it (issue #36) ──
+test_start "flip stamps the closet for the wake brief"
+run_cushions
+STAMP="$W/.maude/plugin/cushions-last"
+[ -f "$STAMP" ] && S_OK=yes || S_OK=no
+assert_eq "$S_OK" "yes" "cushions-last written"
+
+test_start "stamp carries epoch + the reported candidate count"
+COUNT_OUT="$(printf '%s\n' "$OUT" | tail -1 | awk '{print $1}')"
+assert_eq "$(awk '{print $2}' "$STAMP" 2>/dev/null)" "$COUNT_OUT" "stamp count matches report"
+case "$(awk '{print $1}' "$STAMP" 2>/dev/null)" in ''|*[!0-9]*) EP=bad;; *) EP=ok;; esac
+assert_eq "$EP" "ok" "stamp epoch is numeric"
+
+# Writer and reader must resolve the SAME closet: no arg + no env must go
+# through maude_project_dir() (the hooks' resolver), never bare pwd — else a
+# slash-command run stamps the wrong .maude and the brief says "never flipped"
+# forever (adversarial-review finding on #36).
+test_start "argless flip resolves the project like the hooks do"
+DECOY="$TEST_TMP/elsewhere"; mkdir -p "$DECOY"
+rm -f "$W/.maude/plugin/cushions-last"
+CUSH_ABS="$(cd "$(dirname "$CUSHIONS")" && pwd)/$(basename "$CUSHIONS")"
+( cd "$DECOY" && CLAUDE_PROJECT_DIR='' MAUDE_PROJECT_DIR_OVERRIDE="$W" bash "$CUSH_ABS" >/dev/null 2>&1 )
+[ -f "$W/.maude/plugin/cushions-last" ] && R_OK=yes || R_OK=no
+assert_eq "$R_OK" "yes" "stamp lands in the resolved project, not pwd"
+[ -f "$DECOY/.maude/plugin/cushions-last" ] && D_HIT=yes || D_HIT=no
+assert_eq "$D_HIT" "no" "no stray closet in the decoy dir"
+
 print_summary
 teardown_test_env
 exit $FAILED

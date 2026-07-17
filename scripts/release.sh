@@ -72,12 +72,20 @@ RC=0
 printf '\n== verify ==\n'; bash scripts/maude-verify.sh "$ROOT" | tail -3 || RC=1
 printf '\n== test ==\n';   env -u MAUDE_RUN_GOVERNOR bash tests/run.sh >/dev/null 2>&1 && printf '  suite green\n' || { printf '  SUITE FAILED — run: env -u MAUDE_RUN_GOVERNOR make test\n'; RC=1; }
 printf '\n== lint ==\n';   shellcheck --severity=warning hooks/scripts/*.sh scripts/*.sh tests/*.sh >/dev/null 2>&1 && printf '  lint clean\n' || { printf '  LINT FAILED — run: make lint\n'; RC=1; }
+# The prove-it-real gate: the release must work from the COMMIT a stranger
+# gets, not the working tree. NOTE: version bumps above are still uncommitted
+# at this point, so the smoke proves the last commit's shape — run release.sh,
+# build the release commit, then `make smoke` once more before tagging.
+printf '\n== install-smoke (HEAD, pre-bump shape) ==\n'
+bash scripts/install-smoke.sh . 2>&1 | tail -1 | grep -q 'SMOKE GREEN' && printf '  smoke green\n' || { printf '  SMOKE FAILED — run: make smoke\n'; RC=1; }
 
 printf '\n----------------------------------------\n'
 if [ "$RC" -eq 0 ]; then
   printf 'release.sh: v%s propagated, dates stamped %s, gate GREEN.\n' "$V" "$TODAY"
   printf 'NEXT (yours, in our words): write the CHANGELOG v%s entry + the README "What'"'"'s new" v%s entry,\n' "$V" "$V"
   printf 'then build the curated commit -> branch -> PR for review. release.sh never pushes.\n'
+  printf 'AFTER the tag lands (maintainer'"'"'s hand — the Releases tab must not fall behind the tags, #38):\n'
+  printf '  scripts/release-notes.sh %s > /tmp/notes-v%s.md && gh release create v%s --title "v%s" --notes-file /tmp/notes-v%s.md\n' "$V" "$V" "$V" "$V" "$V"
 else
   printf 'release.sh: GATE NOT GREEN — fix the findings above before building the release commit.\n'
 fi

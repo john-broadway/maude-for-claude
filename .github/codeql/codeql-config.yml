@@ -1,0 +1,9 @@
+name: "Maude CodeQL config"
+
+# Scope CodeQL to the shipped Python: maude_eye (the blink's verdict parser)
+# and maude_vault (the memory floor). tests/ is dev tooling and the shell
+# surface is shellcheck's job in ci.yml — SAST analyzes exactly what ships,
+# the same scoping discipline the test-py target uses.
+paths:
+  - maude_eye
+  - maude_vault

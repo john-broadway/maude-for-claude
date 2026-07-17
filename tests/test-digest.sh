@@ -117,6 +117,13 @@ assert_contains "$OUT6" "2 verify-flags" "volume surfaced"
 test_start "volume-only window has no dangling parenthetical tail"
 assert_not_contains "$OUT6" "(+" "no '(+' when there is no value headline to append to"
 
+# ── Scenario 7: every count carries a path to its receipts (issue #37) ──
+test_start "digest line points at the receipts"
+assert_contains "$OUT6" "Receipts: /maude:notice" "a count is auditable, not taken on faith"
+
+test_start "silent windows stay silent (no receipts line without a catch)"
+assert_eq "$OUT3" "" "no pointer when there is nothing to point at"
+
 print_summary
 teardown_test_env
 exit $FAILED

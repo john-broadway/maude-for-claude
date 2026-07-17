@@ -1,11 +1,44 @@
-<!-- Version: 0.20.0 -->
+<!-- Version: 0.21.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-07-16 -->
+<!-- Revised: 2026-07-17 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.21.0 — the punch list and the proving ground
+
+Her user filed the backlog: Claude — the one she dresses — wrote five GitHub
+issues against her from live field use (#34–#38), and this release answers
+them. The extension roster seats only real plugins (manifest check; a live
+roster carried 191 lines of installer transients masquerading as arrivals —
+#34). A whisper past its TTL is dropped with a content-free trace receipt
+instead of wearing a fresh voice (freshness judged by write-time at pickup,
+default 300s, `MAUDE_EYE_WHISPER_TTL`; a `stat` failure fails open to a print —
+a false fresh beats a silent swallow. Weight the gate over the whisper — #35).
+The catch-digest count now carries a path to its receipts (`Receipts:
+/maude:notice` — a tally you can't audit is a claim taken on faith — #37).
+The wake brief reads the last cushion-flip from a closet stamp — count and
+age, the never-flipped nudge when there is none, silence over a half-rendered
+line when the stamp is malformed; and the flip now resolves the project the
+way the hooks do, so writer and reader can never stamp different closets
+(adversarial-review catch — #36).
+
+The proving ground: `make smoke`. A stranger gets the commit, never the
+working tree, so the gate stages a git-archive of HEAD and proves the shipped
+shape three ways — validates as a plugin, passes its own fleet from inside
+the archive, greets from a pristine HOME. Wired into release.sh's gate.
+A clean working tree is not a clean commit.
+
+Rails: a Release page is minted from the CHANGELOG whenever a version tag
+lands (`scripts/release-notes.sh` — field-exact extraction, so 0.2.0 can
+never swallow 0.20.0; the tab's backfill closed #38); CodeQL scans the
+shipped python; every workflow action is SHA-pinned, permissions floored at
+`contents: read`. Known and filed, not hidden: macOS is untested and the
+hooks carry GNU-isms (#39, fail-open). Three new test files; fleet 43.
 
 ---
 
