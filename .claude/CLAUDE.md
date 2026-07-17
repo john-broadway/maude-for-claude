@@ -24,7 +24,7 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 ├── plugin.json (manifest; the canonical version)
 └── marketplace.json (single-plugin local marketplace)
 
-commands/    — 10 slash commands (markdown)
+commands/    — 11 slash commands (markdown)
 agents/      — partner subagent (markdown)
 skills/      — broad-trigger skill (markdown)
 hooks/       — 8 lifecycle events + scripts
