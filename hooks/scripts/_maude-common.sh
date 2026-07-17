@@ -371,7 +371,11 @@ maude_mtime() {
   local f="$1" d="${2:-0}" m
   m="$(stat -c %Y "$f" 2>/dev/null)"                 # portability-shim (GNU)
   [ -n "$m" ] || m="$(stat -f %m "$f" 2>/dev/null)"  # portability-shim (BSD)
-  if [ -n "$m" ]; then printf '%s' "$m"; else printf '%s' "$d"; fi
+  # Numeric guard: GNU stat -f means "filesystem status" and can emit non-epoch
+  # text to stdout even on failure — anything but pure digits becomes DEFAULT,
+  # so callers' arithmetic never sees garbage.
+  case "$m" in (''|*[!0-9]*) m="$d" ;; esac
+  printf '%s' "$m"
 }
 
 # Print the epoch for a YYYY-MM-DD date at local midnight; empty output and

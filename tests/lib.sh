@@ -221,6 +221,18 @@ for p in sys.argv[2:]:
 PY
 }
 
+# file_digest <file> — content hash for byte-identity assertions. GNU md5sum
+# doesn't exist on macOS (BSD ships `md5`), so hash via python3 stdlib. A
+# missing/unreadable file prints nothing and returns 1 — never a hash both
+# sides could vacuously agree on.
+file_digest() {
+  python3 -c 'import hashlib, sys
+try:
+    print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())
+except OSError:
+    sys.exit(1)' "$1"
+}
+
 # touch_at <epoch|ISO8601[Z]> <file>... — absolute mtime; creates missing files.
 touch_at() {
   local when="$1"; shift

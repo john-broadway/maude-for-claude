@@ -156,7 +156,7 @@ V="$(lint_product 'stat [-]c')"
 assert_eq "$V" "" "stat -c leaked: $V"
 
 test_start "product: no GNU date -d outside shim"
-V="$(lint_product 'date [-]d ')"
+V="$(lint_product 'date [-]d([^[:alnum:]]|$)')"
 assert_eq "$V" "" "date -d leaked: $V"
 
 test_start "product: no GNU sed -i (use sed -i.bak)"
@@ -164,7 +164,7 @@ V="$(lint_product 'sed [-]i([^.]|$)')"
 assert_eq "$V" "" "GNU sed -i leaked: $V"
 
 test_start "product: no other GNU-only constructs"
-V="$(lint_product 'touch [-]d |readlink [-]f|grep [-]P|[-]printf |[^a-z-]tac[^a-z-]|stat [-][-]format|date [-][-]date')"
+V="$(lint_product 'touch [-]d([^[:alnum:]]|$)|readlink [-]f|grep [-]P|[-]printf |[^a-z-]tac[^a-z-]|stat [-][-]format|date [-][-]date')"
 assert_eq "$V" "" "GNU construct leaked: $V"
 
 test_start "product+tests: no bash-4-only builtins (macOS ships bash 3.2)"
@@ -174,9 +174,15 @@ V="$(grep -rnE 'mapfil[e]|readarra[y]|declare [-]A' "$ROOT/hooks/scripts" "$ROOT
 assert_eq "$V" "" "bash-4 builtin leaked: $V"
 
 test_start "tests: no GNU touch dash-d (use touch_ago/touch_at)"
-V="$(grep -rnE 'touch [-]d ' "$ROOT/tests" --include='*.sh' 2>/dev/null \
+V="$(grep -rnE 'touch [-]d([^[:alnum:]]|$)' "$ROOT/tests" --include='*.sh' 2>/dev/null \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')"
 assert_eq "$V" "" "GNU touch in tests: $V"
+
+test_start "product+tests: no GNU checksum tools (absent on macOS; use file_digest)"
+V="$(grep -rnE 'md5su[m]|sha256su[m]|sha1su[m]' "$ROOT/hooks/scripts" "$ROOT/scripts" "$ROOT/tests" --include='*.sh' 2>/dev/null \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
+  | grep -v 'portability-shim')"
+assert_eq "$V" "" "GNU checksum tool leaked: $V"
 
 rm -rf "$BSD_BIN"
 teardown_test_env

@@ -102,9 +102,9 @@ touch_ago $(( 20*86400 )) "$MEMFILE"
 # Fresh anchor present (remember.md exists) — covers .remember/ dailies for
 # staging; irrelevant to the mem-pile file, which the case-guard never matches.
 printf 'handoff\n' > "$TEST_TMP/.remember/remember.md"
-MD5_BEFORE="$(md5sum "$MEMFILE" | awk '{print $1}')"
+MD5_BEFORE="$(file_digest "$MEMFILE")"
 bash "$CH" run c2-shelves >/dev/null 2>&1
-MD5_AFTER="$(md5sum "$MEMFILE" | awk '{print $1}')"
+MD5_AFTER="$(file_digest "$MEMFILE")"
 assert_contains "$(cat "$COUPONS" 2>/dev/null)" "mem-pile marker survives" \
   "mem-pile marker IS clipped to coupons.md"
 assert_not_contains "$(cat "$STAGED" 2>/dev/null)" "today-2026-06-05.md" \
