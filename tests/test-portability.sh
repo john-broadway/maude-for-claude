@@ -151,6 +151,26 @@ test_start "maude_timeout works without a timeout(1) binary (python3 path)"
 NOTMO="$(make_no_binary_bin timeout)"
 OUT="$(PATH="$NOTMO" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; printf x | maude_timeout 5 cat')"
 assert_eq "$OUT" "x" "python3 fallback passthrough"
+
+test_start "maude_timeout (python3 path) kills the whole process tree"
+# GNU timeout(1) kills the child's process group; the fallback must match, or
+# a runner that shells out leaves orphans alive past the bound (review #3).
+SPAWN="$TEST_TMP/spawn.sh"
+PIDF="$TEST_TMP/orphan.pid"
+printf '#!/usr/bin/env bash\nsleep 300 &\necho $! > "$1"\nwait\n' > "$SPAWN"
+chmod +x "$SPAWN"
+PATH="$NOTMO" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout 1 bash "'"$SPAWN"'" "'"$PIDF"'"' >/dev/null 2>&1
+OP="$(cat "$PIDF" 2>/dev/null)"
+if [ -n "$OP" ] && kill -0 "$OP" 2>/dev/null; then
+  kill -9 "$OP" 2>/dev/null
+  _fail "grandchild $OP survived the timeout"
+else
+  _pass
+fi
+
+test_start "maude_timeout rejects a garbage duration with rc 125 (python3 path)"
+PATH="$NOTMO" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout bogus echo hi' >/dev/null 2>&1
+assert_exit "$?" "125" "garbage duration → 125 (GNU parity)"
 rm -rf "$NOTMO"
 
 # ── chores survive a flock-less userland (macOS has no flock(1)) ────────
@@ -163,11 +183,39 @@ if [ -f "$L" ] && [ "$(jq -r 'keys | length' "$L" 2>/dev/null)" -ge 1 ]; then
 else
   _fail "ledger missing or empty without flock: $(cat "$L" 2>/dev/null | head -c 120)"
 fi
+
+test_start "no-flock ledger lock: a LIVE holder's lock is never stolen"
+# Review #1: reclaim must key off the DIR'S OWN AGE (a signal all waiters
+# agree on), never off how long this waiter has waited — else a slow-but-live
+# holder gets its lock stolen and its eventual write clobbers the thief's
+# (a reproduced lost-update). A fresh lock dir = an actively-held lock; the
+# waiter must still be waiting (124) when the 15s bound fires.
+LKD="$L.lock.d"
+mkdir -p "$LKD"
+PATH="$NOFLOCK" maude_timeout 15 bash "$ROOT/scripts/maude-chores.sh" detect >/dev/null 2>&1
+RC=$?
+rmdir "$LKD" 2>/dev/null
+assert_exit "$RC" "124" "live lock held for 15s was not stolen"
+
+test_start "no-flock ledger lock: a STALE dir (dead holder) is reclaimed"
+mkdir -p "$LKD"
+touch_ago 120 "$LKD"
+PATH="$NOFLOCK" maude_timeout 15 bash "$ROOT/scripts/maude-chores.sh" detect >/dev/null 2>&1
+assert_exit "$?" "0" "stale lock reclaimed, detect completed"
+
+test_start "chore dispatch fires without flock(1) (review #4 coverage)"
+jq '.["c1-missed-save"].due = true' "$L" > "$L.t" && mv "$L.t" "$L"
+MARKER="$TEST_TMP/noflock-doer-ran"
+MAUDE_CHORE_DOER_STUB=": > '$MARKER'" PATH="$NOFLOCK" \
+  bash "$ROOT/scripts/maude-chores.sh" dispatch >/dev/null 2>&1
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$MARKER" ] && break; sleep 0.3; done
+assert_file_exists "$MARKER" "no-flock dispatch ran the doer"
 rm -rf "$NOFLOCK"
 
 # ── touch_ago / touch_at (test-harness portability helpers) ─────────────
 test_start "touch_ago sets mtime N seconds back"
 G="$TEST_TMP/aged"
+NOW_EPOCH="$(date +%s)"   # re-clock: earlier bounded-wait tests consume real seconds
 touch_ago 600 "$G"
 M="$(maude_mtime "$G")"
 if [ "$M" -ge $((NOW_EPOCH - 610)) ] && [ "$M" -le $((NOW_EPOCH - 590)) ]; then
@@ -182,6 +230,7 @@ touch_ago 60 "$H"
 assert_file_exists "$H" "touch_ago creates"
 
 test_start "touch_ago handles multiple files in one call"
+NOW_EPOCH="$(date +%s)"
 touch_ago 300 "$TEST_TMP/multi1" "$TEST_TMP/multi2"
 M1="$(maude_mtime "$TEST_TMP/multi1")"
 M2="$(maude_mtime "$TEST_TMP/multi2")"
@@ -226,7 +275,7 @@ V="$(lint_product '(^|[^a-z_])floc[k]')"
 assert_eq "$V" "" "flock leaked: $V"
 
 test_start "product: no bare timeout(1) outside shim (absent on macOS)"
-V="$(lint_product '(^|[^_a-zA-Z-])timeou[t] ')"
+V="$(lint_product '(^|[^_a-zA-Z-])timeou[t][[:space:]]')"
 assert_eq "$V" "" "timeout leaked: $V"
 
 test_start "product: no GNU sed word-boundary escape (BSD sed rejects it)"

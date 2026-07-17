@@ -210,7 +210,13 @@ maude_redact() {
     -e 's#eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#[redacted-jwt]#g' \
     -e "s#(^|[^0-9.])${ip}(\$|[^0-9.])#\\1[redacted-ip]\\5#g" \
     -e "s#(^|[^0-9.])${ip}(\$|[^0-9.])#\\1[redacted-ip]\\5#g" \
-    -e '/-----BEGIN[A-Z ]*PRIVATE KEY-----/,/-----END[A-Z ]*PRIVATE KEY-----/{/-----BEGIN/!d; s#.*#[redacted-key]#;}'
+    -e '/-----BEGIN[A-Z ]*PRIVATE KEY-----/,/-----END[A-Z ]*PRIVATE KEY-----/{' \
+    -e '/-----BEGIN/!d' \
+    -e 's#.*#[redacted-key]#' \
+    -e '}'
+  # ^ the brace block is split across -e fragments: sed joins them with real
+  #   newlines, which is the form BSD sed's grammar requires ("the terminating
+  #   '}' must be preceded by a newline") — a ;} one-liner is GNU-tolerated only.
 }
 
 # Ensure her project closet exists, including the auto-gitignore.
@@ -423,14 +429,28 @@ maude_timeout() {
   if command -v timeout >/dev/null 2>&1; then  # portability-shim (GNU/util-linux)
     timeout "$t" "$@"                          # portability-shim
   else
-    python3 -c 'import subprocess, sys
+    # GNU-parity contract: 124 on overrun, 125 on a bad duration, 127 when the
+    # command can't start. The child gets its own session and the WHOLE process
+    # group dies on overrun — subprocess.run alone only kills the direct child
+    # and orphans anything the runner shelled out to.
+    python3 -c 'import os, signal, subprocess, sys
 try:
-    r = subprocess.run(sys.argv[2:], timeout=float(sys.argv[1]))
-    sys.exit(r.returncode)
-except subprocess.TimeoutExpired:
-    sys.exit(124)
+    limit = float(sys.argv[1])
+except ValueError:
+    sys.exit(125)
+try:
+    p = subprocess.Popen(sys.argv[2:], start_new_session=True)
 except OSError:
-    sys.exit(127)' "$t" "$@"
+    sys.exit(127)
+try:
+    sys.exit(p.wait(timeout=limit))
+except subprocess.TimeoutExpired:
+    try:
+        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+    except OSError:
+        p.kill()
+    p.wait()
+    sys.exit(124)' "$t" "$@"
   fi
 }
 

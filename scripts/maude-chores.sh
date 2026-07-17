@@ -37,14 +37,17 @@ chore_stamp() {
       jq "$@" "$ledger" > "$tmp" 2>/dev/null && mv -f "$tmp" "$ledger" || rm -f "$tmp"
     ) 9>"$lock"
   else
-    # macOS ships no flock(1): mkdir spin-lock. The critical section is one jq
-    # over a small file (well under a second); a holder alive past ~10s is
-    # treated as dead and reclaimed. Worst case on reclaim = a lost update,
-    # never a corrupt ledger (tmp is per-PID, mv is atomic).
-    local d="$lock.d" i=0
+    # macOS ships no flock(1): mkdir spin-lock. Reclaim keys off the DIR'S OWN
+    # AGE — the one signal every waiter agrees on — never off how long this
+    # waiter has waited (a waiter-side counter steals the lock from a
+    # slow-but-LIVE holder, and the holder's eventual write clobbers the
+    # thief's: a reproduced lost-update). The critical section is one jq over
+    # a small file; a dir older than 30s means its holder died before rmdir.
+    local d="$lock.d"
     while ! mkdir "$d" 2>/dev/null; do
-      i=$((i+1))
-      [ "$i" -le 200 ] || { rmdir "$d" 2>/dev/null; i=0; }
+      if [ $(( $(date +%s) - $(maude_mtime "$d" "$(date +%s)") )) -gt 30 ]; then
+        rmdir "$d" 2>/dev/null
+      fi
       sleep 0.05
     done
     jq "$@" "$ledger" > "$tmp" 2>/dev/null && mv -f "$tmp" "$ledger" || rm -f "$tmp"
