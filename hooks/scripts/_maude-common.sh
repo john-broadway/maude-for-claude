@@ -563,7 +563,10 @@ maude_tier1_up() {
 }
 
 # Returns 0 if a network endpoint at $1 (URL or host:port) is reachable within $2 seconds (default 2).
-# Used by /maude:found probes only — not by hooks.
+# CALLED BY A HOOK: maude-probe-tier1.sh runs this at every SessionStart against
+# hardcoded 127.0.0.1 ports (loopback only — no DNS, no payload, nothing leaves
+# the box). PRIVACY.md discloses this; keep the two in sync. (An earlier version
+# of this comment claimed "not by hooks" — that lie let the privacy policy drift.)
 maude_tier2_reachable() {
   local target="$1" timeout="${2:-2}"
   case "$target" in
