@@ -3,3 +3,5 @@
 # matched generic-api-key. The wording was changed in b6585e2; this entry
 # retires the historical blob hit. No secret ever existed.
 eba902a5d551663d70e11d832ca6485348a7c408:README.md:generic-api-key:78
+# eba902a README.md line 78 blob (wording changed in b6585e2)
+824f587dec4c84baeec48372ee2abe2fe8da211f:.gitleaksignore:generic-api-key:2
