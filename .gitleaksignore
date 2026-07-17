@@ -1,0 +1,5 @@
+# Confirmed false positives only — each line is a gitleaks fingerprint.
+# eba902a README.md: prose "hand her that key: `MAUDE_REROLL=on`" — an env-var
+# toggle in copy, matched generic-api-key. Fixed in the tree by b6585e2; this
+# entry retires the historical blob hit. No secret existed.
+eba902a5d551663d70e11d832ca6485348a7c408:README.md:generic-api-key:78
