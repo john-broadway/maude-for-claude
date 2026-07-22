@@ -148,7 +148,9 @@ else
 fi
 
 GREETING="$(maude_greeting)"
-{
+# Composed into a variable so the brief's bill can be logged (#49) — the
+# emission itself is unchanged.
+BRIEF="$({
   [ -n "$GREETING" ] && printf '%s ' "$GREETING"
   printf 'Maude here.'
   [ -n "$HAS_MAP" ] && printf ' (house-map ✓)'
@@ -163,7 +165,10 @@ GREETING="$(maude_greeting)"
   [ "$TOPIC_COUNT" -gt 0 ]    && printf '  %s memory file(s) on hand.\n' "$TOPIC_COUNT"
   [ -n "$CUSHION_LINE" ]      && printf '  %s\n' "$CUSHION_LINE"
   [ -z "$HAS_MAP" ] && printf '  No house-map yet — run /maude:found.\n'
-} 2>/dev/null
+} 2>/dev/null)"
+printf '%s\n' "$BRIEF"
+# #49: the brief is injected context — log its bill (hook + bytes, no content).
+maude_log_spend "session-start" "$(printf '%s' "$BRIEF" | wc -c | tr -d ' ')"
 
 # Chore brief — the ledger makes the labor visible (one line, silent when idle).
 CHORES="$DIR/../../scripts/maude-chores.sh"

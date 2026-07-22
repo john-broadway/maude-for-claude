@@ -76,7 +76,11 @@ case "$SUB" in
   hold)
     [ -f "$CARE" ] || exit 0
     TEXT="$(jq -r '.mission.text // ""' "$CARE" 2>/dev/null)"
-    [ -n "$TEXT" ] && printf 'MISSION: %s\n' "$TEXT" >&2
+    if [ -n "$TEXT" ]; then
+      printf 'MISSION: %s\n' "$TEXT" >&2
+      # #49: re-injected every prompt — the definition of a bill worth watching.
+      maude_log_spend "mission-hold" "$(printf 'MISSION: %s' "$TEXT" | wc -c | tr -d ' ')"
+    fi
     exit 0
     ;;
 

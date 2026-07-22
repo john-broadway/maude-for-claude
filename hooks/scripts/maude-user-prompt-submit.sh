@@ -37,7 +37,10 @@ while IFS= read -r line; do
 done <<< "$WATCH"
 
 if [ -n "$HITS" ]; then
-  printf 'Maude: heads up — your prompt touches %s\n' "${HITS%, }" >&2
+  MSG="Maude: heads up — your prompt touches ${HITS%, }"
+  printf '%s\n' "$MSG" >&2
+  # #49: injected context logs its bill (hook + bytes, never content).
+  maude_log_spend "watch-list" "$(printf '%s' "$MSG" | wc -c | tr -d ' ')"
 fi
 
 exit 0

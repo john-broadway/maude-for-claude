@@ -11,6 +11,14 @@
 
 set +e
 
+# #45: the kill switch. Every autonomous mechanism in the house can be turned
+# off by the person whose house it is (MAUDE_EYE=off, MAUDE_CHORES=off) — the
+# probe was the one that couldn't. Off means OFF: no sockets opened, no
+# reachability cache written.
+case "${MAUDE_PROBE:-on}" in
+  off|OFF|0|false|no|NO) exit 0 ;;
+esac
+
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 

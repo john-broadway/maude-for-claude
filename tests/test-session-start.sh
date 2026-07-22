@@ -96,6 +96,12 @@ test_start "leftoff from a labeled entry carries its session label"
 run_start
 assert_contains "$OUT" "Where you left off (pacioli): LABELEDMARKER" "label surfaced"
 
+# ── #49: the brief logs its own bill (hook + bytes, metadata only) ──
+test_start "session-start logs a spend entry for the brief it injected"
+n="$(jq -c 'select(.kind == "spend" and (.payload|test("hook=session-start")))' "$(trace_path)" 2>/dev/null | wc -l | tr -d ' ')"
+[ "${n:-0}" -gt 0 ]
+assert_exit "$?" "0" "spend entry for the brief"
+
 rm -f "$TEST_TMP/.remember/now.md"
 
 # ── Local-time-aware greeting ────────────────────────────────────────

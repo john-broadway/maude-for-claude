@@ -103,6 +103,26 @@ else
        then "| malformed trace lines skipped | \($malformed) | unparseable records excluded from every count above — the gap is stated, not hidden |"
        else empty end)
   '
+
+  # #49: the cost column — she publishes her own bill next to her catches.
+  # Spend entries are metadata (hook class + bytes); tokens are DERIVED here
+  # (bytes/4, marked approximate) and never stored. Savings stay event counts
+  # above — the no-denominator law extends: we never print "N tokens saved."
+  COST="$(cat "${FILES[@]}" 2>/dev/null | jq -rRn '
+    [inputs | fromjson? | objects
+     | select(.kind=="spend")
+     | (.payload // "") | capture("hook=(?<h>[a-z-]+) bytes=(?<b>[0-9]+)")] as $sp
+    | if ($sp|length) == 0 then "" else
+      ( $sp | group_by(.h)
+        | map({h: .[0].h, n: length, bytes: (map(.b|tonumber)|add)})
+        | sort_by(-.bytes)
+        | ["", "| what she cost (injected context) | events | bytes | ~tokens (bytes/4, approximate) |",
+           "|---|---|---|---|"]
+          + map("| \(.h) | \(.n) | \(.bytes) | ~\((.bytes/4)|floor) |")
+        | join("\n") )
+      end
+  ')"
+  [ -n "$COST" ] && printf '%s\n' "$COST"
 fi
 
 if [ -f "$LEDGER" ]; then
@@ -128,4 +148,11 @@ denominator for disasters that did not happen. A push-clear is friction a
 session paid at the toll booth, not a disaster avoided — it never counts as
 value. The measure of a protector is the disaster that didn't happen; these
 are the ones the records can actually testify to.
+The cost table (when present) counts what her instrumented hook classes
+injected — page, session-start, mission-hold, watch-list, eye-whisper,
+drift-whisper — in bytes, with tokens derived as bytes/4 and marked
+approximate. Savings are never converted to tokens: drift-stops and
+dispatch-downgrades stay event counts above, because a saved-token number
+has no honest denominator. Judging a garment's cost-per-catch stays a human read
+over these two columns — report-first, the human decides.
 METHOD

@@ -178,6 +178,16 @@ maude_trace_file() {
 # holding the hook envelope passes its `session_id` as $1, and the harness's
 # exported CLAUDE_CODE_SESSION_ID covers the hooks that never parse stdin —
 # both are the SAME id, so the resolved label agrees either way.
+# #49: the token ledger — every hook that injects context logs its bill.
+# Metadata only: hook class + byte count, NEVER content. Bytes are the honest
+# stored unit; approximate tokens are derived at read time (receipts), never
+# written. Silence costs nothing, so zero/garbage counts log nothing.
+maude_log_spend() {  # maude_log_spend <hook-class> <bytes>
+  case "${2:-}" in (''|*[!0-9]*) return 0 ;; esac
+  [ "$2" -gt 0 ] || return 0
+  maude_log_trace "spend" "hook=$1 bytes=$2"
+}
+
 # shellcheck disable=SC2120  # $1 (envelope session_id) is optional by design
 maude_session_label() {
   local l="${MAUDE_SESSION_LABEL:-}" sid="${1:-}"

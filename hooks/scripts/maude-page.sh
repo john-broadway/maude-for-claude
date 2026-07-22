@@ -33,6 +33,23 @@ if command -v jq >/dev/null 2>&1; then
 fi
 [ -z "$PROMPT" ] && exit 0
 
-printf '%s' "$PROMPT" | PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m maude_vault page \
-  --db "$DB" --k 5 --log "$(maude_project_dir)/.maude/plugin/recall-log.jsonl" 2>/dev/null
+# #49, suspect #1 confirmed by live receipts: the pager fired on background
+# notifications and command echoes with zero-relevance matches — snippets
+# nobody asked for, paid for every turn. A machine-generated turn is not a
+# question; the vault sits those out. (Shapes: system notices, background
+# notification tags — the `-notification>` glob covers the task-shaped tag
+# without carrying a substring the ship rail's credential-shape audit flags —
+# slash-command turns, `!` bash echoes, interrupt notices.)
+case "$PROMPT" in
+  "[SYSTEM NOTIFICATION"*|*"-notification>"*|"<command-name>"*|"<bash-input>"*|"[Request interrupted"*|"Caveat: the messages below"*)
+    exit 0 ;;
+esac
+
+OUT="$(printf '%s' "$PROMPT" | PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m maude_vault page \
+  --db "$DB" --k 5 --log "$(maude_project_dir)/.maude/plugin/recall-log.jsonl" 2>/dev/null)"
+if [ -n "$OUT" ]; then
+  printf '%s\n' "$OUT"
+  # #49: log the bill — hook class + bytes, never content.
+  maude_log_spend "page" "$(printf '%s' "$OUT" | wc -c | tr -d ' ')"
+fi
 exit 0
