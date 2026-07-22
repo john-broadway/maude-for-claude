@@ -1,6 +1,6 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 0.22.0
+> **Version:** 0.23.0
 > **License:** Apache 2.0, Copyright John Broadway
 
 ## What Maude Is
@@ -50,7 +50,9 @@ These are NOT up for debate — decided by John Broadway:
 2. **John Broadway owns copyright** — independent creator, disabled veteran.
 3. **Claude is credited as co-author** — John insists on it (2026-06-10, reversing the prior "acknowledge but keep out of the authors list" call). Claude appears in the README/CHANGELOG `Authors:` line, in `plugin.json` `contributors`, and in commit `Co-Authored-By` trailers. Copyright *ownership* stays John Broadway (US law: an AI can't hold copyright) — but the work is a genuine partnership and is credited as co-authored.
 4. **The plugin is the whole product.** Nothing installed via `pip`, no daemons, no services. Markdown, JSON, bash — and, since the vault floor (John's ruling, 2026-07-13), **python3 stdlib only**: no third-party imports, ever. If a feature needs `pip install`, it doesn't ship.
-5. **No baggage** — no required external services, no proper-noun references to specific apps. The one local store she keeps (`.maude/plugin/vault.db`) is a **disposable index, not a database dependency**: SQLite from the stdlib, rebuilt from the user's own markdown each session, deletable at any time with zero loss. The markdown stays the canon.
+5. **No baggage** — no required external services, no proper-noun references to specific apps. She keeps local SQLite stores — all stdlib, all local, all deletable, and **none is an external dependency**:
+   - `.maude/plugin/vault.db` — a **disposable index**, rebuilt from the user's own markdown each session, deletable with zero loss. The markdown stays the canon.
+   - `.maude/plugin/tape/tape.db` — the **tape** (added 2026-07-17): a **primary durable store** — the user's verbatim words, rejected phrasings, and supersession history that markdown-as-canon kept losing. Durable, *not* disposable; still stdlib SQLite, no daemon, no external service, deletable. Semantic recall is opt-in **BYO** (an injected embedder); the plugin ships no embedding service and no default endpoint. The tape runs fully on sqlite alone — the embedder is only borrowed when the home already has one.
 6. **She walks fresh** — each session re-reads the workspace; doesn't carry assumptions across sessions. (The vault doesn't change this: it's an index OF the walk's sources, rebuilt fresh, not a cache of conclusions.)
 
 ## Development

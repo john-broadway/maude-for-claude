@@ -41,9 +41,19 @@ assert_file_exists "$(trace_path)" "trace file written without jq"
 
 test_start "no-jq trace line carries ts and kind (parsed without jq)"
 LINE="$(tail -1 "$(trace_path)" 2>/dev/null)"
-# Validate shape with grep, NOT jq — must be {"ts":"...Z","kind":"event"}
-printf '%s' "$LINE" | grep -qE '^\{"ts":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z","kind":"event"\}$'
+# Validate shape with grep, NOT jq — must be {"ts":"...Z","kind":"event","session":"..."}
+# (session = the fleet fix: even the minimal marker says whose it is)
+printf '%s' "$LINE" | grep -qE '^\{"ts":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z","kind":"event","session":"[^"]+"\}$'
 assert_exit "$?" "0" "minimal JSONL shape: $LINE"
+
+# A hostile label (a tmux session can be renamed to carry a quote) must not
+# poison the file — the fallback writer sed-escapes it, and the line must
+# still parse as JSON (validated with REAL jq, outside the jq-less PATH).
+test_start "no-jq trace line survives a quote in the session label (escaped, still JSON)"
+: > "$(trace_path)"
+printf '{"x":1}' | PATH="$NOJQ" MAUDE_SESSION_LABEL='a"b' bash "$HOOKS_DIR/maude-trace.sh" event >/dev/null 2>&1
+tail -1 "$(trace_path)" | jq -e '.session == "a\"b"' >/dev/null 2>&1
+assert_exit "$?" "0" "escaped label parses back intact"
 
 # SessionStart still emits the one-time jq-missing safety notice without jq.
 test_start "session-start still surfaces the jq-missing notice without jq"

@@ -58,9 +58,22 @@ fi
 # one session spans the whole workspace, so "the latest thing done anywhere" is where you
 # left off. In a single-project .remember/, it's naturally that project's latest.
 LEFTOFF_LINE=""
+LEFTOFF_SRC="workspace-wide"
 if [ -s "$REMEMBER/now.md" ]; then
   LEFTOFF_LINE="$(grep -A1 -E '^## [0-9]{2}:[0-9]{2}' "$REMEMBER/now.md" 2>/dev/null \
     | grep -vE '^## |^--$|^[[:space:]]*$' | tail -1 | head -c 200)"
+  # The session tie (the fleet fix): under concurrent sessions the newest entry
+  # may be a NEIGHBOR session's work, so the line declares its source instead of
+  # masquerading as this session's state. Entry headers are "## HH:MM | label";
+  # the label is the writer's branch field (a fleet can set REMEMBER_BRANCH per
+  # session to put its session name here). "unknown"/absent → workspace-wide.
+  LEFTOFF_HDR="$(grep -E '^## [0-9]{2}:[0-9]{2}' "$REMEMBER/now.md" 2>/dev/null | tail -1)"
+  case "$LEFTOFF_HDR" in
+    *"|"*)
+      LEFTOFF_SRC="$(printf '%s' "$LEFTOFF_HDR" | sed -E 's/^[^|]*\|[[:space:]]*//; s/[[:space:]]*$//' | head -c 40)"
+      case "$LEFTOFF_SRC" in ''|unknown) LEFTOFF_SRC="workspace-wide" ;; esac
+      ;;
+  esac
 fi
 
 # Tier 2: remember plugin's handoff file (the dense, intentional signal from last session)
@@ -142,7 +155,7 @@ GREETING="$(maude_greeting)"
   printf '\n'
   [ -n "$DIGEST_LINE" ] && printf '  %s\n' "$DIGEST_LINE"
   [ -n "$CONTINUITY_LINE" ] && printf '  %s\n' "$CONTINUITY_LINE"
-  [ -n "$LEFTOFF_LINE" ] && printf '  Where you left off: %s\n' "$LEFTOFF_LINE"
+  [ -n "$LEFTOFF_LINE" ] && printf '  Where you left off (%s): %s\n' "$LEFTOFF_SRC" "$LEFTOFF_LINE"
   [ -n "$REMEMBER_HANDOFF" ] && printf '  Last handoff (.remember): %s\n' "$REMEMBER_HANDOFF"
   [ -n "$NOW_LINE" ]          && printf '  Anthropic now: %s\n' "$NOW_LINE"
   [ -n "$PATTERN_HINT" ]      && printf '  Cross-project pattern: %s\n' "$PATTERN_HINT"

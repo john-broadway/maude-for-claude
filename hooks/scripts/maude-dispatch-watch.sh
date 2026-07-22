@@ -41,9 +41,14 @@ TODAY="$(date +%Y-%m-%d)"
 # cooldown key: an Agent-side whisper must not silence this one (the workflow
 # case is the one that recurs).
 if [ "$TOOL" = "Workflow" ]; then
-  maude_care_ensure "$CARE"
-  WARNED="$(jq -r '.dispatch_warned_workflow // ""' "$CARE" 2>/dev/null)"
-  [ "$WARNED" = "$TODAY" ] && exit 0
+  # Conscious escape hatch. An intentional untiered launch — e.g. launching a
+  # named workflow ONCE to materialize its script for tiering — sets this env
+  # var. Setting it IS the conscious choice; it can't happen by reflex, which
+  # is the whole point (a block you dodge with a keystroke isn't a block).
+  case "${MAUDE_ALLOW_UNTIERED_WORKFLOW:-}" in
+    ""|0|false|no|NO|off|OFF) ;;
+    *) exit 0 ;;
+  esac
 
   SCRIPT="$(printf '%s' "$INPUT" | jq -r '.tool_input.script // ""' 2>/dev/null)"
   if [ -z "$SCRIPT" ]; then
@@ -52,19 +57,40 @@ if [ "$TOOL" = "Workflow" ]; then
   fi
 
   if [ -n "$SCRIPT" ]; then
-    # Inspectable script: agent() calls with no model: anywhere = the drift.
-    printf '%s' "$SCRIPT" | grep -q 'agent(' || exit 0
-    printf '%s' "$SCRIPT" | grep -q 'model:' && exit 0
+    # Inspectable script.
+    printf '%s' "$SCRIPT" | grep -q 'agent(' || exit 0    # no agents → nothing to tier
+    printf '%s' "$SCRIPT" | grep -q 'model:' && exit 0     # tiered somewhere → pass
+
+    # Untiered AND fanning out (parallel/pipeline): the expensive case — every
+    # agent inherits the flagship, times N. A whisper is skippable (proven the
+    # hard way), so BLOCK. No cooldown: a block must fire every time the risk is
+    # present, or one dodge silences it for the day.
+    if printf '%s' "$SCRIPT" | grep -qE 'parallel\(|pipeline\('; then
+      maude_log_trace "drift" "kind=dispatch-workflow-block"
+      printf 'Maude: this workflow fans out (parallel/pipeline) with untiered agent() calls — every agent inherits the flagship, times N. Tier the stages (verify → haiku, search/synth → sonnet) or set an explicit model:, then relaunch. (MAUDE_ALLOW_UNTIERED_WORKFLOW=1 overrides this one call.)\n' >&2
+      exit 2
+    fi
+
+    # Untiered single agent, no fan-out — wasteful, not catastrophic. The
+    # proportionate whisper, once per day.
+    maude_care_ensure "$CARE"
+    WARNED="$(jq -r '.dispatch_warned_workflow // ""' "$CARE" 2>/dev/null)"
+    [ "$WARNED" = "$TODAY" ] && exit 0
     printf 'Maude: this workflow'\''s agent() calls set no model: — every one inherits the main loop (usually the flagship). Add model: per stage before the burn (verify → haiku, review/search → sonnet).\n' >&2
+    maude_care_set "$CARE" --arg t "$TODAY" '.dispatch_warned_workflow = $t'
+    maude_log_trace "drift" "kind=dispatch-workflow"
+    exit 0
   else
-    # Named workflow: the script is registry-resolved, not inspectable here.
+    # Named workflow: not inspectable, and the launch both CREATES and RUNS the
+    # script — a stock harness defaults every agent() to the flagship (the exact
+    # trap that burned us). BLOCK, forcing the tiered scriptPath flow, or the
+    # conscious env override to launch-and-tier. No cooldown: fires every time.
     NAME="$(printf '%s' "$INPUT" | jq -r '.tool_input.name // ""' 2>/dev/null)"
     [ -n "$NAME" ] || exit 0
-    printf 'Maude: named workflow "%s" — stock harnesses set no model: and default every agent() to the flagship. Grab the persisted scriptPath from the tool result, grep it for model:, and tier the stages before the expensive phase runs.\n' "$NAME" >&2
+    maude_log_trace "drift" "kind=dispatch-workflow-block"
+    printf 'Maude: named workflow "%s" runs a stock harness — every agent() defaults to the flagship. Materialize + tier the persisted scriptPath and relaunch with scriptPath, or set MAUDE_ALLOW_UNTIERED_WORKFLOW=1 to launch as-is and get the script.\n' "$NAME" >&2
+    exit 2
   fi
-  maude_care_set "$CARE" --arg t "$TODAY" '.dispatch_warned_workflow = $t'
-  maude_log_trace "drift" "kind=dispatch-workflow"
-  exit 0
 fi
 
 MODEL="$(printf '%s' "$INPUT" | jq -r '.tool_input.model // ""' 2>/dev/null)"

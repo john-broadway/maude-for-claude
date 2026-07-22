@@ -104,12 +104,12 @@ clear_cooldown
 run_watch '{"script":"log(\"hello\"); return 1"}' "Workflow"
 assert_eq "$ERR" "" "stderr empty"
 
-test_start "whispers on a NAMED workflow (script not inspectable — grep before launch)"
+test_start "the named-workflow block speaks (Maude: on stderr)"
 clear_cooldown
 run_watch '{"name":"deep-research","args":{"q":"x"}}' "Workflow"
 assert_contains "$ERR" "Maude:" "stderr"
 
-test_start "named-workflow whisper carries the grep-the-script rule"
+test_start "named-workflow block carries the tier-the-scriptPath rule"
 assert_contains "$ERR" "scriptPath" "stderr"
 
 test_start "whispers on scriptPath whose file has agent() and no model:"
@@ -137,6 +137,62 @@ assert_eq "$ERR" "" "stderr empty"
 test_start "workflow whisper is logged to the trace as a drift catch"
 TRACE_LINE="$(grep '"kind":"drift"' "$(trace_path)" | grep workflow | head -1)"
 assert_contains "$TRACE_LINE" "workflow" "trace"
+
+# ── Teeth: the expensive fan-out BLOCKS (exit 2), not a whisper ────────
+# A whisper is skippable — tonight proved it. An untiered fan-out (parallel/
+# pipeline) or a named stock-harness workflow now hard-blocks: tier it, or
+# consciously override. A single untiered agent stays a (proportionate) whisper.
+
+test_start "blocks (exit 2) an inline workflow that fans out untiered (parallel)"
+clear_cooldown
+run_watch '{"script":"const r = await parallel(items.map(x => () => agent(\"scan \"+x)))"}' "Workflow"
+assert_exit "$RC" "2" "exit"
+
+test_start "fan-out block names the fix (tier the stages)"
+assert_contains "$ERR" "haiku" "stderr"
+
+test_start "fan-out block names the conscious override"
+assert_contains "$ERR" "MAUDE_ALLOW_UNTIERED_WORKFLOW" "stderr"
+
+test_start "a pipeline() fan-out blocks too"
+clear_cooldown
+run_watch '{"script":"await pipeline(xs, a => agent(a))"}' "Workflow"
+assert_exit "$RC" "2" "exit"
+
+test_start "blocks (exit 2) a named workflow (stock harness defaults to flagship)"
+clear_cooldown
+run_watch '{"name":"deep-research","args":{"q":"x"}}' "Workflow"
+assert_exit "$RC" "2" "exit"
+
+test_start "named block carries the tier-the-scriptPath rule"
+assert_contains "$ERR" "scriptPath" "stderr"
+
+test_start "the conscious env override lets an untiered fan-out through (exit 0)"
+clear_cooldown
+ERR="$(make_mcp_tool_input "Workflow" '{"script":"await parallel(xs.map(x=>()=>agent(x)))"}' | MAUDE_ALLOW_UNTIERED_WORKFLOW=1 bash "$WATCH" 2>&1 >/dev/null)"
+RC=$?
+assert_exit "$RC" "0" "exit"
+
+test_start "the override is silent (no whisper, no block)"
+assert_eq "$ERR" "" "stderr empty"
+
+test_start "a single untiered agent (no fan-out) still only whispers, never blocks"
+clear_cooldown
+run_watch '{"script":"const r = await agent(\"one thing\")"}' "Workflow"
+assert_exit "$RC" "0" "exit"
+
+test_start "the single-agent whisper still speaks"
+assert_contains "$ERR" "Maude:" "stderr"
+
+test_start "a block fires every time — the daily cooldown never silences it"
+clear_cooldown
+run_watch '{"name":"a"}' "Workflow"    # block 1
+run_watch '{"name":"b"}' "Workflow"    # block 2, same day — must STILL block
+assert_exit "$RC" "2" "exit"
+
+test_start "the block is logged to the trace"
+TRACE_LINE="$(grep '"kind":"drift"' "$(trace_path)" | grep 'workflow-block' | head -1)"
+assert_contains "$TRACE_LINE" "block" "trace"
 
 # ── Defensive guards ───────────────────────────────────────────────────
 

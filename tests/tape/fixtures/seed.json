@@ -1,0 +1,9 @@
+{
+  "_note": "Generic example seed for tests — no real user's personal words in the public plugin.",
+  "ops": [
+    {"op": "remember", "text": "we heroically slashed scope against all odds", "topic": "scope", "source": "agent-draft", "authority": "agent-inference"},
+    {"op": "correct", "rejected": "heroically slashed scope", "reason": "dramatization; the user said \"keep it small\"", "corrected_to": "keep it small", "topic": "scope", "source": "user-2026"},
+    {"op": "reject", "phrase": "against all odds", "reason": "dramatization; not the user's words", "source": "user-2026"},
+    {"op": "remember", "text": "the tape brings the amnesiac back, nothing cut", "topic": "maude-identity", "source": "design"}
+  ]
+}

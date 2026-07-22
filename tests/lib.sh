@@ -33,6 +33,12 @@ setup_test_env() {
   # explicitly AFTER this. ${!MAUDE_@} future-proofs against toggles not yet
   # invented — an explicit unset-list rots.
   for _v in "${!MAUDE_@}"; do unset "$_v"; done
+  # Session-label hermeticity: the suite may run inside a tmux fleet session
+  # AND under a live harness that exports its session id — maude_session_label
+  # would resolve to THAT session's identity, the exact ambient-state leak the
+  # label exists to stop. Tests that exercise labeling set MAUDE_SESSION_LABEL
+  # (or pass a session_id) explicitly.
+  unset TMUX CLAUDE_CODE_SESSION_ID
   export CLAUDE_PROJECT_DIR="$TEST_TMP"
   export MAUDE_GATE_CONFIG="$TEST_TMP/gate-config.json"
   mkdir -p "$TEST_TMP/.maude/plugin/trace"

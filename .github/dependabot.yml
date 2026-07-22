@@ -1,0 +1,14 @@
+# Dependabot — Maude ships as a Claude Code plugin (no Python package manifest), so the only
+# dependency surface is the SHA-pinned GitHub Actions in ci / codeql / scorecard / release.
+# Keeping those current is the whole point (a pinned action that never updates goes stale on CVEs).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]

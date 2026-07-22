@@ -65,8 +65,10 @@ Greet by the user's **local** time of day. The box clock is often UTC (servers, 
 What's pending:
   - <one or two things, prioritized>
 
-Where you left off:
-  <one-line — last meaningful action from now.md or trace>
+Where you left off (<the entry's session label, or "workspace-wide">):
+  <one-line — last meaningful action from now.md or trace. The live buffer is
+  workspace-wide: under a concurrent fleet the newest entry may be another
+  session's work, so always say whose it was.>
 
 I noticed:
   <optional one-line — pattern from the trace, e.g., "you spent yesterday on X

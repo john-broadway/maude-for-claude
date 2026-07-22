@@ -60,6 +60,31 @@ printf '%s' "$INPUT" | bash "$TRACE_HOOK" tool >/dev/null 2>&1
 last="$(tail -1 "$(trace_path)")"
 assert_contains "$last" '"kind":"tool"' "explicit kind"
 
+# ── Session tie (fleet fix): every entry says which session produced it ──
+test_start "trace records the session label"
+INPUT='{"hook_event_name":"PostToolUse","tool_name":"Grep","session_id":"abcd1234-9999-8888"}'
+: > "$(trace_path)"
+printf '%s' "$INPUT" | MAUDE_SESSION_LABEL=pacioli bash "$TRACE_HOOK" tool >/dev/null 2>&1
+last="$(tail -1 "$(trace_path)")"
+assert_contains "$last" '"session":"pacioli"' "session label on entry"
+
+test_start "trace records the harness session id (short)"
+assert_contains "$last" '"sid":"abcd1234"' "sid prefix on entry"
+
+test_start "trace without any session identity labels solo"
+INPUT='{"hook_event_name":"PostToolUse","tool_name":"Grep"}'
+: > "$(trace_path)"
+printf '%s' "$INPUT" | bash "$TRACE_HOOK" tool >/dev/null 2>&1
+last="$(tail -1 "$(trace_path)")"
+assert_contains "$last" '"session":"solo"' "solo fallback"
+
+test_start "trace with only a session_id labels by its prefix"
+INPUT='{"hook_event_name":"PostToolUse","tool_name":"Grep","session_id":"feed0042-1111"}'
+: > "$(trace_path)"
+printf '%s' "$INPUT" | bash "$TRACE_HOOK" tool >/dev/null 2>&1
+last="$(tail -1 "$(trace_path)")"
+assert_contains "$last" '"session":"feed0042"' "sid-prefix label"
+
 print_summary
 teardown_test_env
 exit $FAILED
