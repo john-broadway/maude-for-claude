@@ -71,7 +71,10 @@ case "$CMD" in
         # Content-free receipt: the trace is metadata-only by design.
         maude_log_trace "eye" "stale whisper dropped (aged $((NOW - BORN))s > ttl ${TTL}s)"
       else
-        printf '**Maude:** %s\n' "$(head -c 400 "$WHISPER_FILE" | tr '\n' ' ')"
+        W="$(head -c 400 "$WHISPER_FILE" | tr '\n' ' ')"
+        printf '**Maude:** %s\n' "$W"
+        # #49: a shown whisper is injected context — log its bill.
+        maude_log_spend "eye-whisper" "$(printf '%s' "$W" | wc -c | tr -d ' ')"
       fi
       : > "$WHISPER_FILE" 2>/dev/null
     fi

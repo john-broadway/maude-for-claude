@@ -621,6 +621,24 @@ test_start "log_trace records the session label"
 ( export MAUDE_SESSION_LABEL="hub"; maude_log_trace "verify" "stop" )
 assert_contains "$(tail -1 "$(trace_path)")" '"session":"hub"' "session on trace entry"
 
+# ── #49: the token ledger — spend entries: hook + bytes, metadata only ──
+test_start "log_spend writes a spend entry with hook and bytes"
+: > "$(trace_path)"
+maude_log_spend "page" 512
+assert_contains "$(tail -1 "$(trace_path)")" '"payload":"hook=page bytes=512"' "spend recorded"
+
+test_start "log_spend refuses zero bytes (no bill for silence)"
+: > "$(trace_path)"
+maude_log_spend "page" 0
+[ ! -s "$(trace_path)" ]
+assert_exit "$?" "0" "no entry for zero"
+
+test_start "log_spend refuses garbage byte counts"
+: > "$(trace_path)"
+maude_log_spend "page" "abc"
+[ ! -s "$(trace_path)" ]
+assert_exit "$?" "0" "no entry for non-numeric"
+
 print_summary
 teardown_test_env
 exit $FAILED

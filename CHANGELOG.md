@@ -1,4 +1,4 @@
-<!-- Version: 0.23.0 -->
+<!-- Version: 0.24.0 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-07-22 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -6,6 +6,46 @@
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.24.0 — the bill, the switch, and the walk
+
+The field-issue backlog, closed: three things she owed the house.
+
+**The token ledger (#49).** Her hooks inject context every turn, and that bill
+was invisible. Now every context-injecting hook class — the vault pager, the
+session-start brief, the mission re-inject, the watch-list heads-up, the eye's
+whisper, drift's whisper — logs its spend to the trace (hook + bytes,
+metadata only, never content), and `/maude:receipts` grows a **"what she
+cost"** table beside her catches: bytes by hook class, tokens derived as
+bytes/4 and marked approximate, never stored. Savings stay honest event
+counts — a saved-token number has no denominator, so it is never printed.
+And suspect #1, pre-registered in the issue and confirmed by live receipts,
+is retired: the pager fired on background task notifications and command
+echoes with zero-relevance matches. **Machine-generated turns get no
+recall** — a notification is not a question.
+
+**The kill switch (#45).** The eye has `MAUDE_EYE=off`, the chores have
+`MAUDE_CHORES=off`; the tier-1 loopback probe was the one autonomous feature
+the homeowner couldn't turn off. `MAUDE_PROBE=off` — no sockets opened, no
+cache written, documented in PRIVACY.md beside its siblings.
+
+**The lint ritual (#42).** Memory that compounds needs this pass the way code
+needs a linter — compaction was size-driven, nothing was quality-driven.
+`/maude:lint` walks the vault the way the cushion-flip walks the repos:
+mechanical checks in the script (index links resolve · unwritten
+`[[pointers]]` counted as a backlog, not errors — resolving the prefix-less
+house convention against typed filenames · index size vs cap · stale-open
+candidates · superseded notes the index still serves), judgment checks
+(contradictions, stale claims wearing a present tense) left to the reader by
+design. Scope law: archives are verbatim, letters and dailies historical —
+never scanned. Report-first: it proposes, it changes nothing, and every pass
+logs its counts. First dogfood run on a real 490-file vault cut the
+unwritten-pointer noise from 78 to 12 by learning the house convention, and
+caught the index 6 lines over its cap.
+
+One new test file; fleet 47.
 
 ---
 

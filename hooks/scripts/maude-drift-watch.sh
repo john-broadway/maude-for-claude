@@ -60,9 +60,11 @@ if [ "$GREP_COUNT" -ge 4 ]; then
   # care.json is guaranteed present + valid by maude_care_ensure above, so no -f guard.
   WARNED="$(jq -r --arg s "$SLBL" '.drift_warned[$s].grep // ""' "$CARE" 2>/dev/null)"
   if [ "$WARNED" != "$TODAY" ]; then
-    printf 'Maude: noticed Claude grepping %d times in the last 30 tool calls. He may be stuck on something — worth a sanity check.\n' "$GREP_COUNT" >&2
+    MSG="$(printf 'Maude: noticed Claude grepping %d times in the last 30 tool calls. He may be stuck on something — worth a sanity check.' "$GREP_COUNT")"
+    printf '%s\n' "$MSG" >&2
     maude_care_set "$CARE" --arg t "$TODAY" --arg s "$SLBL" "$HEAL"' | .drift_warned[$s].grep = $t'
     maude_log_trace "drift" "kind=grep count=$GREP_COUNT"
+    maude_log_spend "drift-whisper" "$(printf '%s' "$MSG" | wc -c | tr -d ' ')"
   fi
 fi
 
@@ -74,7 +76,9 @@ if [ -n "$DUP" ]; then
   WARNED="$(jq -r --arg s "$SLBL" --arg t "$TARGET" '.drift_warned[$s].read_targets[$t] // ""' "$CARE" 2>/dev/null)"
   if [ "$WARNED" != "$TODAY" ]; then
     BASE="$(basename "$TARGET")"
-    printf 'Maude: noticed Claude has Read %s %d times today. Worth checking what he is looking for.\n' "$BASE" "$COUNT" >&2
+    MSG="$(printf 'Maude: noticed Claude has Read %s %d times today. Worth checking what he is looking for.' "$BASE" "$COUNT")"
+    printf '%s\n' "$MSG" >&2
+    maude_log_spend "drift-whisper" "$(printf '%s' "$MSG" | wc -c | tr -d ' ')"
     # Record this target's cooldown AND prune stale-dated keys in one write — the
     # cooldown only cares about TODAY, so yesterday's entries are cruft. Without this,
     # read_targets grew one key per distinct over-read file, forever (care.json bloat).

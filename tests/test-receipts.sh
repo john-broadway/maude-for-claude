@@ -160,6 +160,32 @@ else
   _fail "old sole-copy events leaked into 7-day window: $(printf '%s' "$OUT7" | grep -i 'sole-copy')"
 fi
 
+# ── #49: the cost column — she publishes her own bill next to her catches ──
+# Seed spend events (two hook classes) and one catch; the table must show
+# bytes by hook class, an approx-token derivation labeled approximate, and
+# never a "tokens saved" claim (no honest denominator, extended law).
+SPEND_TRACE="$(trace_path)"
+jq -nc '{ts:"2026-07-01T10:00:00Z",kind:"spend",payload:"hook=page bytes=1000"}' >> "$SPEND_TRACE"
+jq -nc '{ts:"2026-07-01T10:01:00Z",kind:"spend",payload:"hook=page bytes=500"}' >> "$SPEND_TRACE"
+jq -nc '{ts:"2026-07-01T10:02:00Z",kind:"spend",payload:"hook=mission-hold bytes=200"}' >> "$SPEND_TRACE"
+OUTC="$(bash "$RCPT" 2>/dev/null)"
+
+test_start "receipts shows the cost table when spend was recorded"
+assert_contains "$OUTC" "what she cost" "cost section present"
+
+test_start "cost table aggregates bytes by hook class"
+assert_contains "$OUTC" "| page | 2 | 1500 |" "page: 2 events, 1500 bytes"
+
+test_start "cost table carries the second hook class"
+assert_contains "$OUTC" "| mission-hold | 1 | 200 |" "mission-hold row"
+
+test_start "approx tokens are labeled approximate, derived not stored"
+assert_contains "$OUTC" "~375" "1500 bytes ≈ ~375 tokens (bytes/4)"
+
+test_start "the no-denominator law extends: never a tokens-saved claim"
+printf '%s' "$OUTC" | grep -qi "tokens saved" && FOUND=1 || FOUND=0
+assert_eq "$FOUND" "0" "no 'tokens saved' anywhere"
+
 test_start "jq absent → graceful note, rc 0"
 NOJQ="$(make_nojq_bin)"
 OUTNJ="$(PATH="$NOJQ" bash "$RCPT" 2>&1)"

@@ -47,6 +47,22 @@ test_start "probe always exits 0"
 RC="$(bash "$PROBE" >/dev/null 2>&1; echo $?)"
 assert_exit "$RC" "0" "exit"
 
+# ── #45: the kill switch — every autonomous mechanism can be turned off by
+# the person whose house it is; the probe was the one that couldn't. ──
+test_start "MAUDE_PROBE=off skips the probe entirely (no reachability cache written)"
+rm -f "$(care_path)"
+RC="$(MAUDE_PROBE=off bash "$PROBE" >/dev/null 2>&1; echo $?)"
+assert_exit "$RC" "0" "still exits 0"
+
+test_start "probe off: care.json untouched"
+[ ! -f "$(care_path)" ]
+assert_exit "$?" "0" "no cache file created when off"
+
+test_start "probe off: other spellings honored (0/false/no)"
+MAUDE_PROBE=false bash "$PROBE" >/dev/null 2>&1
+[ ! -f "$(care_path)" ]
+assert_exit "$?" "0" "false spelling honored"
+
 print_summary
 teardown_test_env
 exit $FAILED
