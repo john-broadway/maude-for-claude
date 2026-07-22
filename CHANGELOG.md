@@ -1,11 +1,44 @@
-<!-- Version: 0.22.0 -->
+<!-- Version: 0.23.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-07-17 -->
+<!-- Revised: 2026-07-22 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.23.0 — whose session it was
+
+One project root, three concurrent sessions, one trace — and the commentary
+crossed the streams.
+
+**The session tie (the fleet fix).** Maude's aggregate surfaces were built for
+one session at a time. Run a fleet — several Claude sessions sharing one
+project root — and the wake brief served one session another session's "where
+you left off," the catch-digest pooled everyone's catches under one anonymous
+count, and drift-watch could whisper "Claude is stuck grepping" about a
+*neighbor's* Claude. Caught live, twice in one day. Now every trace entry says
+whose it is — a `session` label: the tmux session name when there is one (the
+name the user actually thinks in), else the harness session-id prefix, else
+`solo` — and every surface that reads the trace ties itself to it:
+
+- **drift-watch** counts only the current session's events, and its cooldowns
+  nest per-session — one session's whisper no longer mutes a genuine one next
+  door. Unlabeled pre-upgrade entries never count toward a labeled session.
+- **the catch-digest** labels each session's catches when two or more share
+  the window (`pacioli: 1 block · proximo: 2 verify-flags`); a lone stream
+  keeps the plain format, so solo installs read exactly as before.
+- **the wake brief's "Where you left off"** declares its source — the live
+  buffer is workspace-wide, so the line now carries the entry's own label when
+  the writer set one (a fleet can set `REMEMBER_BRANCH` per session to put its
+  session name there), and is marked `workspace-wide` otherwise. A neighbor's
+  state can't masquerade as this session's anymore.
+
+Legacy cooldown state heals on the first write; the no-jq fallback marker is
+session-tied too. Nothing leaves the house: the label is a tmux session name
+or an id prefix, recorded in the same local trace as everything else.
 
 ---
 

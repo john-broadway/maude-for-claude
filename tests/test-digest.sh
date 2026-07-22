@@ -124,6 +124,35 @@ assert_contains "$OUT6" "Receipts: /maude:notice" "a count is auditable, not tak
 test_start "silent windows stay silent (no receipts line without a catch)"
 assert_eq "$OUT3" "" "no pointer when there is nothing to point at"
 
+# ── Scenario 8: session tie (the fleet fix) — catches say WHOSE session ──
+# Concurrent sessions share one trace; a pooled count credits everyone's
+# catches to whoever wakes next. With ≥2 sessions in the window, each
+# session's catches are labeled; with one (or unlabeled legacy), the plain
+# single-stream format above stays exactly as it was.
+emit_s() {  # emit_s <ts> <kind> <payload> <session>
+  jq -nc --arg ts "$1" --arg kind "$2" --arg payload "$3" --arg s "$4" \
+    '{ts:$ts,kind:$kind,payload:$payload,session:$s}' >> "$TRACE"
+}
+reset_trace
+emit_s "2026-06-23T10:00:00Z" "gate"   "blocked=drop-table" "pacioli"
+emit_s "2026-06-23T10:01:00Z" "verify" "stop"               "proximo"
+emit_s "2026-06-23T10:02:00Z" "verify" "stop"               "proximo"
+seed_care '{"last_digest_iso":"2026-06-23T00:00:00Z"}'
+OUT8="$(maude_digest_line)"
+
+test_start "multi-session window labels each session's catches"
+assert_contains "$OUT8" "pacioli: 1 block" "pacioli's catch attributed"
+
+test_start "multi-session window labels the second session too"
+assert_contains "$OUT8" "proximo: 2 verify-flags" "proximo's flags attributed"
+
+test_start "single-session window keeps the plain unlabeled format"
+reset_trace
+emit_s "2026-06-23T11:00:00Z" "gate" "blocked=drop-table" "pacioli"
+seed_care '{"last_digest_iso":"2026-06-23T00:00:00Z"}'
+OUT9="$(maude_digest_line)"
+assert_not_contains "$OUT9" "pacioli:" "no label noise when only one session is in the window"
+
 print_summary
 teardown_test_env
 exit $FAILED

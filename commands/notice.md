@@ -26,6 +26,8 @@ Scope:
 - `--week`: last 7 days
 - `--topic <keyword>`: every entry matching the keyword
 
+Entries carry a `session` label (tmux session name, session-id prefix, or `solo`) — under a concurrent fleet several sessions interleave in one file. **Attribute every pattern to its session** (`.session` in the JSONL); never present one session's loop or gap as another's. Pre-labeling entries have no `session` field — call those out as unattributed rather than guessing.
+
 Patterns to surface:
 
 1. **Repeated user prompts** — same/similar keyword appearing across N turns or N sessions

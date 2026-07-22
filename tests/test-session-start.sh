@@ -80,6 +80,22 @@ assert_contains "$OUT" "FRESHMARKER" "newest live-buffer entry reaches the brief
 test_start "session-start shows the newest buffer entry, not the oldest"
 assert_not_contains "$OUT" "OLDERMARKER" "stale buffer entry not surfaced"
 
+# ── Session tie (the fleet fix): the leftoff line declares its source ──
+# The live buffer is workspace-WIDE — under a concurrent fleet its newest entry
+# may be another session's work. Unlabeled ("unknown") entries are marked
+# workspace-wide so they can't masquerade as THIS session's state; a labeled
+# entry (REMEMBER_BRANCH set per fleet session) shows its label.
+test_start "leftoff from an unlabeled entry is marked workspace-wide"
+assert_contains "$OUT" "Where you left off (workspace-wide):" "scope declared"
+
+cat > "$TEST_TMP/.remember/now.md" <<'EOF'
+## 07:30 | pacioli
+LABELEDMARKER the labeled thing
+EOF
+test_start "leftoff from a labeled entry carries its session label"
+run_start
+assert_contains "$OUT" "Where you left off (pacioli): LABELEDMARKER" "label surfaced"
+
 rm -f "$TEST_TMP/.remember/now.md"
 
 # ── Local-time-aware greeting ────────────────────────────────────────

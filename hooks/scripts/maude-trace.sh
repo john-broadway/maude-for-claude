@@ -29,20 +29,34 @@ KIND="${1:-event}"
 
 if command -v jq >/dev/null 2>&1 && [ -n "$INPUT" ]; then
   # Project metadata-only fields — drop tool_input.content, tool_response, etc.
+  # `session` ties the entry to the session that produced it (the fleet fix:
+  # concurrent sessions share this file). The envelope's session_id feeds the
+  # ONE shared label computation — never a private substitution here, so
+  # readers (drift-watch) resolve the identical label. `sid` keeps the raw
+  # prefix for forensics.
+  SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null)"
   printf '%s' "$INPUT" | jq -c \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg kind "$KIND" \
+    --arg s "$(maude_session_label "$SID")" \
+    --arg sid "$SID" \
     '{
        ts: $ts,
        kind: $kind,
        hook: .hook_event_name,
        tool: .tool_name,
-       target: (.tool_input.file_path // null)
+       target: (.tool_input.file_path // null),
+       session: $s,
+       sid: (if $sid == "" then null else $sid[0:8] end)
      }' >> "$TRACE" 2>/dev/null
 else
-  # No jq — write the bare-minimum event marker
-  printf '{"ts":"%s","kind":"%s"}\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$KIND" >> "$TRACE"
+  # No jq — write the bare-minimum event marker (still session-tied). The
+  # label is sed-escaped like maude_log_trace's fallback: a tmux session name
+  # can carry a quote, and one bad line would poison every later jq read of
+  # the whole file.
+  SESC="$(maude_session_label | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n')"
+  printf '{"ts":"%s","kind":"%s","session":"%s"}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$KIND" "$SESC" >> "$TRACE"
 fi
 
 exit 0

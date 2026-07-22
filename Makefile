@@ -1,7 +1,7 @@
 .PHONY: test test-py verify lint release smoke
 
 test-py:
-	@if command -v pytest >/dev/null 2>&1; then PYTHONPATH=. pytest tests/vault tests/eye -q; \
+	@if command -v pytest >/dev/null 2>&1; then PYTHONPATH=. pytest tests/vault tests/eye tests/tape -q; \
 	else echo "pytest not installed — skipping python vault tests"; fi
 
 test: test-py

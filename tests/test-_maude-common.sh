@@ -597,6 +597,30 @@ maude_has_opaque_wrap 'eval $CMD'; assert_exit "$?" "0" "opaque-eval-bare"
 test_start "has_opaque_wrap true for bare eval ls (bareword is opaque; benign whisper cost)"
 maude_has_opaque_wrap 'eval ls'; assert_exit "$?" "0" "opaque-eval-bareword"
 
+# ── maude_session_label — ties commentary to the session that produced it ──
+# Under a concurrent fleet (several Claude sessions sharing one project root),
+# every aggregate surface needs to know WHICH session an event came from.
+test_start "session label: explicit MAUDE_SESSION_LABEL wins"
+LBL="$(MAUDE_SESSION_LABEL=pacioli maude_session_label)"
+assert_eq "$LBL" "pacioli" "env override"
+
+test_start "session label: an explicitly passed envelope session_id wins over env"
+LBL="$(CLAUDE_CODE_SESSION_ID=99999999-x maude_session_label d8671962-81c6-4b86)"
+assert_eq "$LBL" "d8671962" "envelope sid prefix"
+
+test_start "session label: falls back to the harness CLAUDE_CODE_SESSION_ID env"
+LBL="$(CLAUDE_CODE_SESSION_ID=d8671962-81c6-4b86 maude_session_label)"
+assert_eq "$LBL" "d8671962" "env sid prefix"
+
+test_start "session label: solo when nothing identifies the session"
+LBL="$(maude_session_label)"
+assert_eq "$LBL" "solo" "solo fallback"
+
+test_start "log_trace records the session label"
+: > "$(trace_path)"
+( export MAUDE_SESSION_LABEL="hub"; maude_log_trace "verify" "stop" )
+assert_contains "$(tail -1 "$(trace_path)")" '"session":"hub"' "session on trace entry"
+
 print_summary
 teardown_test_env
 exit $FAILED

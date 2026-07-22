@@ -165,21 +165,49 @@ maude_trace_file() {
   printf '%s/trace/today-%s.jsonl' "$(maude_self_dir)" "$(date -u +%Y-%m-%d)"
 }
 
+# ── Session label — ties commentary to the session that produced it ─────────
+# Several concurrent Claude sessions can share one project root (a tmux fleet),
+# and they all write the SAME trace file. Every aggregate surface built on the
+# trace — the catch-digest, drift-watch, /maude:notice — needs to know WHOSE
+# event each entry is, or one session's commentary bleeds into another's brief.
+# Precedence: explicit MAUDE_SESSION_LABEL > tmux session name (the name the
+# user thinks in: "hub", "pacioli") > harness session id > "solo".
+# WRITERS AND READERS OF THE SAME TRACE MUST RESOLVE THE SAME LABEL for the
+# same session, or scoped surfaces go blind (a reader filtering on a label no
+# writer ever stamped). So every tier is visible to every hook alike: a caller
+# holding the hook envelope passes its `session_id` as $1, and the harness's
+# exported CLAUDE_CODE_SESSION_ID covers the hooks that never parse stdin —
+# both are the SAME id, so the resolved label agrees either way.
+# shellcheck disable=SC2120  # $1 (envelope session_id) is optional by design
+maude_session_label() {
+  local l="${MAUDE_SESSION_LABEL:-}" sid="${1:-}"
+  if [ -z "$l" ] && [ -n "${TMUX:-}" ] && command -v tmux >/dev/null 2>&1; then
+    l="$(tmux display-message -p '#S' 2>/dev/null)"
+  fi
+  [ -z "$sid" ] && sid="${CLAUDE_CODE_SESSION_ID:-}"
+  [ -z "$l" ] && [ -n "$sid" ] && l="$(printf '%.8s' "$sid")"
+  [ -z "$l" ] && l="solo"
+  printf '%s' "$l"
+}
+
 maude_log_trace() {
   local kind="$1" payload="$2" trace ts
   trace="$(maude_trace_file)"
   mkdir -p "$(dirname "$trace")" 2>/dev/null
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+  local slbl
+  slbl="$(maude_session_label)"
   if command -v jq >/dev/null 2>&1; then
-    jq -nc --arg ts "$ts" --arg kind "$kind" --arg payload "$payload" \
-      '{ts:$ts, kind:$kind, payload:$payload}' >> "$trace" 2>/dev/null
+    jq -nc --arg ts "$ts" --arg kind "$kind" --arg payload "$payload" --arg s "$slbl" \
+      '{ts:$ts, kind:$kind, payload:$payload, session:$s}' >> "$trace" 2>/dev/null
   else
     # Fallback: sed-escape backslashes and quotes for JSON safety
-    local esc
+    local esc sesc
     esc="$(printf '%s' "$payload" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n')"
-    printf '{"ts":"%s","kind":"%s","payload":"%s"}\n' \
-      "$ts" "$kind" "$esc" >> "$trace"
+    sesc="$(printf '%s' "$slbl" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n')"
+    printf '{"ts":"%s","kind":"%s","payload":"%s","session":"%s"}\n' \
+      "$ts" "$kind" "$esc" "$sesc" >> "$trace"
   fi
 }
 
@@ -334,31 +362,43 @@ maude_digest_line() {
   # Aggregate the new catches into a terse, value-first token list (empty string if the
   # window holds nothing worth surfacing). `(.payload // "")` guards the kinds whose
   # payload could be absent; `and` short-circuits so non-matching kinds are never probed.
+  # The session tie (the fleet fix): concurrent sessions share the trace, and a
+  # pooled tally credits everyone's catches to whoever wakes next. Render per
+  # session-label group; when TWO OR MORE sessions have catches in the window,
+  # each group is prefixed with its label — a lone stream keeps the plain
+  # single-session format unchanged (solo installs never see labels).
   line="$(cat "${files[@]}" 2>/dev/null | jq -rs --arg since "$since" '
-    [ .[] | select((.ts // "") > $since) ] as $new
-    | ( [ $new[] | select(.kind=="gate"
+    def render($evs):
+      ( [ $evs[] | select(.kind=="gate"
                           and ((.payload // "")|startswith("blocked="))
                           and (((.payload // "")|test("git-push"))|not)) ] ) as $blocks
-    | ( [ $blocks[] | select((.payload // "")|test("rm-rf-sole-copy")) ]|length ) as $saves
-    | ( ($blocks|length) - $saves ) as $otherblocks
-    | ( [ $new[] | select(.kind=="infra-gate" and ((.payload // "")|test("blocked"))) ]|length ) as $infra
-    | ( [ $new[] | select(.kind=="gate-cleared" and ((.payload // "")|test("git-push"))) ]|length ) as $pushclears
-    | ( [ $new[] | select(.kind=="drift") ]|length ) as $drift
-    | ( [ $new[] | select(.kind=="verify") ]|length ) as $verify
-    | [ (if $saves>0       then "\($saves) sole-copy save\(if $saves==1 then "" else "s" end)" else empty end),
-        (if $infra>0       then "\($infra) infra-block\(if $infra==1 then "" else "s" end)" else empty end),
-        (if $otherblocks>0 then "\($otherblocks) block\(if $otherblocks==1 then "" else "s" end)" else empty end),
-        (if $drift>0       then "\($drift) drift-catch\(if $drift==1 then "" else "es" end)" else empty end)
-      ] as $value
-    | [ (if $pushclears>0  then "\($pushclears) push-clear\(if $pushclears==1 then "" else "s" end)" else empty end),
-        (if $verify>0      then "\($verify) verify-flag\(if $verify==1 then "" else "s" end)" else empty end)
-      ] as $volume
-    # Value catches lead; high-volume noise (push-clears, verify-flags) folds into a
-    # parenthetical tail so the gold pops. Volume-only windows show the volume plainly.
-    | if ($value|length)>0
-      then ($value|join(", ")) + (if ($volume|length)>0 then " (+\($volume|join(", ")))" else "" end)
-      elif ($volume|length)>0 then ($volume|join(", "))
-      else "" end
+      | ( [ $blocks[] | select((.payload // "")|test("rm-rf-sole-copy")) ]|length ) as $saves
+      | ( ($blocks|length) - $saves ) as $otherblocks
+      | ( [ $evs[] | select(.kind=="infra-gate" and ((.payload // "")|test("blocked"))) ]|length ) as $infra
+      | ( [ $evs[] | select(.kind=="gate-cleared" and ((.payload // "")|test("git-push"))) ]|length ) as $pushclears
+      | ( [ $evs[] | select(.kind=="drift") ]|length ) as $drift
+      | ( [ $evs[] | select(.kind=="verify") ]|length ) as $verify
+      | [ (if $saves>0       then "\($saves) sole-copy save\(if $saves==1 then "" else "s" end)" else empty end),
+          (if $infra>0       then "\($infra) infra-block\(if $infra==1 then "" else "s" end)" else empty end),
+          (if $otherblocks>0 then "\($otherblocks) block\(if $otherblocks==1 then "" else "s" end)" else empty end),
+          (if $drift>0       then "\($drift) drift-catch\(if $drift==1 then "" else "es" end)" else empty end)
+        ] as $value
+      | [ (if $pushclears>0  then "\($pushclears) push-clear\(if $pushclears==1 then "" else "s" end)" else empty end),
+          (if $verify>0      then "\($verify) verify-flag\(if $verify==1 then "" else "s" end)" else empty end)
+        ] as $volume
+      # Value catches lead; high-volume noise (push-clears, verify-flags) folds into a
+      # parenthetical tail so the gold pops. Volume-only windows show the volume plainly.
+      | if ($value|length)>0
+        then ($value|join(", ")) + (if ($volume|length)>0 then " (+\($volume|join(", ")))" else "" end)
+        elif ($volume|length)>0 then ($volume|join(", "))
+        else "" end;
+    [ .[] | select((.ts // "") > $since) ] as $new
+    | ($new | group_by(.session // ""))
+    | [ .[] | {label: (.[0].session // ""), txt: render(.)} | select(.txt != "") ] as $groups
+    | if ($groups|length) > 1
+      then [ $groups[] | ((if .label == "" then "unlabeled" else .label end) + ": " + .txt) ] | join(" · ")
+      else ($groups[0].txt // "")
+      end
   ')"
 
   # Every count carries a path to its receipts (issue #37): a folded tally

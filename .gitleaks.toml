@@ -1,0 +1,15 @@
+# Maude gitleaks config — default ruleset plus a narrow allowlist for the plugin's documented
+# env-var toggles (MAUDE_*=on/off). The generic-api-key rule mistakes them for a key=value
+# credential where they appear in README prose and comments; no secret ever existed. This is a
+# rule-based allowlist (robust) vs the fingerprint in .gitleaksignore (went stale when the README
+# wording changed). gitleaks auto-detects this file — used by the global pre-push guard and CI.
+title = "Maude gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Maude's documented env-var toggles (config flags, not credentials)."
+regexes = [
+  '''MAUDE_[A-Z0-9_]+=(on|off)''',
+]
