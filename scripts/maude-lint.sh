@@ -4,9 +4,9 @@
 # size-driven; nothing was quality-driven until this.
 #
 # Laws (each one a test):
-#   - SCOPE FIRST: archives are verbatim by design, letters and dailies are
-#     historical — the lint NEVER scans them. Targets: the index (MEMORY.md)
-#     + live topic files only.
+#   - SCOPE FIRST: archives are verbatim by design; letters, dailies and the two
+#     rolling logs (now.md, recent.md) are historical — the lint NEVER scans any
+#     of them. Targets: the index (MEMORY.md) + live topic files only.
 #   - REPORT-FIRST, like the cushion-flip: this script proposes; the human
 #     (or the session, with judgment) applies. It writes NOTHING into the
 #     memory it lints — value before the dustpan.
@@ -45,14 +45,22 @@ if [ ! -f "$INDEX" ]; then
   exit 0
 fi
 
-# ── Scope law: live files only. Archives verbatim, letters and dailies
-# historical — excluded before any check runs. ──
+# ── Scope law: live TOPIC files only. Archives verbatim; letters, dailies and the two
+# rolling logs historical — excluded before any check runs.
+#
+# now.md and recent.md are pipeline OUTPUT, not durable notes: now.md is the live buffer
+# (appended, periodically compacted to archive_now-precompaction-*) and recent.md is one
+# entry per past session. A dead pointer inside either is frozen history that can never
+# legitimately be repaired, so reporting them is permanent noise a reader can only ignore
+# — which is how a report teaches people to stop reading it. Added 2026-08-06: they were
+# the only two of the vault's file classes the original blocklist never named, and 4 of the
+# 9 findings that day were unfixable history sitting in recent.md. ──
 LIVE=()
 for f in "$MEM"/*.md; do
   [ -e "$f" ] || continue
   base="${f##*/}"
   case "$base" in
-    MEMORY.md|archive_*|letter*|today-*) continue ;;
+    MEMORY.md|archive_*|letter*|today-*|now.md|recent.md) continue ;;
   esac
   LIVE+=("$f")
 done
@@ -159,7 +167,7 @@ else
   printf 'none.\n'
 fi
 
-printf '\n## Scope\n%d live topic file(s) scanned. Archives, letters, and dailies excluded by law (verbatim/historical).\n' "${#LIVE[@]}"
+printf '\n## Scope\n%d live topic file(s) scanned. Archives, letters, dailies, and the rolling logs (now.md, recent.md) excluded by law (verbatim/historical).\n' "${#LIVE[@]}"
 printf '\nThe judgment checks — contradictions between notes, stale claims wearing a present tense — are the reader%ss pass over this report (/maude:lint). This script changes nothing.\n' "'"
 
 # ── Receipts: counts, never content ──

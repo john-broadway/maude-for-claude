@@ -25,6 +25,13 @@ mkdir -p "$TRACE_DIR" 2>/dev/null
 TRACE="$(maude_trace_file)"
 
 INPUT="$(cat 2>/dev/null)"
+
+# REDTEAM rail (the adversarial-pass tripwire) — stamped from here because this hook is
+# registered on PostToolUse with NO tool filter, so it is the one that sees an Agent
+# dispatch complete. Registering a new matcher in hooks.json would be COLD and wait for
+# /reload-plugins; a rail that waits to be reloaded is how the mission rail sat dead for
+# twenty days. Script edits are live on save.
+printf '%s' "$INPUT" | bash "$DIR/maude-redteam-watch.sh" stamp 2>/dev/null
 KIND="${1:-event}"
 
 if command -v jq >/dev/null 2>&1 && [ -n "$INPUT" ]; then
