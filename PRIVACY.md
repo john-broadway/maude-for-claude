@@ -1,6 +1,6 @@
-<!-- Version: 0.24.0 -->
+<!-- Version: 0.27.4 -->
 <!-- Created: 2026-07-17 -->
-<!-- Revised: 2026-07-22 -->
+<!-- Revised: 2026-08-08 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Privacy Policy — Maude for Claude

@@ -10,6 +10,8 @@ import time
 from dataclasses import dataclass
 from typing import Callable
 
+_WS = re.compile(r"\s+")  # any run of Unicode whitespace -> one space (see check_draft)
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS rejections (
     id      INTEGER PRIMARY KEY,
@@ -209,12 +211,19 @@ class Tape:
 
     def check_draft(self, text: str) -> list[Hit]:
         """Deterministic recall: which rejected phrasings appear in this draft, in order recorded."""
-        haystack = text.lower()
+        # Whitespace-normalised on BOTH sides. A literal substring test only ever caught one
+        # space shape, so a rejected phrase wrapped across a newline — or pasted carrying a
+        # non-breaking space — passed with exit 0, which is how bad text actually shipped.
+        # Python's \s is Unicode-aware (nbsp, em space, narrow nbsp all collapse), and this can
+        # only match MORE of what the owner already rejected, never fewer.
+        haystack = _WS.sub(" ", text.lower())
         hits: list[Hit] = []
         for phrase, reason, source in self._conn.execute(
             "SELECT phrase, reason, source FROM rejections ORDER BY id"
         ):
-            if phrase.lower() in haystack:
+            if not phrase.strip():
+                continue  # '' is a substring of everything: one empty row would block every draft
+            if _WS.sub(" ", phrase.lower()).strip() in haystack:
                 hits.append(Hit(phrase=phrase, reason=reason, source=source))
         return hits
 

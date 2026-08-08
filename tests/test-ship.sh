@@ -200,6 +200,63 @@ else
   _fail "expected auto-merge armed with review in body: $(printf '%s' "$OUT" | head -c 300)"
 fi
 
+# ── open: the second lens must have RUN (v0.27.0 lens_check) ─────────────
+# A stamp file is the mechanical signal redteam-watch writes when an
+# adversarial dispatch COMPLETES. Prose alone (--review) no longer suffices
+# when her state is reachable; no state at all keeps the prose-only behavior
+# (asserted implicitly by the two open tests above — the fixture has no
+# care.json on the walk path).
+
+CARE="$TEST_TMP/care.json"
+
+test_start "ship open --review REFUSES on a stale lens stamp"
+printf '{"last_redteam_iso":{"aaaa1111":"2001-01-01T00:00:00Z"}}\n' > "$CARE"
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "prose only" 2>&1)"
+RC=$?
+git checkout -q main
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'SECOND LENS NOT PROVEN'; then
+  _pass
+else
+  _fail "expected refusal on stale stamp (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+test_start "ship open --review proceeds on a FRESH lens stamp"
+printf '{"last_redteam_iso":{"aaaa1111":"%s"}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$CARE"
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "sonnet adversarial pass" 2>&1)"
+RC=$?
+git checkout -q main
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'pr merge'; then
+  _pass
+else
+  _fail "expected proceed on fresh stamp (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+test_start "ship open --review REJECTS a future stamp (planted, not fresh)"
+printf '{"last_redteam_iso":{"aaaa1111":"%s"}}\n' "$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)" > "$CARE"
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "prose" 2>&1)"
+RC=$?
+git checkout -q main
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'SECOND LENS NOT PROVEN'; then
+  _pass
+else
+  _fail "expected refusal on future stamp (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+test_start "ship open DRAFT stays available even with a stale stamp"
+printf '{"last_redteam_iso":{"aaaa1111":"2001-01-01T00:00:00Z"}}\n' > "$CARE"
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run 2>&1)"
+RC=$?
+git checkout -q main
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q -- '--draft'; then
+  _pass
+else
+  _fail "expected draft to proceed (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
 cd "$DIR" || exit 1
 teardown_test_env
 print_summary

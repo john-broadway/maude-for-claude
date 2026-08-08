@@ -208,7 +208,7 @@ Maude ships knowing; everything else must be on the map to be written.
 
 Her **voice** is not a command: she speaks beside Claude when a hook fires or the lens catches something, and her once-per-session presence is guaranteed by the `SessionStart` greeting — voiced on signal, never a per-turn toggle.
 
-Her **mission-hold rail** is that same principle aimed at drift: it pins what you're working on (from an `ExitPlanMode` plan or your `TodoWrite` list), re-injects it every prompt, and at the first edit after a talking stretch asks whether the work still serves it — so an established plan can't quietly slip. Like the gate and the whispers, it fires on hooks, not on a command you remember.
+Her **mission-hold rail** is that same principle aimed at drift: it pins what you're working on (from an `ExitPlanMode` plan, the task you move to `in_progress`, or a `TodoWrite` list), re-injects it every prompt, and at the first edit after a talking stretch asks whether the work still serves it — so an established plan can't quietly slip. Like the gate and the whispers, it fires on hooks, not on a command you remember.
 
 ## Tier model — locality + shape
 

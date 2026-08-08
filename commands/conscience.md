@@ -96,19 +96,29 @@ bash "$CLAUDE_PLUGIN_ROOT/hooks/scripts/maude-clear-gate.sh" "<key>"
 
 Longer window (e.g. a release session with several pushes): append seconds — `… "git-push" 1800` (30 min). For an intentional long/overnight run: `/maude:conscience run-governor 36000` (10h), or `MAUDE_RUN_GOVERNOR=off`.
 
+> **Clear in one call, act in the NEXT one.** `bash …/maude-clear-gate.sh git-push; git push origin main` is blocked, and correctly so: PreToolUse evaluates the whole `command` string *before* anything in it runs, so the token does not exist yet when the gated verb is matched. Not a defect — inherent to the hook point. Two calls, always.
+
 ### RED keys — John's hand ONLY
 
-`rm-rf-root`, `rm-rf-glob`, `sudo-rm-rf`, `rm-rf-sole-copy`, `public-publish`, `force-push`, `filter-repo`, `filter-branch`, `infra-destructive`, `drop-table` — irreversible, public, or sole-copy.
+`rm-rf-root`, `rm-rf-glob`, `sudo-rm-rf`, `rm-rf-sole-copy`, `sole-copy-target`, `public-publish`, `force-push`, `filter-repo`, `filter-branch`, `infra-destructive`, `drop-table` — irreversible, public, or sole-copy.
 
-**Do NOT clear these yourself.** The gate blocks you from running the clear-script for a red key, and the script refuses without `--john`. Instead, **STOP and present John this line in your reply** (as text — he pastes it; the leading `!` runs it in *his* shell, outside your tool-gate, which is what makes it his hand):
+**Red keys live in a DIFFERENT script.** `maude-clear-gate.sh` refuses every red key outright; they are cleared only by `maude-clear-red.sh`. That split exists so a harness deny-rule can name one PATH — an argument-shaped rule was already walked past by putting the key after a flag value, and denying the whole clear-gate would have blocked routine `git-push` self-clears too.
+
+**Do NOT clear these yourself.** Instead, **STOP and present John this line in your reply** (as text — he pastes it; the leading `!` runs it in *his* shell, outside your tool-gate, which is what makes it his hand):
 
 ```
-! bash <PLUGIN_ROOT>/hooks/scripts/maude-clear-gate.sh <key> --john
+! bash <PLUGIN_ROOT>/hooks/scripts/maude-clear-red.sh <key> --marker <link>
 ```
 
-Fill `<PLUGIN_ROOT>` with the value of `$CLAUDE_PLUGIN_ROOT` (run `echo "$CLAUDE_PLUGIN_ROOT"` to read it) and `<key>` with the red key. Then wait for John — do not take the action until his line has run.
+If a marker chain is provisioned for that key, a one-time link is the ONLY thing that opens it — `--john` alone is refused, and so is anything Claude can compute from what is on disk. If no chain exists yet, `--john` still works and the script says out loud that it is the weak path. To close it:
 
-> **Honest seam (SOFT rail).** The red tier removes the *reflexive* self-clear — it is NOT a determined-bypass guard. A direct `care.json` write defeats it, because the gate is Bash-only and the token carries no provenance. The real, unbypassable enforcement is the harness deny-rules. See `.scratch/maude-spine-deny.json`. Don't claim this stops what it can't — that overclaim is the hype this work exists to remove.
+```
+! bash <PLUGIN_ROOT>/hooks/scripts/maude-marker.sh gen <key> 20
+```
+
+Fill `<PLUGIN_ROOT>` with the value of `$CLAUDE_PLUGIN_ROOT` (run `echo "$CLAUDE_PLUGIN_ROOT"` to read it). Then wait for John — do not take the action until his line has run.
+
+> **Honest seam.** The marker chain is real: Claude cannot compute an unspent link without inverting sha256. What it does NOT do is make him sandboxed. A 2026-07-30 redteam forged a clearance four ways by pointing the gate at a state file, a ledger, or a package root of his own choosing — all four now refused — and one residual stands: redirecting `HOME` entirely leaves no marker directory to find. No in-process check can close that, because the check runs in a process whose environment Claude controls. The unbypassable layer is the harness deny-rules; see `.scratch/maude-marker-deny-rules-PROPOSAL.md`. Don't claim this stops what it can't.
 
 | User's action | Key | Tier |
 |---|---|---|

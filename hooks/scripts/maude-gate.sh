@@ -61,6 +61,32 @@ FLAG_AFTER='([[:space:]]|[;&|)`]|$)'
 # prefix is still seen at a boundary. Matches empty (so unprefixed commands are
 # unaffected). Closes #7 (command) and #8 (env-assign, for ALL patterns).
 PREFIX='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|command[[:space:]]+)*'
+# ARGS = other arguments of the SAME simple command, so a dangerous target is
+# caught in any argument position (`rm -rf /tmp/ok /srv/app`).
+# The token class MUST exclude the shell separators ; & | (and only those — see
+# the note below). It once was a
+# bare [^[:space:]]+, and because maude_canon_path_view joins a multi-line
+# command into ONE line with `;` separators (verified: a 3-line script becomes
+# `rm -rf /tmp/safe;echo filler;cat /srv/app/x.sh`), a separator was absorbed as
+# an ordinary argument and the walk ran to the end of the whole script. Any
+# harmless `rm -rf` then paired with any protected path appearing ANYWHERE
+# later. Measured 2026-07-30 on a real 14-line probe: `rm -rf "$S"` on line 1
+# blocked because line 14 mentioned a <workspace> path, and the refusal said
+# "rm -rf of a protected sole-copy path" — naming an rm that never existed.
+# Over-blocking is the safe direction, but a refusal that states the wrong
+# reason is a lying refusal, and a gate that blocks ordinary multi-command
+# scripts is a gate that gets switched off.
+# NOTE the separator half is [[:space:]] and stays that way on purpose: there
+# are no newlines left to exclude by this point, so narrowing it to [[:blank:]]
+# would be an inert edit dressed up as a fix.
+# The excluded set is DELIBERATELY the minimum that does the job — ; & | only.
+# ( ) and backtick are command starts to CMD_START, but mid-argument they are
+# command SUBSTITUTION, and excluding them would stop the walk in
+# `rm -rf $(echo x) /srv/app` — a genuinely destructive command that is blocked
+# today. Narrowing a block rule can only ever cause UNDER-blocking, so it gets
+# the smallest cut that fixes the measured fault, not the tidiest-looking one.
+# Regression: tests/test-gate.sh "the arg-walk must stop at the end of ITS OWN command".
+ARGS='([^[:space:];&|]+[[:space:]]+)*'
 # ABS = optional absolute/relative path prefix on a command NAME (/bin/rm,
 # /usr/bin/git). Ends in a slash so it can't eat into the command word. Closes #6.
 ABS='(/[^[:space:]]*/)?'
@@ -97,6 +123,10 @@ RMR="${ABS}"'rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]
 #    inspected. Still uncaught: heredoc-fed-shell (`bash <<EOF … rm -rf /
 #    … EOF`) and variable/interpolated payloads (`bash -c "$CMD"`,
 #    `eval "$X"`) — the latter now emit a non-blocking whisper.
+#    v0.27.0: heredoc excision now also covers the COMMAND patterns (git
+#    push et al) — a heredoc body naming a gated command no longer
+#    false-blocks, and a gated command inside a heredoc-fed SHELL is
+#    uniformly this limitation, for every pattern family.
 #    Unquoted bareword payloads (e.g. `eval ls`, `bash -c rm -rf /`) are
 #    also not inspected but DO whisper via the opaque-wrap check.
 #    Under-extraction is the deliberate bias. Top-level-only opaque check:
@@ -110,13 +140,16 @@ RMR="${ABS}"'rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]
 #    `env rm`, `nohup`/`timeout`/`xargs rm`, and `\rm` (backslash
 #    alias-escape). Same class as the now-closed /bin/, command, and FOO=1
 #    prefixes; extend on real need.
-# 7. Heredoc mis-detection: the rm-command-position guard excises heredoc bodies
-#    via a HEURISTIC `<<WORD` scan of the raw line (see maude_strip_heredocs).
-#    A `<<WORD` that is actually quoted text (`echo "x << EOF"`) or a letter-led
-#    arithmetic shift (`$((a << b))`) is mis-read as a heredoc start, so a real
-#    `rm -rf …` on a LATER line of the same command can be wrongly skipped and
-#    under-blocked. Accepted to keep doc/commit heredocs from false-blocking;
-#    not narrowed because the obvious fix reopens the `<<'EOF'` false-block.
+# 7. Heredoc mis-detection (CLOSED for the known classes, v0.27.0): the
+#    guards excise heredoc bodies via a `<<WORD` scan (maude_strip_heredocs)
+#    that now blinds `$((a << b))` arithmetic, `<<<` herestrings AND quoted
+#    prose (`echo "x << EOF"`) before detection — delimiter-quoting
+#    (`<<'EOF'`) is protected first, which is what made quote-blanking
+#    unsafe before. This matters doubly since the strip now also feeds the
+#    COMMAND patterns: an adversarial pass measured the quoted-opener
+#    phantom silently swallowing a real `git push --force` on the next
+#    line. Residual, pinned in tests: an UNBALANCED quote before `<<WORD`
+#    still opens a phantom body and can under-block a later command.
 # ──────────────────────────────────────────────────────────────────────────
 
 # Sole-copy targets come from the config-aware list (generic defaults + local
@@ -130,20 +163,124 @@ while IFS= read -r _t; do [ -n "$_t" ] && SC_TARGETS+=("$_t"); done < <(maude_so
 # These are checked FIRST, before command patterns.
 PATH_PATTERNS=(
   # rm (recursive, force optional) targeting / directly — system wipe
-  # ([^[:space:]]+[[:space:]]+)* allows a dangerous target in any argument position
+  # ${ARGS} allows a dangerous target in any argument position OF THIS COMMAND
   # (e.g. `rm -rf /tmp/ok /` — the / is caught even as the second argument).
-  "${CMD_START}${PREFIX}${RMR}([^[:space:]]+[[:space:]]+)*/${FLAG_AFTER} ||| rm-rf-root ||| \"rm -rf /\" wipes the system. STOP. Run /maude:conscience rm-rf-root only if you really mean it."
+  "${CMD_START}${PREFIX}${RMR}${ARGS}/${FLAG_AFTER} ||| rm-rf-root ||| \"rm -rf /\" wipes the system. STOP. Run /maude:conscience rm-rf-root only if you really mean it."
   # rm (recursive) targeting glob * — wide blast
-  "${CMD_START}${PREFIX}${RMR}([^[:space:]]+[[:space:]]+)*\\*${FLAG_AFTER} ||| rm-rf-glob ||| \"rm -rf *\" — wide blast. Run /maude:conscience rm-rf-glob if you mean it."
+  "${CMD_START}${PREFIX}${RMR}${ARGS}\\*${FLAG_AFTER} ||| rm-rf-glob ||| \"rm -rf *\" — wide blast. Run /maude:conscience rm-rf-glob if you mean it."
   # sudo rm (recursive) — any target is RED at root
   "${CMD_START}${PREFIX}sudo[[:space:]]+${RMR} ||| sudo-rm-rf ||| sudo rm -rf is destructive at root. Run /maude:conscience sudo-rm-rf if intentional."
 )
 # Sole-copy entries — one per target, built from the config-aware list.
 # `/*` absorbs zero or more trailing slashes (including //).
-# `([^[:space:]]+[[:space:]]+)*` allows the sole-copy path in any argument position.
+# `${ARGS}` allows the sole-copy path in any argument position of the same command.
 for _t in "${SC_TARGETS[@]}"; do
-  PATH_PATTERNS+=("${CMD_START}${PREFIX}${RMR}([^[:space:]]+[[:space:]]+)*(${_t})/*${FLAG_AFTER} ||| rm-rf-sole-copy ||| rm -rf of a protected sole-copy path (workspace / repo root / .git / configured path). Sole copy, no fallback. Run /maude:conscience rm-rf-sole-copy only if you truly mean it.")
+  PATH_PATTERNS+=("${CMD_START}${PREFIX}${RMR}${ARGS}(${_t})/*${FLAG_AFTER} ||| rm-rf-sole-copy ||| rm -rf of a protected sole-copy path (workspace / repo root / .git / configured path). Sole copy, no fallback. Run /maude:conscience rm-rf-sole-copy only if you truly mean it.")
 done
+
+# ── TARGET-keyed table (added 2026-07-30, unreleased) ────────────────────────
+# The tables above are keyed on the VERB. A verb denylist can only ever block the
+# verbs someone thought of, and on 2026-07-23 that cost John three irreplaceable
+# PNGs to `rm -f ~/projects/*.png` — a command the verb table let straight
+# through, along with mv / find -delete / shred / truncate / dd / rmtree of the
+# workspace root (all re-proven exit 0 against 0.24.0 on 2026-07-30).
+#
+# This table asks the other question: is the THING being destroyed a sole copy?
+# If so the verb does not matter. The rule it encodes is John's own:
+#   "NEVER glob-delete in workspace root — exact names only, only files I created."
+# so a glob whose parent IS the protected root blocks, while an exact deep path
+# and a deep glob (build/*.o) stay free. A gate that blocked ordinary deep
+# deletes would be switched off inside a day, and a gate that is off protects
+# nothing — the false-positive rows in tests/test-gate-targets.sh are load-bearing.
+
+# Roots WITHOUT the optional one-segment tail that maude_sole_copy_targets appends.
+# Needed because glob-depth matters here: with the tail, `_t` would swallow
+# `<root>/build` and then `/*.o` would read as a root glob.
+SC_ROOTS=()
+_pd="$(maude_project_dir)"
+[ -n "$_pd" ] && SC_ROOTS+=("$(maude_ere_escape "$_pd")")
+SC_ROOTS+=("$(maude_ere_escape "$HOME")/\\.claude")
+_cfg="$(maude_gate_config)"
+if [ -f "$_cfg" ] && command -v jq >/dev/null 2>&1; then
+  while IFS= read -r _p; do
+    [ -n "$_p" ] && SC_ROOTS+=("$(maude_ere_escape "$_p")")
+  done < <(jq -r '.sole_copy_paths[]?' "$_cfg" 2>/dev/null)
+fi
+
+# DEPTH-BOUNDED targets. maude_sole_copy_targets() appends `(/[^[:space:]]*)?` for
+# CONFIG-sourced paths (_maude-common.sh:855) and for ~/.claude and .git — a tail
+# that excludes whitespace but NOT `/`, so it matches at ANY depth. The project-dir
+# entry at :849 correctly bounds it to one segment. Consuming the unbounded list
+# here made this table block every non-recursive rm/mv anywhere under the workspace
+# root on the deployed config, while the suite stayed green because lib.sh points
+# MAUDE_GATE_CONFIG at a file it never creates. A redteam pass measured 25 such
+# false positives, three of them contradicting this table's own ALLOW rows.
+# So build the list here, bounded to ONE optional segment, exactly like :849.
+SC_BOUNDED=()
+for _r in "${SC_ROOTS[@]}"; do
+  [ -n "$_r" ] && SC_BOUNDED+=("${_r}(/[^/[:space:]]+)?")
+done
+# The .git protection is depth-bounded the same way, so `rm <repo>/.git/index.lock`
+# stays allowed while `rm -rf <repo>/.git` is still caught by the rm -rf table above.
+
+# Transparent prefixes, wider than PREFIX: hats a destructive command can wear
+# without changing what it does. The redteam broke the first version by naming
+# wrappers that were not listed (xargs, nice, time, ionice, setsid, stdbuf, uv,
+# busybox) — the same denylist failure this table exists to correct, one level up.
+TPREFIX='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|command[[:space:]]+|exec[[:space:]]+|env[[:space:]]+|nohup[[:space:]]+|sudo([[:space:]]+-[^[:space:]]+([[:space:]]+[^-][^[:space:]]*)?)*[[:space:]]+|timeout[[:space:]]+[0-9]+[smhd]?[[:space:]]+|nice([[:space:]]+-n[[:space:]]*[0-9]+)?[[:space:]]+|ionice([[:space:]]+-[^[:space:]]+)*[[:space:]]+|time[[:space:]]+|setsid[[:space:]]+|stdbuf([[:space:]]+-[^[:space:]]+)*[[:space:]]+|xargs([[:space:]]+-[^[:space:]]+)*[[:space:]]+|busybox[[:space:]]+|uv[[:space:]]+run[[:space:]]+)*'
+# Verbs that destroy or relocate content with no -r required.
+# `install` was here and is removed: `install -d <dir>` CREATES a directory and
+# destroys nothing, which the redteam measured as a false positive.
+TVERB='(rm|unlink|mv|shred|truncate)'
+# Any flags/other args between the verb and the target — of the SAME command.
+# The intervening-args half carries the same bound as ${ARGS} above and for the
+# same measured reason: `;` survives canonicalisation as a non-space character,
+# so a bare [^[:space:]]+ walked out of this command and into the next one.
+TARGS='([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*([[:space:]]+[^[:space:];&|]+)*[[:space:]]+'
+TMSG='Run /maude:conscience sole-copy-target only if you truly mean it.'
+
+# TSTART: CMD_START plus the shell keyword/brace boundaries a command can follow.
+# The redteam defeated even the pre-existing `rm -rf <root>` control with `{ ...; }`,
+# `until false; do ...; done`, `if ...; then ...; fi`, `! rm ...` and `case`.
+TSTART='(^|[;&|(`{]|[[:space:]](do|then|else|in)[[:space:]]|[[:space:]]!)[[:space:]]*'
+TARGET_PATTERNS=()
+for _t in "${SC_BOUNDED[@]}"; do
+  # Bare protected path (root, or one segment in: a repo/project dir) as the
+  # target of a non-recursive destroy/relocate verb.
+  TARGET_PATTERNS+=("${TSTART}${TPREFIX}${ABS}${TVERB}${TARGS}(${_t})/*${FLAG_AFTER} ||| sole-copy-target ||| destroying or relocating a protected sole-copy path without rm -rf. The verb changes, the loss does not. ${TMSG}")
+  # find <protected> … -delete / -exec rm
+  TARGET_PATTERNS+=("${TSTART}${TPREFIX}${ABS}find[[:space:]]+${ARGS}(${_t})(/[^[:space:]]*)?([[:space:]].*)?(-delete([[:space:]]|;|\+|$)|-exec(dir)?[[:space:]]+${ABS}(rm|shred|truncate|unlink)) ||| sole-copy-target ||| find with -delete/-exec rm under a protected sole-copy path. ${TMSG}")
+  # dd of=<protected>  — intervening args bounded to this command (see ${ARGS}).
+  TARGET_PATTERNS+=("${TSTART}${TPREFIX}${ABS}dd([[:space:]]+[^[:space:];&|]+)*[[:space:]]+of=(${_t})/* ||| sole-copy-target ||| dd writing over a protected sole-copy path. ${TMSG}")
+  # rsync --delete into <protected> — both arg walks bounded to this command.
+  TARGET_PATTERNS+=("${TSTART}${TPREFIX}${ABS}rsync([[:space:]]+[^[:space:];&|]+)*[[:space:]]+--del(ete[a-z-]*)?([[:space:]]+[^[:space:];&|]+)*[[:space:]]+(${_t})/*[[:space:]]*\$ ||| sole-copy-target ||| rsync --delete INTO a protected sole-copy path removes whatever the source lacks. (Workspace as SOURCE is a backup and is allowed.) ${TMSG}")
+  # Interpreter one-liner doing the deletion in-process.
+  # ASYMMETRIC on purpose. The gap BEFORE the destructive call keeps `.*`: a real
+  # one-liner's own payload contains `;` (python3 -c "import shutil;shutil.rmtree(…)")
+  # and quotes are already stripped by this point, so the gate cannot tell that `;`
+  # from a shell separator — excluding it would kill the true positive.
+  # The gap AFTER the call is bounded, which is where the measured false positives
+  # lived: `python3 train.py; echo os.remove; cat <root>/README.md` blocked because
+  # a delete-word in one command paired with a protected path two commands later.
+  # In a genuine one-liner the path follows the call immediately, with no separator.
+  TARGET_PATTERNS+=("${TSTART}${TPREFIX}${ABS}(python3?|perl|ruby|node)[[:space:]].*(rmtree|unlink|os\\.remove|fs\\.rm|File\\.delete|shutil\\.move)[^;&|]*(${_t}) ||| sole-copy-target ||| an interpreter one-liner deleting a protected sole-copy path. The gate cannot see inside a script, so this is the last place to catch it. ${TMSG}")
+done
+# Glob whose PARENT is the protected root itself — the 2026-07-23 disaster shape.
+# Root-anchored on purpose: `<root>/*.png` blocks, `<root>/build/*.o` does not.
+for _r in "${SC_ROOTS[@]}"; do
+  TARGET_PATTERNS+=("${TSTART}${TPREFIX}${ABS}${TVERB}${TARGS}(${_r})/[^/[:space:]]*[*?[][^/[:space:]]*${FLAG_AFTER} ||| sole-copy-target ||| a GLOB delete at the root of a protected sole-copy path. This is the shape that destroyed files on 2026-07-23: exact names only at the root. ${TMSG}")
+done
+
+# Command-position guard for the target table, mirroring
+# maude_rm_in_command_position but for the wider verb set: heredoc bodies are
+# excised first so a doc or commit message describing a destructive command
+# cannot self-block.
+maude_target_verb_in_command_position() {
+  local skeleton
+  skeleton="$(maude_strip_quotes "$(maude_strip_heredocs "$1")")"
+  printf '%s' "$skeleton" | grep -qE -- \
+    "${TSTART}${TPREFIX}${ABS}(${TVERB}|find|dd|rsync|python3?|perl|ruby|node)([[:space:]]|$)"
+}
 
 # ── COMMAND patterns — matched against $CMD via maude_match_gate_pattern
 # (strip_quotes: content ERASED). This preserves all canaries — a commit message
@@ -175,6 +312,12 @@ maude_gate_eval() {
   uq="$(maude_canon_path_view "$(maude_unquote "$cmd" | sed "s|~|${HOME}|g; s|\\\$HOME|${HOME}|g")")"
   if maude_rm_in_command_position "$cmd"; then
     for entry in "${PATH_PATTERNS[@]}"; do
+      pat="${entry%% ||| *}"; rest="${entry#* ||| }"; key="${rest%% ||| *}"; msg="${rest#* ||| }"
+      if printf '%s' "$uq" | grep -qE -- "$pat"; then printf '%s ||| %s' "$key" "$msg"; return 0; fi
+    done
+  fi
+  if maude_target_verb_in_command_position "$cmd"; then
+    for entry in "${TARGET_PATTERNS[@]}"; do
       pat="${entry%% ||| *}"; rest="${entry#* ||| }"; key="${rest%% ||| *}"; msg="${rest#* ||| }"
       if printf '%s' "$uq" | grep -qE -- "$pat"; then printf '%s ||| %s' "$key" "$msg"; return 0; fi
     done
@@ -217,9 +360,14 @@ fi
 # carries no provenance); the harness deny-rules in .scratch/maude-spine-deny.json
 # are the real, unbypassable layer. The 'red-self-clear' block key is itself not
 # clearable here (maude-clear-gate.sh refuses unknown keys).
+# WIDENED 2026-07-30: the arg run was `-[^space]+`, i.e. only FLAGS, so a flag VALUE
+# before the key slipped past — `maude-clear-gate.sh --marker abc sole-copy-target`
+# was measured ALLOWED by a redteam while the same command with the key first was
+# blocked. Now any token run precedes the key. Still bypassable by wrapping the call
+# in a script file; that residual is the harness deny-rules' job, not this grep's.
 if [ -z "$MATCHED_KEY" ]; then
   for _rk in $(maude_red_keys); do
-    if printf '%s' "$UNQUOTED" | grep -qE -- "maude-clear-gate\.sh([[:space:]]+-[^[:space:]]+)*[[:space:]]+${_rk}([[:space:]]|$)"; then
+    if printf '%s' "$UNQUOTED" | grep -qE -- "maude-clear-(gate|red)\.sh([[:space:]]+[^[:space:]]+)*[[:space:]]+${_rk}([[:space:]]|$)"; then
       MATCHED_KEY="red-self-clear"
       MATCHED_MSG="\"$_rk\" is a RED key — Claude cannot self-clear it. This is John's hand: he authorizes by pasting a ! line. See /maude:conscience $_rk for the exact line."
       break

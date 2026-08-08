@@ -237,16 +237,90 @@ echo hi; rm -rf /
 EOF"
 assert_exit "$RC" "0" "shell-heredoc rm is limitation #3, not blocked"
 
-# KNOWN LIMITATION #7 (documented, accepted): the heredoc excision uses a
-# heuristic <<WORD scan, so a <<WORD that is actually QUOTED TEXT on an earlier
-# line is mis-read as a heredoc start and a real rm on a later line gets eaten.
-# The old strip_quotes-only guard caught this; the trade buys the doc-heredoc
-# false-positive fix. NOT narrowed (the obvious fix reopens the <<'EOF' block).
-# This test pins the limitation so a future change to it is a conscious choice.
-test_start "gate PASSES rm -rf after a quoted << on an earlier line (limitation #7)"
+# v0.27.0 — the QUOTED-TEXT half of old limitation #7 is CLOSED: quoted spans
+# are blanked before opener detection (with <<'EOF' delimiter-quoting protected
+# first), so `echo "note << EOF"` no longer opens a phantom body. This was the
+# CRITICAL from the adversarial pass: once CMD patterns used the strip, the
+# phantom silently swallowed a real force-push on the next line.
+test_start "gate BLOCKS rm -rf after a quoted << on an earlier line (old #7, closed)"
 run_gate 'echo "note << EOF" ;
 rm -rf /'
-assert_exit "$RC" "0" "quoted-<< heredoc mis-detection is limitation #7"
+assert_exit "$RC" "2" "quoted-<< no longer eats the next line"
+
+test_start "gate BLOCKS force-push after a quoted << (the adversarial-pass CRITICAL)"
+run_gate 'echo "note << EOF"
+git push --force'
+assert_exit "$RC" "2" "quoted-<< phantom must not swallow a RED command"
+
+test_start "gate BLOCKS public-publish after a quoted <<"
+run_gate 'echo "see << EOF above"
+gh release create v1.0.0'
+assert_exit "$RC" "2" "quoted-<< phantom must not swallow public-publish"
+
+# The delimiter-quote PROTECTION leg: a real <<'EOF' heredoc must still strip
+# (its body prose naming a gated command must not fire).
+test_start "gate PASSES a quoted-delimiter heredoc body naming git push"
+run_gate "cat > /tmp/x <<'EOF'
+docs: git push is gated in this house
+EOF"
+assert_exit "$RC" "0" "<<'EOF' body prose passes"
+
+# Honest residual, pinned: an UNBALANCED quote leaves the << token visible and
+# still opens a phantom body — a later real command is under-blocked. Conscious
+# pin so a future change to this is a choice, not an accident.
+test_start "gate residual: unbalanced quote before << still eats the next line"
+run_gate 'echo "oops << EOF
+rm -rf /'
+assert_exit "$RC" "0" "unbalanced-quote phantom is the documented residual"
+
+# v0.27.0 — the ARITHMETIC half of limitation #7 is CLOSED: $((a << b)) is
+# blinded before heredoc detection, so it no longer opens a phantom body that
+# eats a real rm on the next line. This was the documented under-block cost;
+# now it blocks again.
+test_start "gate BLOCKS rm -rf after letter-led arithmetic << (old #7, closed)"
+run_gate 'z=$((a << b))
+rm -rf /'
+assert_exit "$RC" "2" "arithmetic << no longer eats the next line"
+
+test_start "gate BLOCKS rm -rf after a <<< herestring"
+run_gate 'grep foo <<< bar
+rm -rf /'
+assert_exit "$RC" "2" "herestring is not a heredoc opener"
+
+# v0.27.0 — heredoc excision now covers the COMMAND patterns too. The measured
+# live false-block (2026-08-08): appending a memory file whose heredoc body
+# contains the words "git push" fired the push gate mid-chore.
+test_start "gate PASSES a heredoc body naming git push (data, not a command)"
+run_gate 'cat >> /tmp/mem.md <<EOF
+the session blocked a git push when John said love
+EOF'
+assert_exit "$RC" "0" "heredoc push prose passes"
+
+test_start "gate STILL blocks a real git push after a closed heredoc"
+run_gate 'cat > /tmp/x <<EOF
+notes
+EOF
+git push origin main'
+assert_exit "$RC" "2" "real push after heredoc still blocks"
+
+# Conscious pin: a push inside a heredoc-fed SHELL is limitation #3 —
+# uniformly uncaught for every pattern family, stated in the gate's notes.
+test_start "gate PASSES git push inside a bash heredoc (limitation #3, pinned)"
+run_gate 'bash <<EOF
+git push origin main
+EOF'
+assert_exit "$RC" "0" "shell-heredoc push is limitation #3"
+
+# v0.27.0 — two heredocs on ONE line are legal shell; the delimiter QUEUE
+# keeps body B as data (the old single-slot tracker read it as live commands).
+test_start "gate PASSES rm -rf inside the second of two heredocs on one line"
+run_gate 'cat <<A <<B > /dev/null
+a
+A
+rm -rf /
+B
+echo ok'
+assert_exit "$RC" "0" "two-heredoc queue keeps body B as data"
 
 # ── After-separator real positives — must block ──────────────────────
 
@@ -402,6 +476,79 @@ run_gate "rm -rf /tmp/foo"; assert_exit "$RC" "0" "tmp path safe"
 
 test_start "gate PASSES rm -rf /tmp/build (safe path outside any sole-copy tree)"
 run_gate "rm -rf /tmp/build"; assert_exit "$RC" "0" "tmp build dir ok"
+
+# ── The arg-walk must stop at the end of ITS OWN command ────────────────────
+# The "target in any argument position" group was ([^[:space:]]+[[:space:]]+)*.
+# [[:space:]] includes \n, and `;` / `&&` / `|` are themselves non-space, so the
+# walk absorbed separators as ordinary tokens and ran to the end of the whole
+# script. Any harmless `rm -rf` then paired with any protected path appearing
+# ANYWHERE later — and the refusal named rm-rf-sole-copy for an rm that never
+# touched a protected path. Measured on a real 14-line probe, 2026-07-30:
+# `rm -rf "$S"` on line 1 blocked because line 14 mentioned a <workspace> path.
+# Over-blocking is the safe direction, but a refusal that states the wrong reason
+# is a lying refusal, and a gate that blocks ordinary scripts gets switched off.
+test_start "gate PASSES harmless rm and a protected path in separate commands (newline)"
+run_gate "rm -rf /tmp/safe
+echo /srv/app/x.sh"; assert_exit "$RC" "0" "newline-separated"
+
+test_start "gate PASSES harmless rm and a protected path in separate commands (semicolon)"
+run_gate "rm -rf /tmp/safe; echo /srv/app/x.sh"; assert_exit "$RC" "0" "semicolon-separated"
+
+test_start "gate PASSES harmless rm and a protected path in separate commands (&&)"
+run_gate "rm -rf /tmp/safe && echo /srv/app/x.sh"; assert_exit "$RC" "0" "and-separated"
+
+test_start "gate PASSES harmless rm and a protected path in separate commands (pipe)"
+run_gate "rm -rf /tmp/safe | grep /srv/app"; assert_exit "$RC" "0" "pipe-separated"
+
+test_start "gate PASSES harmless rm with a protected path many lines later"
+run_gate "rm -rf /tmp/safe
+echo filler
+echo filler
+echo filler
+cat /srv/app/x.sh"; assert_exit "$RC" "0" "8 lines apart"
+
+# The same walk feeds rm-rf-root and rm-rf-glob; a bare / or * in a LATER
+# command must not be attributed to an earlier harmless rm.
+test_start "gate PASSES harmless rm and a bare / argument in a later command"
+run_gate "rm -rf /tmp/safe; ls /"; assert_exit "$RC" "0" "root arg later"
+
+test_start "gate PASSES harmless rm and a glob in a later command"
+run_gate "rm -rf /tmp/safe; echo *"; assert_exit "$RC" "0" "glob later"
+
+# Load-bearing: narrowing the walk must NOT reopen the real multi-arg case.
+test_start "gate STILL blocks sole-copy as a later arg of the SAME rm"
+run_gate "rm -rf /tmp/ok /srv/app"; assert_exit "$RC" "2" "same-command 2nd arg"
+
+test_start "gate STILL blocks sole-copy as the third arg of the SAME rm"
+run_gate "rm -rf /tmp/a /tmp/b /srv/app"; assert_exit "$RC" "2" "same-command 3rd arg"
+
+test_start "gate STILL blocks a real rm -rf in the SECOND command of a chain"
+run_gate "echo starting; rm -rf /srv/app"; assert_exit "$RC" "2" "real rm after separator"
+
+test_start "gate STILL blocks rm -rf / as a later arg of the SAME rm"
+run_gate "rm -rf /tmp/ok /"; assert_exit "$RC" "2" "same-command root 2nd arg"
+
+# The walk stops at ; & | ONLY. ( ) and backtick must stay walkable, because
+# mid-argument they are command SUBSTITUTION, not a new command — excluding them
+# would turn these real destructive commands into silent passes.
+# These assert the KEY, not just exit 2. Written first as exit-only, they passed
+# under a mutation that broke exactly what they were meant to pin, because a
+# SECOND table (sole-copy-target) was blocking instead and exit 2 cannot tell the
+# two apart. An exit code is not a reason.
+test_start "gate STILL blocks with a \$() substitution between rm and the target"
+run_gate 'rm -rf $(echo tmpdir) /srv/app'; assert_exit "$RC" "2" "dollar-paren arg"
+assert_contains "$ERR" "rm-rf-sole-copy" "dollar-paren caught by the rm -rf table"
+
+test_start "gate STILL blocks with a backtick substitution between rm and the target"
+run_gate 'rm -rf `echo tmpdir` /srv/app'; assert_exit "$RC" "2" "backtick arg"
+assert_contains "$ERR" "rm-rf-sole-copy" "backtick caught by the rm -rf table"
+
+test_start "gate STILL blocks the non-rm verb table across an intervening arg"
+run_gate "mv /tmp/ok /srv/app"; assert_exit "$RC" "2" "mv onto sole-copy"
+assert_contains "$ERR" "sole-copy-target" "mv caught by the target table"
+
+test_start "gate PASSES a non-rm verb and a protected path in separate commands"
+run_gate "mv /tmp/a /tmp/b; echo /srv/app/x.sh"; assert_exit "$RC" "0" "mv then unrelated echo"
 
 test_start "gate PASSES gh pr list (read-only)"
 run_gate "gh pr list"; assert_exit "$RC" "0" "gh pr list ok"
