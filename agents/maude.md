@@ -134,7 +134,7 @@ Hooks fire pre-/post-/during tool calls and at session boundaries. Each hook scr
 - **SessionStart** — brief from the map; clear the mission pin (fresh each session)
 - **UserPromptSubmit** — if the prompt mentions a topic in the map, surface a one-liner; inject the held mission (`MISSION: <x>`) so it can't fade
 - **PreToolUse** — if a write is about to touch a watched path, surface relevant context; at the first action after a talking stretch, whisper the pinned mission (*"still this, or did you wander?"*); and **gate the irreversible** (push / force-push / public-publish / `rm -rf` of the sole copy) until `/maude:conscience` clears it
-- **PostToolUse** — if a write happened to a watched path, log the change; capture the mission from an `ExitPlanMode` plan or `TodoWrite` item
+- **PostToolUse** — if a write happened to a watched path, log the change; capture the mission from an `ExitPlanMode` plan, the task moved to `in_progress`, or a `TodoWrite` item
 - **SubagentStop** — record subagent findings into the map
 - **PreCompact** — surface "things to keep" from the map
 - **Stop** — save digest

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Maude mission-hold rail. ONE pin (.mission in care.json), four touches —
+# Maude mission-hold rail. One pin PER SESSION (.missions[<session_id>] in care.json),
+# four touches —
 # dispatched by subcommand, like maude-run-governor.sh / maude-verify-watch.sh:
 #
-#   capture  — pin the mission from the only two places it already exists as data:
-#              an ExitPlanMode plan, or the active TodoWrite item. Mission-level and
-#              STICKY — only these events set/replace it, so the pin stays the
-#              through-line, not "the last little thing touched." (PostToolUse.)
+#   capture  — pin the mission from the only places it already exists as data:
+#              an ExitPlanMode plan, the task flipped to in_progress (TaskCreate +
+#              TaskUpdate), or a TodoWrite list where a harness emits one.
+#              Mission-level and STICKY — creating a task does NOT move the pin, so
+#              it stays the through-line, not "the last little thing touched."
+#              (PostToolUse.)
 #   hold     — inject `MISSION: <x>` on every prompt. The anti-fade: a re-injected
 #              line can't scroll out of view the way a session-start statement does.
 #              (UserPromptSubmit.)
@@ -37,6 +40,17 @@ command -v jq >/dev/null 2>&1 || exit 0
 CARE="$(maude_self_dir)/care.json"
 INPUT="$(cat 2>/dev/null)"
 
+# THE PIN IS PER SESSION. care.json is ONE file shared by every session at a project
+# root, so an unscoped `.mission` let a sibling session read this one's mission — three
+# misfires in the hour after the rail first went live on 2026-07-30, including a
+# proximo lane being told to "design UNDO pillar, get approval first". A rail that
+# cries wolf is one you learn to skim, which costs you the times it is right.
+# Task IDs restart per session too, so the id->subject map is scoped the same way:
+# unscoped, session B's task #5 silently overwrote session A's.
+# "default" keeps single-session behaviour (and harnesses that send no id) unchanged.
+SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null)"
+[ -n "$SID" ] || SID="default"
+
 # Action tools — the ones whose first appearance after a prompt marks the flip
 # from thinking to doing.
 ACTION_RE='^(Write|Edit|MultiEdit|Bash)$'
@@ -56,7 +70,7 @@ case "$SUB" in
           | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' \
           | cut -c1-120)"
         ;;
-      TodoWrite|TaskCreate|TaskUpdate)
+      TodoWrite)
         # The in-progress item is the current mission; else the first item.
         TEXT="$(printf '%s' "$INPUT" \
           | jq -r '(.tool_input.todos // .tool_input.tasks // []) as $t
@@ -64,18 +78,67 @@ case "$SUB" in
                    | (.content // .activeForm // "")' 2>/dev/null \
           | cut -c1-120)"
         ;;
+      TaskCreate)
+        # This harness does NOT emit TodoWrite. Measured 2026-07-30 over 25 real
+        # transcripts: TodoWrite 0, TaskCreate 21, TaskUpdate 28. TaskCreate sends a
+        # FLAT object {subject, description, activeForm} — no array, no status — so
+        # the TodoWrite parse above resolved to [] and the rail sat inert from the
+        # day it was built.
+        #
+        # Creating a task is not working on it, so a TaskCreate does NOT steal an
+        # existing pin: the pin is the through-line, not the last thing touched.
+        # It does two things: record id -> subject so TaskUpdate can resolve text it
+        # never carries, and pin only when nothing is pinned yet (parity with
+        # TodoWrite's "in-progress item, ELSE the first item").
+        # The id lives only in the RESPONSE, as structured data:
+        #   tool_response = {task: {id: "2", subject: "…"}}
+        # NOT as the "Task #N created successfully: …" sentence — that is the
+        # RENDERED tool_result you see in a transcript, and building against it
+        # produced a rail that passed its tests and wrote no map on the live box.
+        # Prefer the response's subject: it is what the task system actually
+        # recorded, not what we asked it to record.
+        SUBJ="$(printf '%s' "$INPUT" \
+          | jq -r '.tool_response.task.subject // .tool_input.subject
+                   // .tool_input.activeForm // ""' 2>/dev/null \
+          | cut -c1-120)"
+        TID="$(printf '%s' "$INPUT" \
+          | jq -r '(.tool_response.task.id // .tool_response.taskId // "") | tostring' 2>/dev/null)"
+        if [ -n "$SUBJ" ] && [ -n "$TID" ]; then
+          maude_care_ensure "$CARE"
+          maude_care_set "$CARE" --arg i "$TID" --arg s "$SUBJ" --arg sid "$SID" \
+            '.mission_tasks = ((.mission_tasks // {}) |
+               .[$sid] = (((.[$sid]) // {}) + {($i): $s}))'
+        fi
+        # Pin only if THIS session has nothing pinned.
+        if [ -z "$(jq -r --arg sid "$SID" '.missions[$sid].text // ""' "$CARE" 2>/dev/null)" ]; then
+          TEXT="$SUBJ"
+        fi
+        ;;
+      TaskUpdate)
+        # {taskId, status} and no text at all — the subject is resolved from the map
+        # TaskCreate wrote. Flipping a task to in_progress is the direct analogue of
+        # TodoWrite's select(.status=="in_progress"), so it REPLACES the pin.
+        # Any other status (completed / pending) leaves the pin alone: finishing a
+        # step must not blank the mission mid-thread.
+        ST="$(printf '%s' "$INPUT" | jq -r '.tool_input.status // ""' 2>/dev/null)"
+        [ "$ST" = "in_progress" ] || exit 0
+        TID="$(printf '%s' "$INPUT" | jq -r '.tool_input.taskId // ""' 2>/dev/null)"
+        # Unknown id -> "" -> the common guard below exits without touching the pin.
+        [ -n "$TID" ] && TEXT="$(jq -r --arg i "$TID" --arg sid "$SID" \
+          '.mission_tasks[$sid][$i] // ""' "$CARE" 2>/dev/null | cut -c1-120)"
+        ;;
     esac
     [ -n "$TEXT" ] || exit 0
     maude_care_ensure "$CARE"
-    maude_care_set "$CARE" --arg t "$TEXT" --arg by "$TOOL" --arg at "$(date +%s)" \
-      '.mission = {text:$t, set_by:$by, set_at:($at|tonumber)}'
+    maude_care_set "$CARE" --arg t "$TEXT" --arg by "$TOOL" --arg at "$(date +%s)" --arg sid "$SID" \
+      '.missions = ((.missions // {}) | .[$sid] = {text:$t, set_by:$by, set_at:($at|tonumber)})'
     maude_log_trace "mission" "captured=$TOOL"
     exit 0
     ;;
 
   hold)
     [ -f "$CARE" ] || exit 0
-    TEXT="$(jq -r '.mission.text // ""' "$CARE" 2>/dev/null)"
+    TEXT="$(jq -r --arg sid "$SID" '.missions[$sid].text // ""' "$CARE" 2>/dev/null)"
     if [ -n "$TEXT" ]; then
       printf 'MISSION: %s\n' "$TEXT" >&2
       # #49: re-injected every prompt — the definition of a bill worth watching.
@@ -101,7 +164,7 @@ case "$SUB" in
     [ "$PRIOR_ACTIONS" -gt 0 ] 2>/dev/null && exit 0
 
     TEXT=""
-    [ -f "$CARE" ] && TEXT="$(jq -r '.mission.text // ""' "$CARE" 2>/dev/null)"
+    [ -f "$CARE" ] && TEXT="$(jq -r --arg sid "$SID" '.missions[$sid].text // ""' "$CARE" 2>/dev/null)"
     if [ -n "$TEXT" ]; then
       printf 'MISSION: %s — about to act. Still this, or did you wander?\n' "$TEXT" >&2
     else
@@ -113,7 +176,11 @@ case "$SUB" in
   clear)
     [ -f "$CARE" ] || exit 0
     maude_care_ensure "$CARE"
-    maude_care_set "$CARE" 'del(.mission)'
+    # The task map goes too. Task numbers restart per session, so a map left behind
+    # would let a fresh "#1" resolve to LAST session's subject and pin a mission
+    # nobody set — worse than no pin, because it reads as authoritative.
+    maude_care_set "$CARE" --arg sid "$SID" \
+      'del(.missions[$sid]) | del(.mission_tasks[$sid])'
     exit 0
     ;;
 

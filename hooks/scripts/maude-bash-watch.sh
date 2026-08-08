@@ -8,9 +8,24 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
+# Read stdin ONCE — the undo rail consumes it too, and jq would have drained it.
+INPUT="$(cat 2>/dev/null)"
+
+# UNDO (the sixth pillar) — best-effort snapshot of whatever this command is about to
+# destroy. Called from here, not registered in hooks.json: registry entries are COLD
+# until /reload-plugins; script edits are live on save.
+printf '%s' "$INPUT" | bash "$DIR/maude-undo.sh" capture-bash 2>/dev/null
+
+# REDTEAM rail — on a `git commit`, whisper if code changed with no adversarial pass since.
+# NOTE: stderr is NOT suppressed here. The whisper IS stderr — a `2>/dev/null` on this line
+# makes the rail run perfectly and deliver nothing, which is precisely how verify-watch
+# fired 2084 times into a void before the 2026-07-30 audit found it. Not ignored:
+# UNDELIVERED. The tests/test-redteam-watch.sh wiring rows pin this.
+printf '%s' "$INPUT" | bash "$DIR/maude-redteam-watch.sh" check
+
 CMD=""
 if command -v jq >/dev/null 2>&1; then
-  CMD="$(jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
+  CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
 fi
 [ -z "$CMD" ] && exit 0
 
