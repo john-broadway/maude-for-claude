@@ -54,6 +54,16 @@ EOF
 cat > "$MEMFIX/today-2026-01-01.md" <<'EOF'
 🔴OPEN TODAYMARKER
 EOF
+# The two rolling logs. Same historical nature as the dailies: now.md is the live
+# buffer this workspace APPENDS to, recent.md is one entry per past session. Neither
+# is a durable topic note, and a dead pointer inside either is frozen history that
+# can never legitimately be repaired — so reporting them is permanent unfixable noise.
+cat > "$MEMFIX/now.md" <<'EOF'
+[[now-ref-never-written]] NOWMARKER
+EOF
+cat > "$MEMFIX/recent.md" <<'EOF'
+[[recent-ref-never-written]] RECENTMARKER
+EOF
 # Make the live topic old enough to be a stale-state candidate.
 touch_ago $(( 40*86400 )) "$MEMFIX/project_alpha.md"
 
@@ -92,6 +102,12 @@ assert_not_contains "$OUT" "letter-ref-never-written" "letter refs excluded"
 
 test_start "lint never scans dailies"
 assert_not_contains "$OUT" "TODAYMARKER" "daily content excluded"
+
+test_start "lint never scans now.md (the live buffer is not a topic note)"
+assert_not_contains "$OUT" "now-ref-never-written" "now.md refs excluded"
+
+test_start "lint never scans recent.md (one line per past session, frozen history)"
+assert_not_contains "$OUT" "recent-ref-never-written" "recent.md refs excluded"
 
 # ── Report-first: the lint writes NOTHING into what it lints ──
 test_start "lint modifies no memory file (report-only)"

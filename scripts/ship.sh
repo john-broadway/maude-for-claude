@@ -125,6 +125,69 @@ cmd_build() {
   printf 'ship: then run: scripts/ship.sh open --review "<one-line second-lens reference>"\n'
 }
 
+# ── The second lens must have RUN, not merely been written down (v0.27.0) ──
+# --review is prose, and prose is not a guardrail: `open --review "looks fine"`
+# was accepted on faith. When her care.json state is reachable, a non-draft
+# open ALSO requires a redteam-watch STAMP — an adversarial dispatch that
+# actually COMPLETED (hooks/scripts/maude-redteam-watch.sh writes it) — newer
+# than the last commit of the content being shipped.
+#
+# SOFT, and honestly so (same framing as maude-gate.sh's care-file backstops):
+# care.json has no write-protection, so a planted stamp — or deleting the file,
+# which degrades to prose-only — walks past this. The threat model is
+# FORGETTING the lens, not evading it; what this closes is the silent nothing
+# (shipping with no lens ever dispatched), not the deliberate forgery.
+# Further seams, stated: the stamp is HOUSE-wide, not session-scoped
+# (redteam-watch stores per-sid but ship.sh cannot know which sid shipped —
+# a sibling session's lens can satisfy it); it proves a lens RAN, not that it
+# was good or read THIS diff; freshness is measured against $SRC (what build
+# ships), so a commit added to the ship branch after build is outside it.
+# A home without her state keeps the prose-only behavior — the rail tightens
+# where the mechanism exists. Env seam (tests): SHIP_CARE_FILE.
+# Returns 0 = satisfied or unknowable; 1 = stamp missing/stale (msg printed).
+# ISO→epoch, GNU then BSD (Z and ±HHMM forms); empty on failure (an
+# unparseable time is "unknowable", and lens_check degrades open, not guesses).
+iso_epoch() {
+  local e t
+  e="$(date -d "$1" +%s 2>/dev/null)"                                  # portability-shim (GNU)
+  [ -n "$e" ] || e="$(date -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s 2>/dev/null)"  # portability-shim (BSD, Z form)
+  if [ -z "$e" ]; then
+    t="$(printf '%s' "$1" | sed -E 's/([+-][0-9]{2}):([0-9]{2})$/\1\2/')"
+    e="$(date -j -f '%Y-%m-%dT%H:%M:%S%z' "$t" +%s 2>/dev/null)"       # portability-shim (BSD, offset form)
+  fi
+  printf '%s' "$e"
+}
+lens_check() {
+  local care="" c stamp tip tip_s stamp_s now_s
+  if [ -n "${SHIP_CARE_FILE:-}" ]; then
+    care="$SHIP_CARE_FILE"
+  else
+    for c in "$ROOT/.maude/plugin/care.json" "$(dirname "$ROOT")/.maude/plugin/care.json"; do
+      [ -f "$c" ] && { care="$c"; break; }
+    done
+  fi
+  [ -n "$care" ] && [ -f "$care" ] || return 0
+  command -v jq >/dev/null 2>&1 || return 0
+  tip="$(git log -1 --format=%cI "$SRC" 2>/dev/null)"
+  tip_s="$(iso_epoch "$tip")"
+  [ -n "$tip_s" ] || return 0
+  stamp="$(jq -r '(.last_redteam_iso // {}) | [.[]] | max // empty' "$care" 2>/dev/null)"
+  stamp_s=""
+  [ -n "$stamp" ] && stamp_s="$(iso_epoch "$stamp")"
+  # A stamp from the FUTURE is nonsense, not freshness — redteam-watch writes
+  # `date -u` at completion, so anything past now+60s (skew allowance) reads
+  # as planted/garbage and counts as no stamp at all.
+  now_s="$(date +%s)"
+  if [ -n "$stamp_s" ] && [ "$stamp_s" -gt $((now_s + 60)) ]; then stamp_s=""; fi
+  if [ -z "$stamp_s" ] || [ "$stamp_s" -lt "$tip_s" ]; then
+    printf 'ship: SECOND LENS NOT PROVEN — care.json (%s) has no adversarial-pass stamp newer than the shipped tip (%s).\n' "$care" "$tip" >&2
+    printf 'ship: dispatch an adversarial review of the diff (the stamp writes itself on completion), then re-run open.\n' >&2
+    printf 'ship: a DRAFT open (no --review) stays available meanwhile.\n' >&2
+    return 1
+  fi
+  return 0
+}
+
 cmd_open() {
   local dry=0 review="" title=""
   while [ $# -gt 0 ]; do
@@ -141,6 +204,9 @@ cmd_open() {
   [ -n "$title" ] || title="ship: $branch"
 
   local body draft_flag=""
+  if [ -n "$review" ] && ! lens_check; then
+    die "open: second lens required — see the lines above (or open as DRAFT without --review)"
+  fi
   if [ -n "$review" ]; then
     body="## Second lens (PUBLISHING.md §4a)
 

@@ -11,10 +11,19 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
-# Tool input is JSON on stdin. Extract file_path.
+# Tool input is JSON on stdin — read ONCE. Two consumers now share it, and jq would
+# have drained it for the first one.
+INPUT="$(cat 2>/dev/null)"
+
+# UNDO (the sixth pillar) — snapshot the file's current bytes before the write lands.
+# Called from here rather than registered in hooks.json on purpose: registry entries
+# are COLD and do nothing until /reload-plugins, which is exactly how the mission-hold
+# rail sat inert for twenty days. Script edits are live on save.
+printf '%s' "$INPUT" | bash "$DIR/maude-undo.sh" capture-write 2>/dev/null
+
 TARGET=""
 if command -v jq >/dev/null 2>&1; then
-  TARGET="$(jq -r '.tool_input.file_path // .file_path // ""' 2>/dev/null)"
+  TARGET="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .file_path // ""' 2>/dev/null)"
 fi
 [ -z "$TARGET" ] && exit 0
 

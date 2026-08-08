@@ -43,6 +43,113 @@
 # Slug for both Anthropic memory AND user-global index = pwd, with non-alphanumerics replaced by '-'
 # (matches the remember plugin's slug computation for compatibility).
 
+# Parent pid of the process whose /proc entry is $1. Prints it, or returns 1.
+#
+# /proc/<pid>/stat CANNOT BE PARSED POSITIONALLY. Its second field is `comm`
+# wrapped in parens, and comm may contain spaces AND parens — a `tmux: server`
+# ancestor splits into two whitespace fields and shifts every later field by one,
+# so the old `awk '{print $4}'` returned the process STATE LETTER ("S") instead of
+# the ppid. Measured on the live box 2026-07-31:
+#     /proc/943593/stat -> "943593 (tmux: server) S 1 ..."   awk $4 -> "S"
+#     /proc/943593/status -> "PPid:\t1"
+# The walk then died at that ancestor and fell through to $(pwd) — which is how
+# the $HOME phantom got minted. status's PPid: line is unambiguous; the stat
+# fallback splits on the LAST ')' so comm's own content cannot corrupt it.
+_maude_ppid() {
+  local _pp_d="$1" _pp_v=""
+  if [ -r "$_pp_d/status" ]; then
+    _pp_v="$(awk '/^PPid:/ { print $2; exit }' "$_pp_d/status" 2>/dev/null)"
+  fi
+  if [ -z "$_pp_v" ] && [ -r "$_pp_d/stat" ]; then
+    _pp_v="$(sed 's/.*) //' "$_pp_d/stat" 2>/dev/null | awk '{ print $2 }')"
+  fi
+  case "$_pp_v" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s' "$_pp_v"
+}
+
+# May an INFERRED project root be $1? Explicit declarations bypass this entirely.
+#
+# INFERENCE MAY NEVER LAND ON $HOME. When it did, a caller mkdir'd
+# $HOME/.maude/plugin, and from then on the filesystem walk-up STOPPED at that
+# phantom for every path outside the real workspace — it broke the mission clear,
+# the undo list and the conscience clear on 2026-07-30. Barring $HOME from the
+# walk-up is what makes the shadowing impossible rather than merely unlikely.
+#
+# THE TRADE, stated so it is not rediscovered: a project whose root genuinely IS
+# $HOME can no longer be found by inference. It is still found by declaration,
+# and hooks always carry CLAUDE_PROJECT_DIR, so only a Bash-tool-invoked script
+# in such a project is affected. That is the smaller harm: a store that is merely
+# missing beats one that is confidently wrong.
+#
+# Only $HOME ITSELF is barred, never paths beneath it — ordinary workspaces all
+# live under $HOME.
+# The user's home, even when the environment does not carry it. A hook run from cron, a systemd
+# unit with no `Environment=HOME`, `env -i`, or `docker exec` without `-e HOME` has no $HOME, and
+# the first version of this guard returned ALLOW in that case — fail-OPEN, on a guard, in exactly
+# the unattended contexts nobody watches.
+_maude_home() {
+  _mh="${HOME:-}"
+  if [ -z "$_mh" ] && command -v getent >/dev/null 2>&1; then
+    _mh="$(getent passwd "$(id -u 2>/dev/null)" 2>/dev/null | cut -d: -f6)"
+  fi
+  [ -n "$_mh" ] || return 1
+  printf '%s' "$_mh"
+}
+
+# Canonical path with symlinks resolved. Prints nothing and returns 1 if it cannot be resolved.
+_maude_canon() {
+  [ -n "${1:-}" ] || return 1
+  ( CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P ) 2>/dev/null
+}
+
+# May an INFERRED project root be $1? Explicit declarations bypass this entirely.
+#
+# INFERENCE MAY NEVER LAND ON $HOME. When it did, a caller mkdir'd $HOME/.maude/plugin, and from
+# then on the filesystem walk-up STOPPED at that phantom for every path outside the real workspace
+# — it broke the mission clear, the undo list and the conscience clear on 2026-07-30.
+#
+# COMPARE CANONICALLY, NOT AS STRINGS. Bash's `pwd` is LOGICAL: it preserves the symlinked spelling
+# you arrived through, and the walk-up feeds candidates from `pwd`/`dirname`. So with `/link` ->
+# $HOME, a walk from `/link/work` offers the candidate `/link`, which is not string-equal to $HOME,
+# and the phantom was accepted. `$HOME/.`, `$HOME//` and a $HOME carrying a trailing space all
+# defeated the string compare the same way. Every one of those was demonstrated against this guard.
+#
+# FAIL CLOSED. If home cannot be identified at all, refuse the candidate rather than allow it: the
+# walk then falls through to pwd, which is conservative and predictable. A guard whose failure mode
+# is "permit" is not a guard.
+#
+# THE TRADE, stated so it is not rediscovered: a project whose root genuinely IS $HOME can no
+# longer be found by inference. It is still found by declaration, and hooks always carry
+# CLAUDE_PROJECT_DIR, so only a Bash-tool-invoked script in such a project is affected. A store
+# that is merely missing beats one that is confidently wrong.
+#
+# Only $HOME ITSELF is barred, never paths beneath it — ordinary workspaces all live under $HOME.
+_maude_inferred_root_ok() {
+  local cand="$1" home hc cc
+  [ -n "$cand" ] || return 1
+  [ "$cand" != "/" ] || return 1
+  [ -d "$cand" ] || return 1
+  home="$(_maude_home)" || return 1
+  # Trailing slashes and trailing whitespace are spellings of the same directory, and both were
+  # used to walk past this.
+  while :; do
+    case "$home" in
+      */)   home="${home%/}" ;;
+      *' ') home="${home% }" ;;
+      *"	") home="${home%	}" ;;
+      *)    break ;;
+    esac
+    [ -n "$home" ] || return 1
+  done
+  # A home of "/" cannot be distinguished from the root the candidate check above already refuses.
+  [ "$home" != "/" ] || return 0
+  hc="$(_maude_canon "$home")" || hc="$home"
+  cc="$(_maude_canon "$cand")" || cc="$cand"
+  [ "$cc" != "$hc" ]
+}
+
 # Project root — prefer $CLAUDE_PROJECT_DIR (set by Claude Code), fall back to pwd.
 # This matches the remember plugin's anchoring so .maude/ and .remember/ stay siblings.
 maude_project_dir() {
@@ -59,6 +166,14 @@ maude_project_dir() {
   #   3. Walk up the FILESYSTEM from pwd looking for an existing
   #      .maude/plugin/ closet (non-Linux fallback / edge cases).
   #   4. pwd (first-time setup, no closet anywhere).
+  #
+  # Steps 2-4 are INFERENCE and are barred from returning $HOME — see
+  # _maude_inferred_root_ok. Steps 0-1 are DECLARATIONS and are not.
+  #
+  # $MAUDE_PROC_ROOT / $MAUDE_PROC_START_PID are test seams (they let
+  # tests/test-project-dir-resolution.sh drive the walk against a fixture
+  # process tree — without them the real walk short-circuits on the live
+  # `claude` process and no wrong answer is reachable). Unset in normal use.
   if [ -n "${MAUDE_PROJECT_DIR_OVERRIDE:-}" ]; then
     printf '%s' "$MAUDE_PROJECT_DIR_OVERRIDE"
     return
@@ -67,26 +182,27 @@ maude_project_dir() {
     printf '%s' "$CLAUDE_PROJECT_DIR"
     return
   fi
-  pid="${PPID:-}"
+  procroot="${MAUDE_PROC_ROOT:-/proc}"
+  pid="${MAUDE_PROC_START_PID:-${PPID:-}}"
   i=0
   while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$i" -lt 16 ]; do
-    if [ -r "/proc/$pid/comm" ]; then
-      cmd="$(cat /proc/$pid/comm 2>/dev/null)"
+    if [ -r "$procroot/$pid/comm" ]; then
+      cmd="$(cat "$procroot/$pid/comm" 2>/dev/null)"
       if [ "$cmd" = "claude" ]; then
-        cc_cwd="$(readlink /proc/$pid/cwd 2>/dev/null)"
-        if [ -n "$cc_cwd" ] && [ "$cc_cwd" != "/" ] && [ -d "$cc_cwd" ]; then
+        cc_cwd="$(readlink "$procroot/$pid/cwd" 2>/dev/null)"
+        if _maude_inferred_root_ok "$cc_cwd"; then
           printf '%s' "$cc_cwd"
           return
         fi
         break
       fi
     fi
-    pid="$(awk '{print $4}' "/proc/$pid/stat" 2>/dev/null)"
+    pid="$(_maude_ppid "$procroot/$pid")" || break
     i=$((i + 1))
   done
   d="$(pwd)"
   while [ "$d" != "/" ] && [ -n "$d" ]; do
-    if [ -d "$d/.maude/plugin" ]; then
+    if [ -d "$d/.maude/plugin" ] && _maude_inferred_root_ok "$d"; then
       printf '%s' "$d"
       return
     fi
@@ -447,6 +563,30 @@ maude_mtime() {
   printf '%s' "$m"
 }
 
+# Print FILE's size in bytes, or empty when unreadable. Same GNU/BSD split as
+# maude_mtime — `stat -c` is GNU, `stat -f` is BSD, and macOS has only the latter.
+maude_file_size() {
+  local f="$1" s
+  s="$(stat -c %s "$f" 2>/dev/null)"                 # portability-shim (GNU)
+  [ -n "$s" ] || s="$(stat -f %z "$f" 2>/dev/null)"  # portability-shim (BSD)
+  # GNU `stat -f` means "filesystem status" and can print non-numeric text on the
+  # BSD-shaped call, so anything but digits becomes empty rather than garbage.
+  case "$s" in (''|*[!0-9]*) s="" ;; esac
+  printf '%s' "$s"
+}
+
+# Print FILE's sha256, or nothing (exit 1) when unreadable. sha256sum is GNU-only —
+# macOS ships `shasum` and BSD `md5` — so this hashes with python3 stdlib, which the
+# plugin floor already requires. Never prints a placeholder: a digest both sides could
+# vacuously agree on is worse than no digest.
+maude_file_digest() {
+  python3 -c 'import hashlib, sys
+try:
+    print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())
+except OSError:
+    sys.exit(1)' "$1" 2>/dev/null
+}
+
 # Print the epoch for a YYYY-MM-DD date at local midnight; empty output and
 # rc 1 on garbage/empty input. Both branches parse the same T00:00:00 form so
 # GNU and BSD agree on the answer.
@@ -675,6 +815,29 @@ maude_retention_sweep() {
       m="$(maude_mtime "$f")"
       [ "$anchor" -gt "$m" ] && rm -f "$f" 2>/dev/null
     done < <(find "$self/snapshots" -maxdepth 1 -type f -name 'precompact-*.md' -mtime +"$days" 2>/dev/null)
+  fi
+  # UNDO store. Age-based like the trace: an undo blob is a safety net for the work in
+  # front of you, not an archive. Blobs go first, then any ledger line pointing at a
+  # blob that is no longer there is rewritten as a skip — so `list` keeps telling the
+  # truth about what it can actually put back instead of offering a restore that
+  # would fail at the last step.
+  if [ -d "$self/undo/blobs" ]; then
+    find "$self/undo/blobs" -maxdepth 1 -type f -mtime +"$days" -delete 2>/dev/null
+    if [ -f "$self/undo/ledger.jsonl" ] && command -v jq >/dev/null 2>&1; then
+      while IFS= read -r f; do
+        printf '%s\n' "$f"
+      done < "$self/undo/ledger.jsonl" \
+      | while IFS= read -r line; do
+          b="$(printf '%s' "$line" | jq -r '.blob // ""' 2>/dev/null)"
+          if [ -n "$b" ] && [ ! -f "$self/undo/blobs/$b" ]; then
+            printf '%s' "$line" | jq -c 'del(.blob) | .skip = "pruned"' 2>/dev/null
+          else
+            printf '%s\n' "$line"
+          fi
+        done > "$self/undo/ledger.jsonl.tmp" 2>/dev/null
+      [ -s "$self/undo/ledger.jsonl.tmp" ] && mv "$self/undo/ledger.jsonl.tmp" "$self/undo/ledger.jsonl" 2>/dev/null
+      rm -f "$self/undo/ledger.jsonl.tmp" 2>/dev/null
+    fi
   fi
 }
 
@@ -960,57 +1123,81 @@ maude_canon_path_view() {
 # this, a shell separator inside heredoc prose ( ; ( | ` ) survived into the
 # skeleton and made a commit whose body documents `rm -rf /` false-block.
 #
-# Scoped to the rm-guard (see maude_rm_in_command_position) — NOT applied to the
-# shared strip used by command-name patterns, so a heredoc fed to a SQL client
-# (psql <<EOF DROP TABLE … EOF) is still seen by the DROP-TABLE check.
+# Used by the rm-guard, the target-verb guard AND (v0.27.0) the shared
+# command-name strip (maude_match_gate_pattern) — the git-push gate fired on a
+# memory-file heredoc whose BODY contained the words, measured live 2026-08-08.
+# The DROP-TABLE / red-self-clear / redclear-write backstops are unaffected:
+# they read the content-KEPT $UNQUOTED view directly, never this strip, so
+# psql <<EOF DROP TABLE … EOF is still seen (v0.12.1 moved that check there).
 #
-# Fail-direction is UNDER-block (dropping body lines makes the guard see FEWER
-# command-position rms), with two honest costs — verified, not assumed:
-#   - An rm inside a heredoc fed to a SHELL (bash <<EOF …) is uncaught: the
-#     already-documented shell-wrapping limitation (maude-gate.sh #3).
-#   - This is a HEURISTIC `<<WORD` detector on the raw line — it cannot tell a
-#     real heredoc from a `<<WORD` sitting inside quotes ("note << EOF") or a
-#     letter-led arithmetic shift ($((a << b))). When such a token precedes a
-#     real rm on a later line, that rm line is wrongly eaten and the guard
-#     under-blocks (the old strip_quotes-only guard caught that case). This is a
-#     NEW, narrow gap, accepted per the gate's fail-closed-where-it-matters
-#     posture (maude-gate.sh #9). NOT chased closed: the obvious narrowing
-#     (strip quoted spans before detecting <<) erases the `<<'EOF'` delimiter
-#     and reopens the doc-body false-block this function exists to fix.
+# Fail-direction is UNDER-block (dropping body lines makes the guards see FEWER
+# command-position verbs), with the honest costs — verified, not assumed:
+#   - A gated command inside a heredoc fed to a SHELL (bash <<EOF …) is
+#     uncaught: the already-documented shell-wrapping limitation
+#     (maude-gate.sh #3), which as of v0.27.0 uniformly covers the command-name
+#     patterns (git push et al) too.
+#   - The old #7 phantom-opener classes are CLOSED (v0.27.0): $((…)) spans
+#     and <<< herestrings are blinded before detection, and QUOTED SPANS are
+#     blanked first too — after explicitly protecting `<<'EOF'` / `<<"EOF"`
+#     delimiter-quoting, which is what made the naive quote-strip unsafe
+#     before. `echo "note << EOF"` no longer opens a phantom body — which
+#     an adversarial pass measured silently swallowing a REAL force-push on
+#     the next line once CMD patterns used this strip. Residual, stated:
+#     an UNBALANCED quote (`echo "oops << EOF` with no closer) still leaves
+#     the token visible and opens a phantom; pinned in tests.
+#   - Two heredocs on ONE line (cat <<A <<B) are handled via a delimiter
+#     QUEUE — the old single-slot tracker treated body B as live commands.
 # Operates on the raw string BEFORE newline-flattening (heredoc bodies are
 # delimited by newlines).
 maude_strip_heredocs() {
-  local input="$1" out="" line trimmed delim="" inh=0
+  local input="$1" out="" line trimmed scan
+  local -a q=()
+  local h=0
   while IFS= read -r line || [ -n "$line" ]; do
-    if [ "$inh" = 1 ]; then
+    if [ "$h" -lt "${#q[@]}" ]; then
       # ltrim+rtrim whitespace (covers <<- tab-indented close)
       trimmed="${line#"${line%%[![:space:]]*}"}"
       trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-      [ "$trimmed" = "$delim" ] && inh=0
+      [ "$trimmed" = "${q[$h]}" ] && h=$((h + 1))
       continue   # drop body lines AND the closing delimiter line
     fi
-    # heredoc start: << [-] [spaces] [quote] WORD [quote]. A digit-led token
-    # (arithmetic  $((a << 2)) ) is not a valid delimiter and won't match.
-    if [[ "$line" =~ \<\<-?[[:space:]]*[\"\']?([A-Za-z_][A-Za-z0-9_]*)[\"\']? ]]; then
-      delim="${BASH_REMATCH[1]}"
-      inh=1
-    fi
+    # Blind tokens that LOOK like heredoc openers but are not, in order:
+    # <<< herestrings; $((…)) arithmetic; then PROTECT real quoted delimiters
+    # (<<'EOF' → <<EOF) so the quoted-SPAN blanking that follows cannot eat
+    # them. What remains in quotes is prose — `echo "note << EOF"` — and
+    # blanking it is exactly what stops the phantom body.
+    scan="${line//<<</ }"
+    scan="$(printf '%s' "$scan" | sed -E \
+      -e 's/\$\(\([^)]*\)\)//g' \
+      -e "s/<<(-?)[[:space:]]*'([A-Za-z_][A-Za-z0-9_]*)'/<<\1\2/g" \
+      -e 's/<<(-?)[[:space:]]*"([A-Za-z_][A-Za-z0-9_]*)"/<<\1\2/g' \
+      -e "s/'[^']*'//g" \
+      -e 's/"[^"]*"//g')"
+    # Queue EVERY delimiter on the line: << [-] [spaces] [\] WORD.
+    while [[ "$scan" =~ \<\<-?[[:space:]]*\\?([A-Za-z_][A-Za-z0-9_]*) ]]; do
+      q+=("${BASH_REMATCH[1]}")
+      scan="${scan#*"${BASH_REMATCH[0]}"}"
+    done
     out+="$line"$'\n'
   done <<< "$input"
   printf '%s' "$out"
 }
 
-# Match a gate pattern against a command. Strips paired quotes first to
-# dodge the in-string false positive that bit v0.1.5 (commit messages
-# describing the gate self-blocked the commit). The pattern is responsible
-# for its own anchoring — see maude-gate.sh for the CMD_START / FLAG
-# constants used to build cmd-start and flag-position anchored patterns.
+# Match a gate pattern against a command. Excises heredoc BODIES first
+# (v0.27.0 — a memory-file heredoc containing the words "git push" fired the
+# push gate, measured live 2026-08-08; a heredoc body is data, not a command),
+# then strips paired quotes to dodge the in-string false positive that bit
+# v0.1.5 (commit messages describing the gate self-blocked the commit). The
+# heredoc-fed-shell residual (bash <<EOF git push EOF) joins limitation #3,
+# same as the rm guards. The pattern is responsible for its own anchoring —
+# see maude-gate.sh for the CMD_START / FLAG constants used to build
+# cmd-start and flag-position anchored patterns.
 #
 # Usage: maude_match_gate_pattern "<command>" "<pattern-regex>"
 # Returns: 0 if matches, 1 otherwise.
 maude_match_gate_pattern() {
   local cmd="$1" pat="$2" stripped
-  stripped="$(maude_strip_quotes "$cmd")"
+  stripped="$(maude_strip_quotes "$(maude_strip_heredocs "$cmd")")"
   printf '%s' "$stripped" | grep -qE -- "$pat"
 }
 
@@ -1054,7 +1241,7 @@ maude_yellow_keys() {
   printf '%s' 'git-push commit-amend no-verify no-gpg-sign reset-hard run-governor'
 }
 maude_red_keys() {
-  printf '%s' 'rm-rf-root rm-rf-glob sudo-rm-rf rm-rf-sole-copy public-publish force-push filter-repo filter-branch infra-destructive drop-table'
+  printf '%s' 'rm-rf-root rm-rf-glob sudo-rm-rf rm-rf-sole-copy sole-copy-target public-publish force-push filter-repo filter-branch infra-destructive drop-table'
 }
 # 0 (true) if $1 is a red key.
 maude_is_red_key() {

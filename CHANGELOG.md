@@ -1,11 +1,317 @@
-<!-- Version: 0.24.0 -->
+<!-- Version: 0.27.2 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-07-22 -->
+<!-- Revised: 2026-08-08 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.27.2 — the guard read her own story and found the homeowner's address
+
+Patch, caught by ship.sh's own leak-audit on the first public build since
+v0.24.0. The incident stories told their truth with the homeowner's literal
+paths in them — the glob-delete tale carried the real workspace path, and
+comments in four organs and tests carried this box's plugin paths. One was a
+genuine portability bug, not just a leak shape: the marker lock test hardcoded
+this repo's absolute path into `sys.path`, a test that could only pass on the
+box it was written on (now passed in from the test's own `ROOT`). The
+secret-scan stderr fixture also carried an inline credential-shaped literal;
+it now assembles the shape by concatenation — the audit's own idiom — so no
+shipped line matches the guard that ships beside it. The stories stay true,
+told in `~` instead of the address. No behavior change.
+
+---
+
+## v0.27.1 — the whisper hands you a command that works
+
+Two small self-check fixes, both caught within minutes of 0.27.0 shipping.
+The "an update is waiting" line said `claude plugin update maude` — and that
+exact command fails with "not found" on the canonical install (update wants
+`name@marketplace`, and both are named maude). Caught by running the delivered
+whisper's own advice: the bare form failed live, the qualified `maude@maude`
+worked. Same lesson the maude-marker wrapper carries from 2026-07-30 — verify
+the USER's invocation, not your own convenience. And the hook was missing the
+eye recursion guard: the completeness test caught it from the ARCHIVE, where
+the working-tree run had masked it behind the dev-checkout short-circuit —
+silent for the wrong reason, which is a green check that proved nothing.
+Guard added (inline, the secret-scan pattern), blink-silence pinned in tests.
+
+---
+
+## v0.27.0 — the phantom heredoc, her own closet, and the lens that must run
+
+Three furnishings, each one a scar from the same week, and an adversarial pass
+that broke the first draft of the biggest one — which is the system working.
+
+**Heredoc bodies are DATA for every pattern family now.** The rm and
+target-verb guards excised heredoc bodies since v0.12.1; the COMMAND patterns
+(git-push, force-push, public-publish…) never did, and on 2026-08-08 the push
+gate fired live on a memory-file append whose heredoc body merely contained
+the words. Wiring the strip into `maude_match_gate_pattern` was the easy half.
+The adversarial pass on the first draft found the hard half: the old
+quoted-`<<` phantom (`echo "note << EOF"` read as a heredoc opener) — a
+documented, accepted under-block while it only reached rm — now silently
+swallowed a real `git push --force`, `gh release create`, and
+`git filter-branch` on the following line. CONFIRMED empirically, RED-tier
+keys, the expensive direction. So instead of accepting the widened limitation,
+the stripper closed it: quoted SPANS are blanked before opener detection, with
+`<<'EOF'`/`<<"EOF"` delimiter-quoting protected first — the exact objection
+that had kept the old limitation open. Alongside: a delimiter QUEUE (two
+heredocs on one line were treated as one — body B false-blocked as live
+commands, a real pre-existing bug the pass confirmed), and `$((a << b))`
+arithmetic + `<<<` herestrings blinded (the letter-led-shift phantom is
+closed). Honest residual, pinned in tests: an UNBALANCED quote before
+`<<WORD` still opens a phantom body. A gated command inside a heredoc-fed
+SHELL (`bash <<EOF … EOF`) is uniformly limitation #3 for every family now,
+stated in the gate's notes.
+
+**SELF-CHECK — she watches her own closet at wake.** Main carried 20 commits
+of finished work for ten days while the installed cache stayed a release
+behind: the directory-marketplace updater keys on the VERSION, honest semver
+had held the number still, and `plugin update` said "already at latest" with
+13 files differing. Every session ran stale scripts believing itself current —
+the mechanism built to catch "merged is not running" was the instance of it.
+A new SessionStart hook compares the installed plugin against its source repo
+(marketplace record, `MAUDE_SOURCE_DIR` override): version behind → "an
+update is waiting"; version EQUAL but files differ → the trap itself, named
+("the updater keys on the version — this will NEVER auto-deliver; bump on
+main"). Silent when there is nothing to compare — no source checkout, no jq,
+or running FROM the checkout — because a whisper that cannot be computed must
+say nothing, not guess. During its own adversarial review the lens ran it
+against this box's live install and it correctly reported the mid-review
+working tree as version-keyed drift: working, live, unprompted.
+
+**The ship rail's second lens must have RUN.** `ship.sh open --review "…"`
+accepted prose on faith, and prose is not a guardrail. When her care.json is
+reachable, a non-draft open now also requires a redteam-watch STAMP — an
+adversarial dispatch that actually COMPLETED — newer than the tip being
+shipped; a stamp from the future reads as planted and counts as nothing.
+SOFT, and stated so in the same breath (the care-file backstop framing):
+care.json carries no write-protection, the stamp is house-wide rather than
+session-scoped, and it proves a lens RAN — not that it was good, not that it
+read this diff. The threat model is FORGETTING the lens, not evading it; what
+this closes is the silent nothing. Homes without her state keep the
+prose-only behavior. The BSD leg of the new ISO shim handles both `Z` and
+`±HH:MM` forms so a non-UTC committer date degrades the check to "unknowable"
+rather than wrong.
+
+Fleet 53 test files (gate 152 · ship 18 · self-check 12 new); lint and
+portability clean. The pattern held twice more in the building: the round-1
+command-position idea for a sibling workspace gate traded false-block for
+silent-allow and was replaced, and round 1 of THIS release's stripper wiring
+shipped the CRITICAL above to the lens instead of to the house.
+
+---
+
+## v0.26.0 — the snapshot, the marker, and the rails that fire
+
+Two new organs and a round of fixes that came from pointing her own adversarial
+discipline at herself.
+
+**UNDO — the gate's other half.** The gate blocks the catastrophic; UNDO
+catches what it deliberately allows, because a gate that blocks ordinary work
+gets switched off inside a day. Content-addressed blobs plus an append-only
+ledger; a snapshot lands BEFORE the write and `/maude:undo` restores it after —
+one entry at a time, snapshotting the current bytes first so the undo is itself
+undoable, and undoing a CREATE deletes rather than writing an empty file. The
+ledger records what it did NOT capture (too-large, secret-path, unreadable) and
+`list` surfaces it, because this is the pillar that can lie by existing — an
+UNDO that quietly missed a file is silent until the night you reach for it.
+Secret-shaped paths are skipped on purpose; the skip is visible, not assumed.
+
+**PROVE — a one-time marker Claude cannot mint.** RED-tier clears were John's
+hand by rule, but a rule is prose, and an audit reproduced two routes by which
+Claude minted his own RED clearance. On a box where Claude runs as root,
+anything he can read to verify he can read to forge — so the answer is a
+sha256 hash chain: the homeowner generates the links off-box and keeps them,
+Maude stores only the current head, and authorizing spends one link. Holding
+the head lets you compute every already-spent link and no future one. When a
+chain is provisioned, RED keys require a marker link; `gen` refuses to run
+inside an agent context so links cannot burn into a transcript. Honest limit,
+stated in the commit and kept here: this closes reflexive self-authorization,
+not a determined edit of the gate itself — that floor is the harness
+deny-rules, which are the homeowner's hand by construction.
+
+**Two independent redteams on the security code, and both paid.** Maude's own
+hook flagged that the 0.25.0 release had been self-approved, so two independent
+lenses went over the gate and marker work. The worse find: a live
+false-positive regression in shipped 0.25.0 — one unbounded character class
+made the sole-copy table match at ANY depth under the workspace root, blocking
+ordinary work (`rm` of a deep file, `build/*.o` globs, `mv` between deep paths;
+25 measured false positives) — invisible to CI because the test config left
+`sole_copy_paths` empty in every test. Depth-bounded now, with the config seam
+tested.
+
+**The RED clears got their own script** (`maude-clear-red.sh`), so a
+`settings.json` deny-rule can name it directly. The split surfaced two lies in
+the old path — dead RED flags sitting under a comment saying they worked, and an
+arg-walk that left its own command so the refusal named the wrong rule. Both
+fixed; the new script's own docstring described the wrong script and that got
+fixed too.
+
+**The leak channel that actually leaked.** Both real credential leaks in this
+house's history arrived through TOOL OUTPUT — a token echoed back by `ps`, a
+token in a grepped config — and the scanner read only the user's prompt. A
+`tool-output` mode now scans stdout/stderr, MCP content blocks, and bare-string
+responses, with patterns taken from the leaks that actually happened. Honest
+ceiling, written into the alert itself: PostToolUse runs after the tool, so
+this cannot prevent a leak — it converts "nobody noticed for three weeks" into
+"you know this second," and tells Claude to name the credential and its
+rotation in the same reply.
+
+**The infra gate stopped trusting a prefix.** Two holes, both proven live: the
+server prefix was a single string, so a second MCP server managing a second
+live hypervisor was invisible — the identical destructive tool blocked on one
+and exited 0 on the other; and destructive-ness was a 9-name allowlist, so any
+destructive tool nobody had enumerated passed even on the configured server.
+Now a destructive-verb sweep applies to every `mcp__` tool from ANY server —
+an unconfigured brand-new server fails CLOSED — with read verbs checked first
+and winning, because a gate that blocks `list_guests` gets switched off within
+a day. Three pre-existing tests had asserted the hole as intended behaviour
+and stayed green; reversed, with the reasoning in the test file.
+
+**The mission rail fires now.** Registered since June, ~1600 chances, 4 pins
+ever. The hook fired every time and parsed nothing: it read TodoWrite's array
+shape, and this harness emits TaskCreate/TaskUpdate — flat objects, one of
+which carries no text at all. Ported to the real payloads (with fixtures copied
+from the live hook, because the rendered transcript lies about the shape),
+sticky-pin semantics preserved, and proven live: pin, hold, flip, verify.
+
+**The adversarial pass got a rail.** The workspace law says every build gets a
+redteam and Claude launches it; the preference sat in an 86KB identity file
+nothing consults when a build finishes, and three builds shipped in one night
+with zero passes. Knowledge in a file is a diary; a hook is a rail. An
+adversarial dispatch now stamps the ledger, and a `git commit` with code
+changed since the last pass gets ONE whisper — never a block. Wired from
+already-registered scripts, deliberately: new registry entries sit cold until
+a reload, which is exactly how the mission rail sat dead.
+
+**The tape `check` gate stopped passing vacuously.** Empty input passed; a file
+path passed as if it were text. Two independent lenses were then run against
+the gate itself and what they broke was closed — and the residual the gate does
+NOT close is now named in its docs instead of implied away.
+
+**The lint scope law never named the two rolling logs** — now it does.
+
+**The $HOME phantom was a /proc parse bug wearing a costume.**
+
+`maude_project_dir` decides where ALL plugin state lives: the trace, `care.json`,
+the vault, the tape, the undo store, the house-map. It was getting the answer
+wrong in a way that did not crash, and the visible symptom was blamed on the
+wrong thing for a day.
+
+**The cause.** Its process-tree walk read the parent pid as
+`awk '{print $4}' /proc/<pid>/stat`. Field 2 of that file is `comm` wrapped in
+parens and comm MAY CONTAIN SPACES, so a `tmux: server` ancestor splits into two
+whitespace fields and shifts every later field by one — `$4` yields the process
+STATE LETTER, not the ppid. The walk died at any such ancestor and fell through
+to `$(pwd)`. A foreground session never saw it, because `claude` is the immediate
+parent and the walk returns on iteration 1; add one process layer, which is what
+a backgrounded call does, and it breaks. That fall-through is what minted
+`$HOME/.maude/plugin` on 2026-07-30 and then shadowed the real closet for every
+path outside the workspace, breaking the mission clear, the undo list and the
+conscience clear. PPid now comes from `/proc/<pid>/status`, with a fallback that
+splits `stat` on the LAST `)` so comm's own content cannot corrupt it.
+
+**The harm.** Inference (proc cwd, filesystem walk-up) may no longer return
+`$HOME`; a declaration still may, and hooks always carry `CLAUDE_PROJECT_DIR`, so
+a genuinely home-rooted project keeps working. Only `$HOME` itself is barred,
+never paths beneath it.
+
+**What an adversarial pass then found in that guard, and what it cost to fix:**
+
+- It **failed OPEN** when the environment had no `HOME` — cron, a systemd unit
+  with no `Environment=HOME`, `env -i`, `docker exec` without `-e HOME`. Home is
+  now resolved from the passwd database when the variable is absent, and when it
+  cannot be resolved at all the guard REFUSES rather than permits.
+- It compared **strings**. Bash's `pwd` is logical and preserves the symlinked
+  spelling you arrived through, so with `/link` -> `$HOME` a walk from
+  `/link/work` offered `/link`, which is not string-equal to `$HOME`. `$HOME/.`,
+  `$HOME//` and a trailing space did the same. Both sides are now canonicalised
+  before comparison.
+- The test asserting "resolution creates no directories" watched only `pwd`, so a
+  mutation minting `$HOME/.maude/plugin` — the literal phantom it is named after
+  — left it green. It watches `$HOME` too now.
+- `_maude_ppid`'s two halves both satisfied the one fixture, so neither was
+  individually pinned. Each is now pinned by a fixture only it can answer.
+
+New tests drive both inference paths against a FIXTURE process tree through two
+seams (`MAUDE_PROC_ROOT`, `MAUDE_PROC_START_PID`), because from inside a live
+session the real walk short-circuits and no wrong answer is reachable. That is
+exactly why the previous test could only assert "returns a non-empty existing
+directory", and why this survived.
+
+Honest residual: the last-resort `pwd` fallback can still return `$HOME` when the
+cwd genuinely is `$HOME`, so a phantom can still be minted there. It can no
+longer SHADOW a real store, which was the harm. Saying so rather than claiming
+the stronger thing, because the stronger thing was claimed once already and was
+not true.
+
+---
+
+## v0.25.0 — the target, not the verb
+
+Her hard block was keyed on the verb, and a verb denylist can only ever block the
+verbs somebody thought of.
+
+### The disaster it answers
+
+On 2026-07-23 three of the homeowner's irreplaceable photos were destroyed by:
+
+```
+rm -f ~/projects/*.png ~/projects/*.jpeg
+```
+
+The gate did not stop it. On 2026-07-30 an audit re-ran that command against the
+shipped 0.24.0 gate, control first, and got this:
+
+| command | 0.24.0 |
+|---|---|
+| `rm -rf <workspace>` (control) | blocked, exit 2 |
+| `rm -f <workspace>/*.png <workspace>/*.jpeg` | **allowed** |
+| `mv <workspace> /tmp/gone` | **allowed** |
+| `find <workspace> -delete` | **allowed** |
+| `shred -u <workspace>/VISION.md` | **allowed** |
+| `truncate -s 0 <workspace>/VISION.md` | **allowed** |
+| `python3 -c "import shutil;shutil.rmtree('<workspace>')"` | **allowed** |
+
+The control mattered. A first run of that probe pointed `CLAUDE_PROJECT_DIR` at a
+sandbox, so the gate was faithfully guarding an empty temp directory and the
+control came back green; the whole run was discarded rather than reported.
+
+### What changed
+
+A second table, keyed on the TARGET. If the thing being destroyed is a sole copy,
+the verb does not matter. It encodes the rule the homeowner had already written,
+"never glob-delete in workspace root, exact names only", which is a statement
+about glob depth:
+
+- BLOCK a glob whose parent is the protected root (the disaster shape)
+- BLOCK the protected root or a file at it as a bare target, any verb
+- BLOCK `find -delete` / `-exec rm`, `dd of=`, `rsync --delete`, and interpreter
+  one-liners calling `rmtree` / `unlink` / `os.remove` / `fs.rm`
+- BLOCK the same command wearing `exec`, `env`, `nohup`, `timeout` or `sudo`
+- ALLOW an exact named file, however deep (ordinary work)
+- ALLOW a deep glob such as `build/*.o` (ordinary work)
+
+The root-anchored regex is deliberately kept separate from the existing sole-copy
+target list, because that list already permits one path segment and would have
+swallowed `<root>/build` and then read `/*.o` as a root glob.
+
+New gate key `sole-copy-target`, registered in the **red** tier: the homeowner's
+hand only, not self-clearable, and a yellow token for another key does not open it.
+
+### Why nine of the tests are false-positive rows
+
+A gate that blocks `rm -f build/*.o` gets switched off within a day, and a gate
+that is off protects nothing at all, which is strictly worse than never having
+built it. The ALLOW rows are as load-bearing as the BLOCK rows.
+
+All 19 blocking rows were watched fail before the implementation existed. One new
+test file (`tests/test-gate-targets.sh`, 29 assertions); fleet 48.
 
 ---
 
