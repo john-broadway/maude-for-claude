@@ -37,6 +37,20 @@ CREATE TABLE IF NOT EXISTS events (
     importance REAL DEFAULT 0.5,
     status     TEXT DEFAULT 'buffered'   -- buffered | consolidated | forgotten
 );
+CREATE TABLE IF NOT EXISTS voice (
+    id       INTEGER PRIMARY KEY,
+    ts       REAL,
+    text     TEXT NOT NULL,
+    source   TEXT,
+    register TEXT DEFAULT 'chat',
+    session  TEXT,
+    sha      TEXT UNIQUE                 -- sha256(normalized text|original ts): resumed
+);                                       -- sessions copy history, so dupes collapse here
+CREATE TABLE IF NOT EXISTS voice_profile (
+    id   INTEGER PRIMARY KEY CHECK (id = 1),   -- one row: derived, regenerable, never
+    ts   REAL,                                 -- hand-edited; recompute owns it whole
+    json TEXT NOT NULL
+);
 """
 
 # Higher rank leads at recall — the user's own words always outrank a rendering of them.
@@ -113,6 +127,7 @@ class Tape:
         db_path: str | os.PathLike,
         embedder: Callable[[str], list[float]] | None = None,
         judge: Callable[[str], list[tuple[str, str]]] | None = None,
+        busy_timeout: float = 5.0,
     ):
         # embedder: text -> vector. Injected so the loop is testable and substrate-agnostic —
         # a fake in tests, a BYO embedding client in production. None = a home with no embedding
@@ -120,7 +135,12 @@ class Tape:
         # judge: draft -> [(tell, why), ...]. The same seam for the voice gate's model tier —
         # a wired model reads cadence the phrase list can't see; None = no model, degrade to
         # the deterministic floor. The plugin ships neither appliance.
-        self._conn = sqlite3.connect(db_path)
+        # busy_timeout: how long sqlite waits on a locked db (connect AND statements).
+        # The 5.0 default suits gates, which may honestly wait; an OBSERVER passes a
+        # short one — voice-capture's "never block a prompt" is a promise about the
+        # CLOCK as much as the exit code (fix-review finding on ce6ae91: a locked db
+        # stalled the hook 5s before failing open).
+        self._conn = sqlite3.connect(db_path, timeout=busy_timeout)
         self._conn.executescript(_SCHEMA)
         self._embedder = embedder
         self._judge = judge

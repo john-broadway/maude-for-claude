@@ -62,6 +62,8 @@ fi
 [ -z "$PROMPT" ] && exit 0
 
 # --- credential shapes: label|ERE ---
+# Mirrored in maude_tape/voice.py SECRET_PATTERNS (the voice corpus refuses these
+# shapes at ingest). CHANGE ONE -> CHANGE THE OTHER.
 # Each prefix carries enough trailing entropy to avoid matching prose mentions
 # ("a pypi token", "ghp_-shaped"). Hyphens sit at the end of every char class.
 PATTERNS=(

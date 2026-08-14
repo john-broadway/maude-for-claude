@@ -34,6 +34,10 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("check")
     c.add_argument("text", nargs="?", default=None)
     c.add_argument("--db", required=True)
+    c.add_argument("--voice", action="store_true",
+                   help="append a VOICE REPORT (numbers, never a verdict) after the "
+                        "floor output if a voice_profile has been computed. Never "
+                        "changes the exit code — the phrase floor alone owns 0/2/3.")
 
     cap = sub.add_parser("capture")
     cap.add_argument("text", nargs="?", default=None)
@@ -58,14 +62,36 @@ def main(argv: list[str] | None = None) -> int:
     aud.add_argument("--db", required=True)
     aud.add_argument("--surfaces", required=True, help="path to JSON {surface_name: text}")
 
+    hv = sub.add_parser("harvest")
+    hv.add_argument("--db", required=True)
+    hv.add_argument("--transcripts", required=True,
+                    help="dir walked recursively for session *.jsonl transcripts")
+    hv.add_argument("--register", default="chat",
+                    help="voice register tag stored per line (default: chat = typed "
+                         "in-session prose; e.g. 'public' for a posted-copy corpus)")
+
+    pf = sub.add_parser("profile")
+    pf.add_argument("--db", required=True)
+
+    vc = sub.add_parser("voice-capture")   # the silent hook path: one line on stdin
+    vc.add_argument("--db", required=True)
+    vc.add_argument("--source", default="hook")
+    vc.add_argument("--register", default="chat")
+    vc.add_argument("--session", default=None)
+
     args = parser.parse_args(argv)
     try:
-        tape = Tape(args.db)
+        # voice-capture is an observer on the prompt's critical path: it gets a short
+        # lock wait so a busy tape costs milliseconds, not the default five seconds.
+        tape = Tape(args.db, busy_timeout=0.8 if args.cmd == "voice-capture" else 5.0)
     except sqlite3.Error as exc:
         # Was an uncaught OperationalError exiting 1, outside the documented {0,2,3}.
         # It failed closed, but a caller could not tell "blocked" from "crashed".
         print(f"tape: cannot open db {args.db!r}: {exc}", file=sys.stderr)
-        return 3
+        # voice-capture alone is an OBSERVER, not a gate: its contract is exit 0 on ANY
+        # failure so a broken capture can never block a prompt. Every other subcommand
+        # keeps the loud 3 — a gate that cannot open its tape must say so.
+        return 0 if args.cmd == "voice-capture" else 3
 
     if args.cmd == "seed":
         if tape.wake().canon_texts:
@@ -134,6 +160,19 @@ def main(argv: list[str] | None = None) -> int:
                   "Feed the draft on stdin and confirm the byte count you fed it.",
                   file=sys.stderr)
             return 3
+        def _emit_voice_report() -> None:
+            # Additive only: --voice never touches the exit code. The floor alone owns
+            # 0/2/3 — the report is numbers, the floor is the gate.
+            if not args.voice:
+                return
+            from . import voice
+            profile = voice.load_profile(tape)
+            if profile is None:
+                print("voice: no profile stored — run profile first")
+            else:
+                for line in voice.voice_report_lines(draft, profile):
+                    print(line)
+
         if not tape.list_rejections():
             # sqlite3.connect() CREATES a missing file, so a typo'd --db silently built an
             # empty tape and cleared every draft with no error. A tape that holds nothing to
@@ -142,11 +181,18 @@ def main(argv: list[str] | None = None) -> int:
                   f"refuse anything and a pass would mean nothing. Check the --db path (a "
                   f"missing file is created empty, not reported) and that it has been seeded.",
                   file=sys.stderr)
+            # The voice report is orthogonal to the floor and still prints (a fresh
+            # install has a profile long before its first seeded rejection — the numbers
+            # are real either way). The 3 stands: nothing was CERTIFIED.
+            _emit_voice_report()
             return 3
         hits = tape.check_draft(draft)
         for hit in hits:
             print(f"✗ REJECTED: {hit.phrase!r} — {hit.reason} [{hit.source}]")
-        return 2 if hits else 0  # fail closed: a rejected line blocks
+        rc = 2 if hits else 0  # fail closed: a rejected line blocks
+
+        _emit_voice_report()
+        return rc
 
     if args.cmd == "capture":
         eid = tape.capture(_read(args.text), topic=args.topic,
@@ -176,6 +222,18 @@ def main(argv: list[str] | None = None) -> int:
         for br in breaches:
             print(f"✗ BREACH {br.surface}: {br.phrase!r} live — {br.reason}")
         return 2 if breaches else 0  # fail closed: drift on a real surface is a finding
+
+    if args.cmd == "harvest":
+        from . import voice  # lazy: the wake/check hot paths never pay for this import
+        return voice.cmd_harvest(args, tape)
+
+    if args.cmd == "profile":
+        from . import voice
+        return voice.cmd_profile(args, tape)
+
+    if args.cmd == "voice-capture":
+        from . import voice
+        return voice.cmd_capture(args, tape)
 
     return 2
 
