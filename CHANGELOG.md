@@ -1,11 +1,70 @@
-<!-- Version: 0.27.4 -->
+<!-- Version: 0.28.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-08-08 -->
+<!-- Revised: 2026-08-14 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.28.0 — the corpus was two voices
+
+The voice organ — the first turn of the learning loop, built the night the
+homeowner said the whole vision out loud: she should learn the user, almost
+autonomously, unnoticed until she has something to cue on. So she listens now.
+A silent `UserPromptSubmit` hook appends each typed prompt to a `voice` table
+in the tape (an observer, never a gate: exit 0 on every failure INCLUDING the
+clock — a locked tape costs 0.8s, not sqlite's five-second default, a
+fix-review catch after the corrupt-db fix covered the reproduction and missed
+the class). `harvest` backfills the same corpus from the session transcripts a
+box already holds, streaming, idempotent by sha over (text | original
+timestamp) so resumed-session copies collapse while the same words retyped
+another day still count. `profile` derives the measured voice — median and p90
+sentence length, lowercase-open ratio, punctuation habits, hammer n-grams,
+lexicon, AI-tell shadow words — and `check --voice` prints draft-vs-profile
+numbers after the floor's verdict, never touching the exit code: the phrase
+floor alone owns 0/2/3, and a cadence SCORE would be a guard that answers the
+easy question.
+
+The laws are in the code, not the docs. Credential shapes are refused at
+ingest — the same pattern list as the prompt-scan hook, cross-referenced both
+sides, and the first real backfill proved it by refusing 6 of them. Nothing
+here opens a socket, and a tripwire test now walks the whole package asserting
+only the two BYO sockets may import network machinery — with planted-violation
+tests, because a gate you never saw refuse is not yet a gate. And the profile
+derives from TYPED PROSE only: the first real corpus was two voices — 1,864
+typed lines averaging ten words, and 542 pasted briefs and dispatches carrying
+a million machine-shaped words that drowned the human (em-dash 238.7 per 100
+lines against his actual 1.1) — so lines at or over 400 chars are counted,
+excluded, and confessed in the profile's own honesty block. That block also
+carries the date range's real depth, derived from the typed subset alone after
+a post-review pass caught a paste's date padding the range one scope wider
+than the commit that claimed to exclude it.
+
+Built by teams and broken on purpose before it was believed: three scouts,
+three builders, three adversarial lenses, and a fix-review on every fix. The
+lens mutation run planted 14 deliberate breaks and the suite caught 12 — the
+two that walked (a p90 off-by-one masked by small fixtures, a division guard
+no path could reach) are pinned now at the exact sizes where they diverge. The
+containment prune met its first real corpus and burned five minutes of CPU
+after sailing through every small fixture — it is an inverted index now, 0.3s
+at 3k lines, semantics differentially fuzzed against the old algorithm across
+11,500 trials. Python suite 94 → 180; the corpus and profile are DATA in the
+home's tape.db and never ship — the plugin carries the mechanism only.
+
+---
+
+## v0.27.5 — the pins ride home the same night
+
+CI-only. Dependabot's CodeQL bump (4.37.3 → 4.37.6, PR #56) merged on the
+public side and cherry-picked straight home — a workflow pin that lives only
+on one side of the house gets silently reverted by the next curated build,
+which nearly happened to July's bumps this very night. The version moves
+because the closet check is honest: same number with a differing file is the
+trap she names, so the number tells the truth instead. No plugin behavior
+changes.
 
 ---
 

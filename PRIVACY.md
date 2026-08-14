@@ -1,6 +1,6 @@
-<!-- Version: 0.27.4 -->
+<!-- Version: 0.28.0 -->
 <!-- Created: 2026-07-17 -->
-<!-- Revised: 2026-08-08 -->
+<!-- Revised: 2026-08-14 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Privacy Policy — Maude for Claude
@@ -27,6 +27,18 @@ All of it on your machine, all of it yours:
 - **The vault** (`vault.db`) is a disposable stdlib-SQLite index rebuilt each
   session from your own markdown notes. Delete it any time; nothing is lost —
   your markdown remains the only canon.
+- **The voice corpus** (in `tape/tape.db`, since v0.28.0) — the prompts you
+  type, captured by a silent hook and/or backfilled by `harvest` from your own
+  session transcripts, so `profile` can derive your measured voice and
+  `check --voice` can compare a draft against it. Stored verbatim BECAUSE it
+  is your voice — with one exception: any line matching a credential shape
+  (the same pattern list the prompt-scan uses) is refused at ingest, never
+  stored, counted in the harvest summary. The corpus and the derived profile
+  live only in your tape.db, never ship with the plugin, and never leave the
+  machine. Capture has a kill switch: `MAUDE_VOICE=off`. To remove every word:
+  `DELETE FROM voice; DELETE FROM voice_profile;` (or delete tape.db) — and
+  recomputing the profile over an emptied corpus clears the stored profile
+  itself, so the derived words never outlive their source.
 
 Deleting `<project>/.maude/` and `~/.claude/maude/` removes everything Maude
 has ever recorded. There is no copy anywhere else. (One opt-in exception,
