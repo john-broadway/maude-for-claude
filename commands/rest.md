@@ -120,8 +120,10 @@ MAP="$SELF/house-map.md"
    # SINGLE quotes, and only [a-z0-9-] between them: inside single quotes $( )
    # and backticks are inert text. Never splice the old letter's own prose
    # into this line — you summarize it to a slug, you don't quote it.
-   SLUG='<two-or-three-word-slug-of-the-OLD-letters-theme>'
-   if A="$(maude_letter_archive "$SLUG")"; then
+   # (THEME, not SLUG — this file's preamble already owns $SLUG for the
+   # project memory-slug; same name, different thing is how defects hide.)
+   THEME='<two-or-three-word-slug-of-the-OLD-letters-theme>'
+   if A="$(maude_letter_archive "$THEME")"; then
      echo "ARCHIVED: $A"
    elif [ $? -eq 2 ]; then
      echo "NO_PRIOR_LETTER"   # nothing to archive — first rest in this home
