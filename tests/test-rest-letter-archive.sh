@@ -188,12 +188,17 @@ fi
 
 test_start "the maude AGENT's rest instruction archives too (the second door)"
 # agents/maude.md carries its own operative 'rewrite the letter' text; the
-# 2026-08-17 overwrite would come right back through it if it drifts.
+# 2026-08-17 overwrite would come right back through it if it drifts. The
+# string alone is not enough: the source must be ANCHORED (a bare relative
+# path resolves to the user's project cwd, not the plugin — found.md's own
+# documented rule) and the helper-less fallback must still archive-first.
 AGENT="$(dirname "$0")/../agents/maude.md"
-if grep -q 'maude_letter_archive' "$AGENT"; then
+if grep -q 'maude_letter_archive' "$AGENT" \
+   && grep -q 'CLAUDE_PLUGIN_ROOT/hooks/scripts/_maude-common\.sh' "$AGENT" \
+   && grep -q 'no copy, no rewrite' "$AGENT"; then
   _pass
 else
-  _fail "agents/maude.md rewrites the letter with no archive step"
+  _fail "agents/maude.md: helper unanchored or no archive-first fallback"
 fi
 
 export HOME="$OLD_HOME"
