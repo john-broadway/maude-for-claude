@@ -27,25 +27,63 @@ from datetime import datetime, timezone
 # The same credential shapes as hooks/scripts/maude-secret-scan.sh (its PATTERNS array).
 # CHANGE ONE -> CHANGE THE OTHER; each carries a cross-reference comment. Shapes, not
 # values: enough trailing entropy that prose mentions ("a pypi token") never fire.
+# Every pattern is matched CASE-INSENSITIVELY (the shell twin uses `grep -qEi`). The
+# labelled-secret catch-all used to be case-sensitive, so `password: <hex>` was caught
+# and `PASSWORD=<hex>` walked straight through.
 SECRET_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
-    ("PyPI token", re.compile(r"pypi-[A-Za-z0-9_-]{40,}")),
-    ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}")),
-    ("GitHub fine-grained PAT", re.compile(r"github_pat_[A-Za-z0-9_]{60,}")),
-    ("AWS access key", re.compile(r"AKIA[0-9A-Z]{16}")),
-    ("Slack token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}")),
-    ("Anthropic key", re.compile(r"sk-ant-[A-Za-z0-9_-]{40,}")),
-    ("OpenAI key", re.compile(r"sk-(proj-)?[A-Za-z0-9_-]{40,}")),
-    ("Google API key", re.compile(r"AIza[A-Za-z0-9_-]{30,}")),
-    ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
-    ("Steam GSLT", re.compile(r"(server_logon_token|sv_setsteamaccount)[^A-Za-z0-9]{1,4}[0-9A-Fa-f]{32}")),
-    ("game-server RCON password", re.compile(r"rcon_password[^A-Za-z0-9]{1,4}[^\s]{8,}")),
-    ("Proxmox API token", re.compile(r"PVEAPIToken=[^\s]{8,}")),
-    ("labelled secret value", re.compile(r"(token|secret|passwo?rd|apikey|api_key)[\"'`\s]*[:=][\"'`\s]*[0-9A-Fa-f]{32}")),
+    ("PyPI token", re.compile(r"pypi-[A-Za-z0-9_-]{40,}", re.I)),
+    ("GitHub token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}", re.I)),
+    ("GitHub fine-grained PAT", re.compile(r"github_pat_[A-Za-z0-9_]{60,}", re.I)),
+    ("AWS access key", re.compile(r"AKIA[0-9A-Z]{16}", re.I)),
+    ("Slack token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}", re.I)),
+    ("Anthropic key", re.compile(r"sk-ant-[A-Za-z0-9_-]{40,}", re.I)),
+    ("OpenAI key", re.compile(r"sk-(proj-)?[A-Za-z0-9_-]{40,}", re.I)),
+    ("Google API key", re.compile(r"AIza[A-Za-z0-9_-]{30,}", re.I)),
+    ("private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", re.I)),
+    ("Steam GSLT", re.compile(r"(server_logon_token|sv_setsteamaccount)[^A-Za-z0-9]{1,4}[0-9A-Fa-f]{32}", re.I)),
+    ("game-server RCON password", re.compile(r"rcon_password[^A-Za-z0-9]{1,4}[^\s]{8,}", re.I)),
+    ("Proxmox API token", re.compile(r"PVEAPIToken=[^\s]{8,}", re.I)),
+    # Added 2026-08-16 after a lens beat the table above with 14 of 26 constructed shapes.
+    # Each is anchored on structure (a prefix, a scheme, a header name) so it cannot fire
+    # on prose that merely talks about credentials.
+    ("JWT", re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}", re.I)),
+    ("bearer token", re.compile(r"bearer\s+[A-Za-z0-9_.=-]{20,}", re.I)),
+    ("credentials in a URI", re.compile(r"[a-z][a-z0-9+.-]*://[^\s:@/]+:[^\s:@/]{8,}@", re.I)),
+    ("Stripe key", re.compile(r"[sr]k_(live|test)_[A-Za-z0-9]{16,}", re.I)),
+    ("SendGrid key", re.compile(r"SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}", re.I)),
+    ("DigitalOcean token", re.compile(r"dop_v1_[A-Fa-f0-9]{40,}", re.I)),
+    ("npm token", re.compile(r"npm_[A-Za-z0-9]{36,}", re.I)),
+    ("AWS secret access key", re.compile(r"aws_secret_access_key[^A-Za-z0-9]{1,4}[A-Za-z0-9/+=]{40}", re.I)),
+    # Deliberately last and deliberately narrow: a 32-hex value sitting next to a word
+    # that means secret. The 2026-08-16 lens was right that real passwords are not hex —
+    # but widening the value class to any 16+ non-space run was measured against the real
+    # 2392-row corpus and fired on 20 rows of PASTED CODE (`token: {fake_pypi_token}`,
+    # `secret = generate_keys(...)`). This same table drives the prompt-submit alarm, and
+    # a guard that cries wolf on his own paste habit is the one he learns to ignore. The
+    # gap the lens actually DEMONSTRATED was case (`PASSWORD=` walked through while
+    # `password:` was caught); re.I closes that without touching the value class.
+    ("labelled secret value", re.compile(r"(token|secret|passwo?rd|apikey|api[_-]?key)[\"'`\s]*[:=][\"'`\s]*[0-9A-Fa-f]{32}", re.I)),
 ]
 
 
+# Rich-text pastes (Word, Notion, Slack, a PDF) substitute these for a plain space.
+# Python's \s matches them and POSIX [:space:] does not, so `password:<NBSP><value>` was
+# refused here and waved through by the prompt alarm — the one surface that can warn him
+# in real time. Both engines normalise the INPUT now, which closes the class rather than
+# one character, and leaves the two pattern tables byte-identical.
+_UNICODE_SPACES = str.maketrans({c: " " for c in
+                                 "\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005"
+                                 "\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000"})
+
+
 def looks_secretish(text: str) -> bool:
-    """True if any credential shape appears anywhere in the line."""
+    """True if any credential shape appears anywhere in the line.
+
+    Its twin is `hooks/scripts/maude-secret-scan.sh`. They are two engines with two regex
+    dialects, so they are kept honest by behaviour, not by text: `test_python_guard_and_
+    shell_hook_agree` runs both over the same corpus and fails when they diverge.
+    """
+    text = text.translate(_UNICODE_SPACES)
     return any(rx.search(text) for _, rx in SECRET_PATTERNS)
 
 
@@ -155,7 +193,17 @@ def _insert_voice_row(tape, *, ts: float, text: str, source: str,
     writes; Tape exposes no voice-specific method, so this reaches its connection
     directly rather than widening tape.py, which is another builder's seam. Does NOT
     commit — callers own commit granularity (harvest batches per file; capture commits
-    once, immediately, since it is a single live write)."""
+    once, immediately, since it is a single live write).
+
+    Guards EVERY field, not just the text. This writer sat one file away from the shared
+    helper and kept its own inline text-only check, so a credential parked in a label went
+    in unscanned — the fourth instance of the hand-picked-field disease, and the one my own
+    generated inventory missed because I grepped `INSERT INTO` and this is
+    `INSERT OR IGNORE INTO`. A generated list beats a typed one only if the generator is right.
+    """
+    from .tape import _refuse_secrets       # lazy: tape.py reaches back into this module
+    _refuse_secrets("store a voice line", text=text, source=source,
+                    register=register, session=session)
     cur = tape._conn.execute(
         "INSERT OR IGNORE INTO voice (ts, text, source, register, session, sha) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -696,10 +744,19 @@ def voice_report_lines(draft: str, profile: dict) -> list[str]:
 
 def cmd_capture(args, tape) -> int:
     """The hook's single-line ingest: stdin is the WHOLE raw prompt text (already
-    extracted by the hook script, not JSONL). Same normalization + secret filter + sha
-    rule as harvest, with ts=now (capture is live, not backfill). Fail-open by contract:
-    an observer must never block the prompt it's watching, so this prints nothing and
-    exits 0 on the happy path AND on any internal error (logged to stderr only)."""
+    extracted by the hook script, not JSONL). Same normalization + DROP LAW + secret
+    filter + sha rule as harvest, with ts=now (capture is live, not backfill). Fail-open
+    by contract: an observer must never block the prompt it's watching, so this prints
+    nothing and exits 0 on the happy path AND on any internal error (stderr only).
+
+    The drop law was missing here for the whole of v0.28.0 while this docstring already
+    claimed it. harvest gets it via extract_prompt_text; this door had only _normalize and
+    the secret filter, so machine-generated turns walked in. Measured on the author's own
+    box before the fix: 7 of the 26 rows this hook had ever captured were task
+    notifications — 96KB, median 12,448 chars against a real typed median of 42. The
+    corpus was diagnosed as two voices in v0.28.0 and cut back to one; this door was
+    quietly refilling it, which is the same defect at the ingest end.
+    """
     try:
         raw = sys.stdin.read()
     except Exception as exc:
@@ -708,8 +765,14 @@ def cmd_capture(args, tape) -> int:
 
     try:
         text = _normalize(raw)
-        if not text.strip():
+        check = text.strip()
+        if not check:
             return 0  # empty/whitespace stdin: silent, no insert
+
+        # The extraction law, same as harvest. Tested against the fully-stripped text so a
+        # stray leading space can only ever catch MORE hook-shaped text, never less.
+        if check.startswith(_DROP_PREFIXES) or check in _INTERRUPTED_MARKERS:
+            return 0  # machine-generated turn: never his voice, never stored
 
         if looks_secretish(text):
             return 0  # secret-shaped: silently skipped, never stored (shape still leaks)

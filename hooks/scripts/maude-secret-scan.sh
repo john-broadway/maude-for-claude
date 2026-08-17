@@ -81,16 +81,47 @@ PATTERNS=(
   "Steam GSLT|(server_logon_token|sv_setsteamaccount)[^A-Za-z0-9]{1,4}[0-9A-Fa-f]{32}"
   "game-server RCON password|rcon_password[^A-Za-z0-9]{1,4}[^[:space:]]{8,}"
   "Proxmox API token|PVEAPIToken=[^[:space:]]{8,}"
-  # Deliberately last and deliberately narrow: a 32-hex value sitting next to a word
-  # that means secret. Catches the class without firing on every hash in a diff.
-  "labelled secret value|(token|secret|passwo?rd|apikey|api_key)[\"'\`[:space:]]*[:=][\"'\`[:space:]]*[0-9A-Fa-f]{32}"
+  # Added 2026-08-16 after a lens beat the table above with 14 of 26 constructed shapes.
+  # Anchored on structure (a prefix, a scheme, a header name) so prose about credentials
+  # never fires. Mirrored in maude_tape/voice.py — the two are held together by
+  # tests/tape/test_lens_2026_08_16.py::test_python_guard_and_shell_hook_agree.
+  "JWT|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
+  "bearer token|bearer[[:space:]]+[A-Za-z0-9_.=-]{20,}"
+  "credentials in a URI|[a-z][a-z0-9+.-]*://[^[:space:]:@/]+:[^[:space:]:@/]{8,}@"
+  "Stripe key|[sr]k_(live|test)_[A-Za-z0-9]{16,}"
+  "SendGrid key|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"
+  "DigitalOcean token|dop_v1_[A-Fa-f0-9]{40,}"
+  "npm token|npm_[A-Za-z0-9]{36,}"
+  "AWS secret access key|aws_secret_access_key[^A-Za-z0-9]{1,4}[A-Za-z0-9/+=]{40}"
+  # Deliberately last and deliberately narrow: a 32-hex value next to a word that means
+  # secret. Measured 2026-08-16: widening the value class to any 16+ non-space run fired
+  # on 20 rows of pasted CODE in the real corpus. A guard that cries wolf on his paste
+  # habit is the one he learns to ignore. The demonstrated gap was case, closed by -i.
+  "labelled secret value|(token|secret|passwo?rd|apikey|api[_-]?key)[\"'\`[:space:]]*[:=][\"'\`[:space:]]*[0-9A-Fa-f]{32}"
 )
+
+# Rich-text pastes (Word, Notion, Slack, a PDF) substitute Unicode spaces for plain ones.
+# GNU grep's [:space:] does NOT treat U+00A0 as whitespace while python's \s does, so
+# `password:<NBSP><value>` was refused by the tape's guard and waved through by THIS one —
+# the only surface that can warn him while the paste is still fresh. Normalising the input
+# closes the class instead of one character, and keeps both pattern tables identical.
+# printf octal (not \x) so BSD/macOS reads it the same as GNU; parameter substitution
+# rather than sed for the same reason. Mirrored in maude_tape/voice.py _UNICODE_SPACES.
+for _oct in '\302\240' '\341\232\200' '\342\200\200' '\342\200\201' '\342\200\202' \
+            '\342\200\203' '\342\200\204' '\342\200\205' '\342\200\206' '\342\200\207' \
+            '\342\200\210' '\342\200\211' '\342\200\212' '\342\200\257' '\342\201\237' \
+            '\343\200\200'; do
+  _ch=$(printf "$_oct")
+  PROMPT="${PROMPT//$_ch/ }"
+done
 
 HITS=""
 for entry in "${PATTERNS[@]}"; do
   label="${entry%%|*}"
   regex="${entry#*|}"
-  if printf '%s' "$PROMPT" | grep -qE -- "$regex" 2>/dev/null; then
+  # -i: the labelled-secret catch-all was case-sensitive, so PASSWORD=<value> walked
+  # through while password:<value> was caught. Its python twin now compiles with re.I.
+  if printf '%s' "$PROMPT" | grep -qEi -- "$regex" 2>/dev/null; then
     HITS="${HITS}${label}, "
   fi
 done
