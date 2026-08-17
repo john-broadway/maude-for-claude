@@ -257,6 +257,48 @@ else
   _fail "expected draft to proceed (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
 fi
 
+# The candidate WALK, which no test exercised because every test above injects
+# SHIP_CARE_FILE. lens_check took the first candidate that EXISTED, not the first that
+# carried a stamp — so a repo-local care.json that exists and is empty shadowed the real
+# one forever. Under the canonical-root law the session's project dir IS the workspace
+# root, so the stamp always lands in the parent and the repo-local file is always empty:
+# the gate was structurally unsatisfiable for this repo, and silently so.
+test_start "lens_check walks PAST an empty repo-local care.json to a fresh parent stamp"
+mkdir -p "$FIX/repo/.maude/plugin" "$FIX/.maude/plugin"
+printf '{"last_redteam_iso":{}}\n' > "$FIX/repo/.maude/plugin/care.json"
+printf '{"last_redteam_iso":{"bbbb2222":"%s"}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  > "$FIX/.maude/plugin/care.json"
+git checkout -q t3 2>/dev/null
+OUT="$(bash "$SHIP" open --dry-run --review "a real second lens ran" 2>&1)"
+RC=$?
+git checkout -q main
+rm -rf "$FIX/repo/.maude" "$FIX/.maude"
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q 'SECOND LENS NOT PROVEN'; then
+  _pass
+else
+  _fail "empty repo-local care.json shadowed the parent's fresh stamp (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+# The rail used to leave you STANDING ON the ship branch. A warning was tried first and was
+# not enough — the same mistake happened twice on 2026-08-17, the second time with the
+# warning printed and quoted back. Work committed there is invisible to the next build, so
+# a release shipped without a fix whose own commit message described it. Leaving the tree
+# in a safe state is the rail; the warning was only a diary.
+test_start "ship build RETURNS to the source branch instead of stranding you on the ship branch"
+git checkout -q main
+printf 'another public change\n' > USAGE2.md
+git add USAGE2.md && git commit -qm "another public-visible change"
+SHIP_SKIP_GATES=1 SHIP_BRANCH=tret bash "$SHIP" build >/dev/null 2>&1
+AFTER="$(git rev-parse --abbrev-ref HEAD)"
+if [ "$AFTER" = "main" ]; then
+  _pass
+else
+  _fail "left standing on '$AFTER' instead of returning to main"
+fi
+
+test_start "the ship branch still exists after the build returns"
+if git rev-parse --verify -q refs/heads/tret >/dev/null; then _pass; else _fail "build lost its branch"; fi
+
 cd "$DIR" || exit 1
 teardown_test_env
 print_summary

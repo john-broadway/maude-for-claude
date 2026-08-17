@@ -61,7 +61,13 @@ ADVERSARIAL_RE='(red[- ]?team|adversarial|second lens|refute|falsify|break this|
 # Words that mark a BUILDER, not a lens. Checked FIRST: a dispatch that implements is not a
 # review of the implementation, however carefully it is worded. Measured negative from a
 # real transcript: "Build 7e first-light wiring TDD" / "You are a careful TDD implementer".
-BUILDER_RE='(implementer|implement |write the code|build the|scaffold|refactor|port the|migrate)'
+# `build the` used to sit in this list and was measured wrong on 2026-08-17: of 8 real
+# adversarial dispatches, 7 asked the reviewer to "build the table"/"build the list" of
+# findings and were read as implementers, so the ship rail's second-lens gate went unfed.
+# The motivating negative ("Build 7e first-light wiring TDD") does not contain the phrase
+# at all — `implementer` is what catches that one — so it cost real stamps and earned
+# nothing. Replaced with build-verbs bound to things you BUILD, not things a lens writes.
+BUILDER_RE='(implementer|implement |write the code|build (the )?(feature|module|package|service|app|api|cli|endpoint|integration|wiring|pipeline|harness|scaffold)|scaffold|refactor|port the|migrate)'
 
 # Reused verbatim from maude-verify-watch.sh so the two rails agree on what a commit is and
 # what counts as code. Divergent copies would drift and one of them would be wrong.

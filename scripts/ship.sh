@@ -123,6 +123,14 @@ cmd_build() {
   printf 'ship: John'\''s hand — paste this line:\n\n'
   printf '  ! cd %s && git push -u origin %s\n\n' "$ROOT" "$branch"
   printf 'ship: then run: scripts/ship.sh open --review "<one-line second-lens reference>"\n'
+  # RETURN to the source branch. A warning was tried first and was not enough: on
+  # 2026-08-17 a fix was written, tested green and committed onto the ship branch after a
+  # build, and the next build drew from the source ref that never had it — TWICE, the
+  # second time with the warning printed and quoted. A warning is a diary; leaving the
+  # working tree in a safe state is a rail. `open` checks the branch out itself.
+  git checkout -q "$SRC" 2>/dev/null || printf 'ship: WARNING could not return to %s\n' "$SRC" >&2
+  printf '\nship: back on %s. The ship branch %s is built and waiting.\n' "$SRC" "$branch"
+  printf 'ship: work stays here; `open` moves you to the ship branch when you need it.\n'
 }
 
 # ── The second lens must have RUN, not merely been written down (v0.27.0) ──
@@ -162,9 +170,23 @@ lens_check() {
   if [ -n "${SHIP_CARE_FILE:-}" ]; then
     care="$SHIP_CARE_FILE"
   else
+    # Take the candidate carrying the NEWEST stamp, not the first that EXISTS. A
+    # repo-local care.json that exists and is empty used to shadow the real one
+    # permanently — and under the canonical-root law the session's project dir IS the
+    # workspace root, so the stamp always lands in the parent and the repo-local file is
+    # always empty. The gate was unsatisfiable for this repo and silent about it.
+    local best="" best_s="" c_stamp c_s
     for c in "$ROOT/.maude/plugin/care.json" "$(dirname "$ROOT")/.maude/plugin/care.json"; do
-      [ -f "$c" ] && { care="$c"; break; }
+      [ -f "$c" ] || continue
+      [ -n "$care" ] || care="$c"          # remember one, so the message can name a file
+      command -v jq >/dev/null 2>&1 || continue
+      c_stamp="$(jq -r '(.last_redteam_iso // {}) | [.[]] | max // empty' "$c" 2>/dev/null)"
+      [ -n "$c_stamp" ] || continue
+      c_s="$(iso_epoch "$c_stamp")"
+      [ -n "$c_s" ] || continue
+      if [ -z "$best_s" ] || [ "$c_s" -gt "$best_s" ]; then best_s="$c_s"; best="$c"; fi
     done
+    [ -n "$best" ] && care="$best"
   fi
   [ -n "$care" ] && [ -f "$care" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
@@ -200,7 +222,7 @@ cmd_open() {
   done
   local branch
   branch="$(git rev-parse --abbrev-ref HEAD)" || die "cannot read current branch"
-  [ "$branch" != "main" ] || die "open: run from the ship branch, not main"
+  [ "$branch" != "main" ] || { b="$(git for-each-ref --sort=-committerdate --format="%(refname:short)" "refs/heads/ship-*" | head -1)"; [ -n "$b" ] && { printf "ship: open: moving to %s\\n" "$b"; git checkout -q "$b"; } || die "open: no ship branch found — run build first"; }
   [ -n "$title" ] || title="ship: $branch"
 
   local body draft_flag=""
