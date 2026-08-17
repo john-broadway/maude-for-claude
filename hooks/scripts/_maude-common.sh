@@ -797,6 +797,36 @@ maude_identity_append() {
   ' "$id" > "$tmp" 2>/dev/null && mv "$tmp" "$id" || { rm -f "$tmp"; return 1; }
 }
 
+# Archive the live user-global letter to a dated copy BEFORE /maude:rest
+# rewrites it. The live letter is ONE file shared by every lane, so without
+# this step the second lane to rest in a day silently erases the first
+# (2026-08-17: two lanes rested, the earlier letter survived only because
+# that session still held its own text in context).
+# Usage: maude_letter_archive "<slug of the OLD letter's theme>"
+# Prints the archive path. rc 0 = archived (or already archived, byte-equal);
+# rc 1 = empty slug; rc 2 = nothing to archive (letter missing/empty);
+# rc 3 = the copy did not land — the caller must NOT rewrite the letter.
+maude_letter_archive() {
+  local slug="$1" letter d base a n
+  slug="$(printf '%s' "$slug" | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+  [ -n "$slug" ] || return 1
+  letter="$(maude_user_dir)/letter-from-maude.md"
+  [ -s "$letter" ] || return 2
+  # The letter format mandates a dated header, so its first date names the
+  # copy; an undated letter is stamped with the day it was archived.
+  d="$(grep -m1 -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' "$letter")" || d="$(date +%Y-%m-%d)"
+  base="$(maude_user_dir)/letter-from-maude-$d-$slug"
+  a="$base.md"; n=2
+  # A same-named archive holding DIFFERENT bytes is someone else's letter:
+  # step past it, never over it.
+  while [ -e "$a" ] && ! cmp -s "$letter" "$a"; do a="$base-$n.md"; n=$((n+1)); done
+  [ -e "$a" ] || cp "$letter" "$a" 2>/dev/null
+  # Read the copy back — a cp that half-landed must not report success.
+  cmp -s "$letter" "$a" || return 3
+  printf '%s\n' "$a"
+}
+
 # Retention window (days) for the append-only artifacts in her closet: trace
 # JSONL and pre-compact snapshots. Default 30 — well past the 7-day window that
 # the remember plugin's recent.md reads, so a sweep never strands a recent read.

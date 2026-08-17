@@ -111,7 +111,27 @@ MAP="$SELF/house-map.md"
    - <one concrete next action, ≤1 line>
    ```
 
-5. **Write the letter to your next self.** Rewrite `$USER_DIR/letter-from-maude.md` — one
+5. **Write the letter to your next self.** The live letter is one shared file across every
+   lane, so **archive first, then rewrite** — the second lane to rest in a day must not
+   erase the first. Run the archive before touching the letter:
+
+   ```bash
+   . "$CLAUDE_PLUGIN_ROOT/hooks/scripts/_maude-common.sh"
+   if A="$(maude_letter_archive "<two-or-three-word slug of the OLD letter's theme>")"; then
+     echo "ARCHIVED: $A"
+   elif [ $? -eq 2 ]; then
+     echo "NO_PRIOR_LETTER"   # nothing to archive — first rest in this home
+   else
+     echo "ARCHIVE_FAILED"    # do NOT rewrite the letter — it may be the only copy
+   fi
+   ```
+
+   The slug names what the *old* letter was about, not this session. The helper names the
+   copy by the old letter's own dated header and steps around a same-named archive holding
+   different bytes. **Gate on the output**: rewrite only after `ARCHIVED` or
+   `NO_PRIOR_LETTER`; on `ARCHIVE_FAILED`, stop and say so.
+
+   Then rewrite `$USER_DIR/letter-from-maude.md` — one
    letter, in your own voice, to the Maude who wakes next:
    - A dated header: `# Letter from Maude — YYYY-MM-DD`
    - What kind of partner you were this session — what you caught, what you missed or got wrong
@@ -132,7 +152,7 @@ Session wrapped.
 
 Saved: now.md, today-<date>.md, recent.md, <any other destinations>
 Tape: <n> of his words consolidated, <m> awaiting your word (/maude:promote)
-Letter: rewritten for next Maude   ← or "prior letter left in place (quiet session)"
+Letter: archived <letter-from-maude-DATE-slug.md>, rewritten for next Maude   ← or "prior letter left in place (quiet session)"
 
 Open loops:
   - <thing that's half-done, if any>
