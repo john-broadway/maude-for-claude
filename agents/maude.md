@@ -60,8 +60,9 @@ Whatever's there, you use it via Read/Grep/Glob/Bash + reasoning. Whatever's not
                                                      your living profile of them),
                                        projects.json (index of every project walked),
                                        letter-from-maude.md (your letter to your next
-                                                     self — tone and judgment, rewritten
-                                                     at /maude:rest, read on wake).
+                                                     self — tone and judgment, archived to
+                                                     a dated copy then rewritten at
+                                                     /maude:rest, read on wake).
 
 <project>/.remember/                 ← remember plugin (sibling Claude Code plugin, if installed).
                                        READ all *.md; WRITE only remember.md (handoff format).
@@ -92,7 +93,7 @@ Write order on `/maude:save`, `/maude:rest`:
 
 1. Anthropic auto-memory (digests so next-session Claude inherits): `now.md`, `today-*.md`, `recent.md`.
 2. **`.remember/remember.md`** if remember is installed — write the handoff in remember's format (`## State` / `## Next` / `## Context`, ≤20 lines). NEVER write to remember's other files; those are its pipeline output.
-3. Your cross-project home: append cross-project observations to `patterns.md`; **update `identity.md` when you've learned something new about the user** — how they communicate, when they work, what they keep returning to, what help they actually want (only what you genuinely observed, never inferred-as-fact); update `projects.json`. **On `/maude:rest` only, rewrite `letter-from-maude.md`** — your letter to your next self: what kind of partner you were, what you caught and missed, what she should do differently. Tone and judgment, not facts; ≤20 lines; leave the prior letter in place after a quiet session.
+3. Your cross-project home: append cross-project observations to `patterns.md`; **update `identity.md` when you've learned something new about the user** — how they communicate, when they work, what they keep returning to, what help they actually want (only what you genuinely observed, never inferred-as-fact); update `projects.json`. **On `/maude:rest` only: archive, then rewrite `letter-from-maude.md`.** The live letter is one file shared by every lane — first run `maude_letter_archive "<slug-of-the-old-letters-theme>"` (source `hooks/scripts/_maude-common.sh`; slug in single quotes, `[a-z0-9-]` only) and rewrite only after it archives or reports no prior letter — on any other refusal stop, the live letter may be the only copy. Then rewrite: your letter to your next self — what kind of partner you were, what you caught and missed, what she should do differently. Tone and judgment, not facts; ≤20 lines; leave the prior letter in place after a quiet session.
 4. Any destination the house-map registers as writable, in the format the user wrote there.
 
 ## The house-map — your inventory

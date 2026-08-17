@@ -32,6 +32,12 @@ test_start "empty letter → rc 2 (nothing worth archiving)"
 : > "$LETTER"
 maude_letter_archive some-theme >/dev/null
 assert_exit "$?" "2" "empty letter refused"
+
+test_start "no letter beats a bad slug: empty slug + no letter → rc 2"
+# A first-ever rest with a placeholder slug must hear NO_PRIOR_LETTER (safe
+# to proceed), not ARCHIVE_FAILED (told to stop).
+maude_letter_archive "" >/dev/null
+assert_exit "$?" "2" "guard order: letter existence first"
 rm -f "$LETTER"
 
 printf '# Letter from Maude — 2026-08-01\n\nHold the line on the gate.\n' > "$LETTER"
@@ -95,9 +101,72 @@ else
   _fail "expected today's stamp, got rc=$RC out='$OUT4'"
 fi
 
+test_start "two dates on the header line → ONE file, first date, no newline in the name"
+# grep -o prints every match on its own line; unheaded, that put a literal
+# newline byte inside the archive filename while still reporting success.
+printf '# Letter from Maude — 2026-08-03 (after 2026-08-02 review)\n\nBody.\n' > "$LETTER"
+OUT6="$(maude_letter_archive twin-dates)"
+RC=$?
+if [ "$RC" -eq 0 ] && [ "$OUT6" = "$UD/letter-from-maude-2026-08-03-twin-dates.md" ] \
+   && [ -f "$OUT6" ]; then
+  _pass
+else
+  _fail "expected single clean name, got rc=$RC out='$OUT6'"
+fi
+
+test_start "a date in the BODY does not name the copy (header line only)"
+printf 'No header here.\nSomething happened on 2026-01-15 though.\n' > "$LETTER"
+OUT7="$(maude_letter_archive body-date)"
+RC=$?
+if [ "$RC" -eq 0 ] && [ "$OUT7" = "$UD/letter-from-maude-$TODAY-body-date.md" ]; then
+  _pass
+else
+  _fail "expected today's stamp (not the body's 2026-01-15), got rc=$RC out='$OUT7'"
+fi
+
+test_start "a newline inside the slug becomes a hyphen, never a filename byte"
+# sed is line-oriented and never sees \n; the tr pass has to catch it first.
+printf '# Letter from Maude — 2026-08-04\n\nBody.\n' > "$LETTER"
+OUT8="$(maude_letter_archive "$(printf 'line1\nline2')")"
+RC=$?
+if [ "$RC" -eq 0 ] && [ "$OUT8" = "$UD/letter-from-maude-2026-08-04-line1-line2.md" ]; then
+  _pass
+else
+  _fail "expected hyphenated single-line name, got rc=$RC out='$OUT8'"
+fi
+
+test_start "cmp(1) absent but cp fine → rc 0 (python3 read-back, ritual not wedged)"
+# The inverse failure mode: 'compare tool missing' must never masquerade as
+# 'copy failed' and permanently block the letter step on a cmp-less box.
+printf '# Letter from Maude — 2026-08-05\n\nBody.\n' > "$LETTER"
+NOCMP="$(make_no_binary_bin cmp)"   # the sandbox never links cmp; cp is present
+OUT9="$(PATH="$NOCMP" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_letter_archive no-cmp-box' 2>/dev/null)"
+RC=$?
+if [ "$RC" -eq 0 ] && [ "$OUT9" = "$UD/letter-from-maude-2026-08-05-no-cmp-box.md" ] \
+   && cmp -s "$LETTER" "$OUT9"; then
+  _pass
+else
+  _fail "expected success via python3 fallback, got rc=$RC out='$OUT9'"
+fi
+rm -rf "$NOCMP"
+
+test_start "a cp that lands WRONG bytes and exits 0 → rc 3 (read-back really compares)"
+printf '# Letter from Maude — 2026-08-06\n\nOnly copy.\n' > "$LETTER"
+BADCP="$(make_no_binary_bin cp)"
+printf '#!/usr/bin/env bash\nprintf garbage > "$2"\nexit 0\n' > "$BADCP/cp"
+chmod +x "$BADCP/cp"
+OUT10="$(PATH="$BADCP" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_letter_archive liar-cp' 2>/dev/null)"
+RC=$?
+if [ "$RC" -eq 3 ] && [ -z "$OUT10" ]; then
+  _pass
+else
+  _fail "expected rc 3 on a half-landed copy, got rc=$RC out='$OUT10'"
+fi
+rm -rf "$BADCP" "$UD/letter-from-maude-2026-08-06-liar-cp.md"
+
 test_start "a copy that does not land → rc 3, success is not reported"
-# PATH sandbox without cp (and without cmp): the copy cannot happen and the
-# read-back cannot pass — the helper must refuse, not print a path.
+# PATH sandbox without cp: nothing lands, and the read-back (python3 filecmp
+# here, since the sandbox never links cmp) finds no archive — refuse, no path.
 printf '# Letter from Maude — 2026-08-02\n\nOnly copy.\n' > "$LETTER"
 NOCP="$(make_no_binary_bin cp)"
 OUT5="$(PATH="$NOCP" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_letter_archive only-copy' 2>/dev/null)"
@@ -115,6 +184,16 @@ if grep -q 'maude_letter_archive' "$REST" && grep -q 'ARCHIVE_FAILED' "$REST"; t
   _pass
 else
   _fail "rest.md does not gate the rewrite on maude_letter_archive"
+fi
+
+test_start "the maude AGENT's rest instruction archives too (the second door)"
+# agents/maude.md carries its own operative 'rewrite the letter' text; the
+# 2026-08-17 overwrite would come right back through it if it drifts.
+AGENT="$(dirname "$0")/../agents/maude.md"
+if grep -q 'maude_letter_archive' "$AGENT"; then
+  _pass
+else
+  _fail "agents/maude.md rewrites the letter with no archive step"
 fi
 
 export HOME="$OLD_HOME"
