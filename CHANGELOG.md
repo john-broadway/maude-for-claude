@@ -1,11 +1,104 @@
-<!-- Version: 0.28.0 -->
+<!-- Version: 0.29.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-08-14 -->
+<!-- Revised: 2026-08-17 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.29.0 — promotion belongs to him, and the store nobody counted
+
+The consent gate. `rest()` used to promote anything in the buffer scoring 0.6 or better
+straight into canon — including what Claude had merely *inferred* about the homeowner, on
+a score Claude gave itself. An importance score is the agent's opinion of itself, and an
+opinion is not a mandate. So now only the user's own words consolidate on their own
+(writing down what he said is not a judgement call), an agent inference never auto-promotes
+at any score, and `/maude:promote` puts the list in front of him. `dismiss` is the other
+half: a list you can only say yes to is not a choice, it is a nag that returns every wake.
+
+Then twelve independent adversarial passes across nine review rounds, and a last one against the artifact that ships, each round breaking the one before it, and the honest
+accounting is that the gate itself held every time — what kept failing was everything
+around it. **The other door into canon:** `remember()` wrote there directly, defaulting to
+`user-verbatim`, never checking for a credential shape; two lenses found it independently,
+and the same string `capture` refused with exit 2 was taken with exit 0 and replayed under
+"HIS WORDS". **His own words fell through the floor:** `forget()` filtered on importance
+alone, so something he actually said, scored low, went to an archive no command lists.
+**One NaN bricked the loop:** SQLite stores a NaN REAL as NULL, and the comparison then
+raised TypeError in both `rest()` and `pending()` on every later call, for the whole tape,
+with the SessionEnd hook piping to /dev/null and exiting 0 regardless. **And the fix for a gap was a denial of service on the hot path:** the credential table runs
+on every prompt through the voice hook, whose budget is five seconds and whose contract is
+fail-open. A pattern added during this very round backtracked quadratically — 8s on a 32KB
+single-line paste — so an ordinary big paste stalled the prompt AND got the scan killed
+mid-flight, passing exactly the input most likely to hold a token. Nine passes had asked
+whether the guard catches the right things; none had asked what it costs. Bounded: 0.026s
+at 32KB, 0.161s at 200KB, real credential URIs still caught.
+
+**And the payload did not need to open a block — it could erase the label above it:**
+escaping newlines was the instance, not the class. `\x1b[2K\x1b[1A` starts no line; it
+erases the one already there and moves the cursor up, overwriting the very label naming
+the words as Claude's. Nothing that can move a cursor, erase a line or reorder what a
+reader sees reaches the screen now. The credential guard had the same shape from the
+other side — it normalised characters SHAPED like a space and never considered ones with
+no shape at all, so a zero-width character between each letter of a token defeated every
+pattern while the credential stayed visually intact. Those are deleted before matching.
+
+**And then the content forged the label:** `wake` echoed stored text raw, so a canon row
+whose TEXT contained the literal "HIS WORDS" header rendered as a second, authentic
+block — no exploit, just an inference captured, promoted by his own hand, and arriving in
+every future session's context wearing his voice, with this release's own vocabulary as
+the payload. Data is escaped before it becomes presentation now, at all nine print sites.
+Rounds one to five asked what may ENTER the store; round six asked what LABEL the output
+carries; the forgery lived in the seam between them.
+
+**And the gate held the door, then mislabelled what came through it:** `wake` — the one
+surface a waking session actually reads — printed every canon row under "HIS WORDS (his
+rendering, use verbatim, never re-render)", including an inference he had merely approved.
+`promote.md` had promised the opposite in writing. True in the table, false on the screen.
+The brief now splits by authority: his verbatim words in one block, Claude's wording that he
+approved in another, labelled and never quotable as his. Four rounds guarded which text may
+ENTER canon; nobody had checked the label on what came out. **And the
+announcement had no ears:** the new "N awaiting your word" was printed into that same
+/dev/null, so the queue built to stop being a silent pile was one. It is said at wake now,
+where it is read.
+
+**The store nobody counted.** The review brief said the tape had canon, voice and events.
+It has five tables, four of them holding his words, and `rejections` — the one `wake` prints
+*verbatim*, phrase and reason both, at every wake — had no guard at any layer. Four reviewers
+checked the three they were handed. A wrong premise in the dispatch outlives every reviewer
+who inherits it, and a reviewer can falsify a claim you make but not one you never made.
+
+So the next brief handed a reviewer a `grep`-generated inventory instead of a typed list, and
+the generator was wrong: it searched `INSERT INTO`, while the voice writer is
+`INSERT OR IGNORE INTO`. The inventory said three stores where the tree has five, and the
+file whose label fields were still unguarded was the one it hid. A generated list beats a
+typed one only if the generator is right — the durable version of the lesson is the test that
+reads each writer's signature and fails until every string field it accepts is attacked.
+
+**The live door was letting the machine talk.** Found because he read a claim and asked
+where it came from. `harvest` applies the extraction law so machine-generated turns never
+enter the corpus that measures his voice; the capture hook shipped in v0.28.0 applied
+normalisation and the secret filter and *not* that law, while its docstring said "same as
+harvest". On the author's box, 7 of the 26 rows that hook had ever captured were task
+notifications: 96KB, median 12,448 characters against a real typed median of 42. v0.28.0
+diagnosed the corpus as two voices and cut it back to one; this door was refilling it from
+the other end, visible only in sessions that run subagents, which is why the backfill never
+saw it.
+
+The guard grew JWTs, bearer headers, credentials in a URI, Stripe, SendGrid, DigitalOcean,
+npm and AWS secret keys, and case-insensitivity — `PASSWORD=` had walked through while
+`password:` was caught. It did *not* grow the widened labelled-value class a lens asked for:
+measured against the real 2,392-row corpus that fired on 20 rows of pasted code, and a guard
+that cries wolf on his own paste habit is the one he learns to ignore. Both engines normalise
+Unicode spaces at the input now, because python's `\s` matches U+00A0 and POSIX `[:space:]`
+does not, so a credential pasted out of rich text was refused by the tape and waved through
+by the prompt alarm. Final measurement: zero false positives on the real corpus.
+
+Docstrings stopped overclaiming. `promote()` is the buffer's door, not "the only door from
+inference to canon"; nothing distinguishes his hand on the CLI from an agent running it, and
+the gate binds the honest flow. Suite 198 → 307.
 
 ---
 

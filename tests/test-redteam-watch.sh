@@ -68,6 +68,23 @@ agent_done "Haiku cadence judge on my draft" "a second lens on a draft written b
 assert_ne "$(last_rt)" "null" "second lens stamped"
 
 # The real negative, taken from a real transcript: an IMPLEMENTER dispatch.
+# Measured 2026-08-17 against 8 real lens dispatches: only 1 stamped. The other 7 asked
+# the reviewer to "build the table" of findings, and `build the` in BUILDER_RE read that
+# as an implementer. The motivating negative for that phrase ("Build 7e first-light
+# wiring") does not even contain it — "implementer" is what catches that one. So the
+# phrase was costing real stamps and earning nothing.
+test_start "an adversarial brief told to BUILD THE TABLE of findings still stamps"
+reset_all
+agent_done "Lens 2: guard and visibility contract" \
+           "You are an independent adversarial reviewer. Build the complete table by grepping for every write, then verify each by execution. Try to break the claim." | bash "$RT" stamp
+assert_ne "$(last_rt)" "null" "a lens asked to build a findings table must still stamp"
+
+test_start "an adversarial brief told to BUILD THE LIST still stamps"
+reset_all
+agent_done "Round-4 fix review" \
+           "Attack the fixes. Build the coverage list from your own grep and prove each row by running it." | bash "$RT" stamp
+assert_ne "$(last_rt)" "null" "build the list must not read as an implementer"
+
 test_start "a BUILD dispatch does NOT stamp (the implementer is not a lens)"
 reset_all
 agent_done "Build 7e first-light wiring TDD" \

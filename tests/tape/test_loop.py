@@ -1,6 +1,7 @@
 """The whole system as a loop: WAKE plays the tape -> WORK captures -> REST consolidates+forgets
 -> WAKE plays the now-complete tape. Plus the self-* properties: autonomous (rest runs the cycle),
-autolearning (rest promotes signal to canon), autohealing (audit catches a rejected phrasing loose
+autolearning (rest promotes the USER's words to canon; what the agent merely inferred waits for
+his word — see test_promotion_is_his.py), autohealing (audit catches a rejected phrasing loose
 on a real surface). Generic example data — no personal words in the public plugin.
 """
 import pathlib
@@ -20,17 +21,23 @@ def _seed(t):
                topic="maude-identity", source="design")
 
 
-def test_rest_consolidates_signal_and_forgets_noise(tmp_path):
+def test_rest_consolidates_his_words_forgets_noise_and_holds_my_inference(tmp_path):
+    """Note `authority`, not `source`. Source is where a line came from; authority is whose
+    words they are. Only the second one may open the door to canon by itself."""
     t = Tape(tmp_path / "t.db")
-    sig = t.capture("I own what I build", topic="own", source="user", importance=0.8)
+    his = t.capture("I own what I build", topic="own", source="user",
+                    importance=0.8, authority="user-verbatim")
+    mine = t.capture("so he probably wants the same for the next one", topic="own",
+                     source="agent", importance=0.8)
     noise = t.capture("ok next", topic="misc", source="s", importance=0.1)
 
     report = t.rest()
 
-    assert sig in report.consolidated      # autolearning: signal became canon
-    assert noise in report.forgotten       # forget: noise archived
+    assert his in report.consolidated              # his words became canon
+    assert noise in report.forgotten               # forget: noise archived
     assert any("own what I build" in e.text for e in t.recall("own"))
-    assert t.buffered() == []              # the buffer is drained
+    assert [e.id for e in t.pending()] == [mine]   # my read of him waits for his word
+    assert mine not in report.consolidated         # equal importance, different authority
 
 
 def test_wake_plays_current_truth_not_the_cut_scene(tmp_path):

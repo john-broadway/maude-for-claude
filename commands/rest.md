@@ -44,6 +44,45 @@ MAP="$SELF/house-map.md"
    *who you're working with* (how they communicate, their rhythm, recurring focuses, the help
    they want), fold it into `user-global` `identity.md` — observed, never invented.
 
+2b. **Put the session on the tape.** The digest goes to markdown; the *durable* half goes to
+   the tape, and until this step runs the tape's buffer is empty and its rest loop
+   consolidates nothing. Capture two kinds of thing, and nothing else:
+
+   - **His own words**, where he said something that is still true tomorrow — a ruling, a
+     correction, a standing preference. `--authority user-verbatim` (or `user-paraphrase`
+     if you are compressing rather than quoting). These consolidate on their own, because
+     writing down what he said is not a judgement call.
+   - **What you inferred** — a maxim that fired, a trap that cost time, a pattern you
+     noticed. Leave the default `agent-inference`. These will **not** become canon; they
+     wait for `/maude:promote`. That is the point, not a limitation.
+
+   ```bash
+   DB="$SELF/tape/tape.db"
+   # HIS words — pass the authority explicitly, or they queue behind his own permission.
+   [ -f "$DB" ] && python3 -m maude_tape capture "<one line he said>" --db "$DB" \
+     --topic "<short-topic>" --source "session-$(date +%F)" --importance 0.7 \
+     --authority user-verbatim
+   # What YOU inferred — the default is agent-inference; do not pass the flag.
+   [ -f "$DB" ] && python3 -m maude_tape capture "<one line you noticed>" --db "$DB" \
+     --topic "<short-topic>" --source "session-$(date +%F)" --importance 0.7
+   ```
+
+   Rules: **one line per thing**, in the words that would actually help next time. Prefer
+   linking a new instance onto an existing maxim over minting a new one — if the vault
+   already says it, capture the *incident*, not a reworded law. Importance is your honest
+   read of durability, not enthusiasm; below 0.3 is archived as noise at rest — that floor
+   applies to what YOU inferred, never to his own words, which stay on the pending list
+   whatever you scored them. Capture nothing if the session taught nothing.
+
+2c. **Close the tape's loop, and read back what it did.** `rest` consolidates his words and
+   archives your noise; `pending` is the list that needs his eyes. The Format block below
+   reports these two numbers, so run the commands rather than estimating them.
+
+   ```bash
+   [ -f "$DB" ] && python3 -m maude_tape rest --db "$DB"
+   [ -f "$DB" ] && python3 -m maude_tape pending --db "$DB"
+   ```
+
 3. **Close-the-loop check** — for each watched-list entry touched this session:
    - Is the file in a clean state? (no lingering TODO, no half-removed code)
    - Was there an associated decision worth logging?
@@ -92,6 +131,7 @@ MAP="$SELF/house-map.md"
 Session wrapped.
 
 Saved: now.md, today-<date>.md, recent.md, <any other destinations>
+Tape: <n> of his words consolidated, <m> awaiting your word (/maude:promote)
 Letter: rewritten for next Maude   ← or "prior letter left in place (quiet session)"
 
 Open loops:

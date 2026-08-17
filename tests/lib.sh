@@ -12,8 +12,29 @@
 # use maude_project_dir which prefers that env var, so all .maude/plugin/
 # state lands inside $TEST_TMP and cleans up at teardown. No state leaks
 # between tests.
+#
+# ENV isolation is the other half of that promise, and it was missing. Earned
+# 2026-08-17: an ambient SHIP_SOURCE_REF — exported to build a release — leaked
+# into test-ship.sh's subprocesses and turned 18 passing tests into 2 passed /
+# 16 failed, with nothing wrong in the code. A gate whose verdict depends on the
+# caller's shell is not a gate; it also means a seam left on from an earlier
+# command silently changes what the suite proves. (MAUDE_RUN_GOVERNOR was in
+# fact set in the shell that found this.)
+#
+# Derived from the environment, never a typed list: there are 50-odd seams and a
+# hand-written list is the thing that keeps falling behind. Tests that WANT a seam
+# still set it per-invocation (FOO=bar cmd), which this cannot disturb.
 
 set +e
+
+# The one exception, and it is a safety one: MAUDE_EYE_BLINK is the eye's
+# recursion guard — hooks check it to stay inert inside a blink subprocess.
+# Clearing it could let a test run spawn the very recursion it prevents.
+for _seam in $(env | sed -n 's/^\(\(MAUDE\|SHIP\)_[A-Za-z0-9_]*\)=.*/\1/p'); do
+    [ "$_seam" = "MAUDE_EYE_BLINK" ] && continue
+    unset "$_seam"
+done
+unset _seam
 
 # Find the maude project root from this lib's path: tests/lib.sh → ..
 MAUDE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

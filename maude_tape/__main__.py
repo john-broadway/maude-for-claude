@@ -1,7 +1,11 @@
-"""CLI: python3 -m maude_tape {seed,wake,check,capture,reject,remember,rest,audit}.
+"""CLI: python3 -m maude_tape {seed,wake,check,capture,reject,remember,rest,pending,promote,audit}.
 
 The bridge Maude's bash hooks call so the tape fires on its own — wake plays it, check
 gates a draft (exit 2 = blocked), rest closes the loop, audit heals drift on live surfaces.
+
+`pending` and `promote` are the user's half: rest consolidates HIS words and archives noise,
+but an agent inference never reaches canon on a score the agent gave itself. It waits on the
+pending list until he promotes it.
 """
 from __future__ import annotations
 
@@ -11,7 +15,43 @@ import os
 import sqlite3
 import sys
 
-from .tape import Tape
+from .tape import Tape, _score, looks_secretish
+
+
+def _one_line(text: str) -> str:
+    """Render stored content so it can never counterfeit one of our own headers.
+
+    Everything printed by `wake` is injected into a future session's context, and `pending`
+    is the screen where his hand is actually asked for. Both echoed stored text raw, so a
+    row whose TEXT contained the literal "HIS WORDS (his rendering...)" header rendered as a
+    second, authentic-looking block — reached through the entirely honest flow, with this
+    release's own vocabulary as the payload. Four rounds guarded which text may ENTER the
+    store and one guarded the LABEL on the way out; none had asked whether the content could
+    forge the label.
+
+    Anything carrying a line break is escaped to a single line — the `!r` idiom already used
+    for rejected phrases two lines below. Content then cannot begin a line of its own, so it
+    cannot open a block. Measured against the real tape first: all ten canon rows are single
+    line, so this costs the homeowner nothing today and bounds the damage when it does fire.
+    """
+    return text if text == _sanitised(text) else repr(text)
+
+
+# Anything that can move a cursor, erase a line, or reorder what a reader sees. ESC is the
+# one that matters: \x1b[2K\x1b[1A erases the current line and moves up, so a stored value
+# can overwrite the very label naming it as Claude's — the forgery again, through a channel
+# a "no line may BEGIN with a header" assertion structurally cannot see, because the escape
+# bytes begin the line and the header text does not.
+_UNSAFE = frozenset(
+    [chr(c) for c in range(0x20)] + [chr(0x7f)] + [chr(c) for c in range(0x80, 0xa0)]
+    + ["\u200b", "\u200c", "\u200d", "\u2060", "\ufeff",          # zero-width
+       "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",          # bidi overrides
+       "\u2066", "\u2067", "\u2068", "\u2069"]
+)
+
+
+def _sanitised(text: str) -> str:
+    return "".join(c for c in text if c not in _UNSAFE)
 
 
 def _read(text_arg: str | None) -> str:
@@ -22,9 +62,19 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="maude_tape")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    for name in ("wake", "rest"):
+    for name in ("wake", "rest", "pending"):
         sp = sub.add_parser(name)
         sp.add_argument("--db", required=True)
+
+    pr = sub.add_parser("promote")   # his hand on the buffer's door into canon
+    pr.add_argument("--db", required=True)
+    pr.add_argument("--id", required=True, type=int,
+                    help="event id from `pending` — only a buffered event can be promoted")
+
+    di = sub.add_parser("dismiss")   # his 'no' — the list needs both answers
+    di.add_argument("--db", required=True)
+    di.add_argument("--id", required=True, type=int,
+                    help="event id from `pending` — archived, never deleted")
 
     sd = sub.add_parser("seed")
     sd.add_argument("--db", required=True)
@@ -45,6 +95,11 @@ def main(argv: list[str] | None = None) -> int:
     cap.add_argument("--topic", required=True)
     cap.add_argument("--source", required=True)
     cap.add_argument("--importance", type=float, default=0.5)
+    # Defaults to the agent's own read, which never auto-promotes. Pass user-verbatim (or
+    # user-paraphrase) when recording what the USER actually said — his words are not
+    # something to make him approve.
+    cap.add_argument("--authority", default="agent-inference",
+                     choices=("agent-inference", "user-paraphrase", "user-verbatim"))
 
     rej = sub.add_parser("reject")
     rej.add_argument("--db", required=True)
@@ -57,6 +112,10 @@ def main(argv: list[str] | None = None) -> int:
     rem.add_argument("--db", required=True)
     rem.add_argument("--topic", required=True)
     rem.add_argument("--source", required=True)
+    # Writes canon directly, so it has always filed as his words. The flag makes that
+    # choice sayable instead of implicit; the default keeps existing callers unchanged.
+    rem.add_argument("--authority", default="user-verbatim",
+                     choices=("agent-inference", "user-paraphrase", "user-verbatim"))
 
     aud = sub.add_parser("audit")
     aud.add_argument("--db", required=True)
@@ -97,19 +156,67 @@ def main(argv: list[str] | None = None) -> int:
         if tape.wake().canon_texts:
             print("tape already seeded")
             return 0
-        with open(args.source, encoding="utf-8") as fh:
-            spec = json.load(fh)
+        try:
+            with open(args.source, encoding="utf-8") as fh:
+                spec = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"seed refused: cannot read {args.source!r}: {exc}", file=sys.stderr)
+            return 2
+        if not isinstance(spec, dict) or not isinstance(spec.get("ops", []), list):
+            print("seed refused: expected an object with an \"ops\" list. Nothing written.",
+                  file=sys.stderr)
+            return 2
+        # Scan the WHOLE file before writing any of it. remember() and reject() each
+        # commit on their own, so refusing partway through left the ops before it durable
+        # behind a "refused" message — and seed's re-entry guard only asks whether canon
+        # is empty, so a rerun would silently skip whatever had already landed.
+        for op in spec.get("ops", []):
+            if not isinstance(op, dict):
+                print(f"seed refused: every op must be an object, got {type(op).__name__}. "
+                      "Nothing was written.", file=sys.stderr)
+                return 2
+            # EVERY string in the op. A key list was hand-picked twice and came up short
+            # twice — first missing the rejection fields, then topic/source/authority. The
+            # op's own values are the list; stop maintaining a second one beside them.
+            for key, value in op.items():
+                if isinstance(value, str) and looks_secretish(value):
+                    print(f"seed refused: op {op.get('op')!r} carries a credential shape "
+                          f"in {key!r}. Nothing was written.", file=sys.stderr)
+                    return 2
         for op in spec.get("ops", []):
             kind = op.get("op")
-            if kind == "remember":
-                tape.remember(op["text"], topic=op["topic"], source=op["source"],
-                              authority=op.get("authority", "user-verbatim"))
-            elif kind == "correct":
-                tape.consolidate_correction(
-                    rejected=op["rejected"], reason=op["reason"],
-                    corrected_to=op["corrected_to"], topic=op["topic"], source=op["source"])
-            elif kind == "reject":
-                tape.reject(op["phrase"], reason=op["reason"], source=op["source"])
+            try:
+                if kind == "remember":
+                    tape.remember(op["text"], topic=op["topic"], source=op["source"],
+                                  authority=op.get("authority", "user-verbatim"))
+                    continue
+                if kind == "correct":
+                    tape.consolidate_correction(
+                        rejected=op["rejected"], reason=op["reason"],
+                        corrected_to=op["corrected_to"], topic=op["topic"],
+                        source=op["source"])
+                    continue
+            except KeyError as exc:
+                # A required field is missing. Was a bare KeyError on exit 1, outside the
+                # documented {0,2,3} — the same class the sqlite and OverflowError paths
+                # already closed, in the block right beside them.
+                print(f"seed refused: op {op.get('op')!r} is missing {exc}",
+                      file=sys.stderr)
+                return 2
+            except ValueError as exc:
+                # Backstop only — the pre-scan above is what makes the refusal atomic.
+                # If this fires, the door refused for a reason the scan cannot see, and
+                # earlier ops in this file ARE already written. Say so.
+                print(f"seed refused mid-file: {exc}\n"
+                      f"WARNING: ops before this one are already written to {args.db!r}.",
+                      file=sys.stderr)
+                return 2
+            if kind == "reject":
+                try:
+                    tape.reject(op["phrase"], reason=op["reason"], source=op["source"])
+                except ValueError as exc:
+                    print(f"seed refused mid-file: {exc}", file=sys.stderr)
+                    return 2
             else:
                 print(f"unknown seed op: {kind!r}", file=sys.stderr)
                 return 2
@@ -122,18 +229,40 @@ def main(argv: list[str] | None = None) -> int:
         if not brief.canon_texts and not rejections and not brief.identity:
             return 0  # empty tape (fresh install) — play nothing
         print("=== THE TAPE — play at wake ===")
-        if brief.canon_texts:
+        # Split by authority. His verbatim words are the only ones that may be replayed as
+        # his; a rendering he approved, or an inference he promoted, is Claude's wording and
+        # saying otherwise hands his voice away. promote.md already promised authority is
+        # preserved — it was true in the table and false on the screen.
+        entries = brief.canon_entries or [(t, "user-verbatim") for t in brief.canon_texts]
+        his = [t for t, a in entries if a == "user-verbatim"]
+        ours = [(t, a) for t, a in entries if a != "user-verbatim"]
+        if his:
             print("\nHIS WORDS (his rendering — use verbatim, never re-render):")
-            for text in brief.canon_texts:
-                print(f"  • {text}")
+            for text in his:
+                print(f"  • {_one_line(text)}")
+        if ours:
+            # Header deliberately does NOT contain the substring "HIS WORDS" — a reader splitting
+            # on that string would otherwise land inside this block. Never substring-match.
+            print("\nCLAUDE'S WORDING, APPROVED BY HIM (never quote as his):")
+            for text, authority in ours:
+                print(f"  ◦ {_one_line(text)}  [{authority}]")
         if rejections:
             print(f"\nNEVER RENDER ({len(rejections)}):")
             for hit in rejections:
-                print(f"  ✗ {hit.phrase!r} — {hit.reason}")
+                print(f"  ✗ {hit.phrase!r} — {_one_line(hit.reason)}")
         if brief.identity:
             print("\nWHO I AM:")
             for text in brief.identity:
-                print(f"  • {text}")
+                print(f"  • {_one_line(text)}")
+        # The queue has to be said where there are ears. `rest` announces it at SessionEnd,
+        # into a hook that redirects to /dev/null — so the count was built and never heard.
+        # Wake is read. Observer discipline: a broken buffer costs the line, never the tape.
+        try:
+            waiting = len(tape.pending())
+        except Exception:
+            waiting = 0
+        if waiting:
+            print(f"\n{waiting} awaiting your word — see them with /maude:promote")
         return 0
 
     if args.cmd == "check":
@@ -188,36 +317,106 @@ def main(argv: list[str] | None = None) -> int:
             return 3
         hits = tape.check_draft(draft)
         for hit in hits:
-            print(f"✗ REJECTED: {hit.phrase!r} — {hit.reason} [{hit.source}]")
+            print(f"✗ REJECTED: {hit.phrase!r} — {_one_line(hit.reason)} "
+                  f"[{_one_line(hit.source)}]")
         rc = 2 if hits else 0  # fail closed: a rejected line blocks
 
         _emit_voice_report()
         return rc
 
     if args.cmd == "capture":
-        eid = tape.capture(_read(args.text), topic=args.topic,
-                           source=args.source, importance=args.importance)
+        try:
+            eid = tape.capture(_read(args.text), topic=args.topic, source=args.source,
+                               importance=args.importance, authority=args.authority)
+        except ValueError as exc:
+            # Refuse inside the documented {0,2,3}. An uncaught raise exits 1 and reads as
+            # a broken tape rather than a guard that did its job.
+            print(f"capture refused: {exc}", file=sys.stderr)
+            return 2
         print(f"captured event {eid}")
         return 0
 
+    if args.cmd == "dismiss":
+        try:
+            tape.dismiss(args.id)
+        except ValueError as exc:
+            print(f"dismiss refused: {exc}", file=sys.stderr)
+            return 2
+        print(f"dismissed event {args.id} — archived, not deleted")
+        return 0
+
     if args.cmd == "reject":
-        tape.reject(args.phrase, reason=args.reason, source=args.source)
+        try:
+            tape.reject(args.phrase, reason=args.reason, source=args.source)
+        except ValueError as exc:
+            print(f"reject refused: {exc}", file=sys.stderr)
+            return 2
         print(f"rejected {args.phrase!r}")
         return 0
 
     if args.cmd == "remember":
-        rid = tape.remember(_read(args.text), topic=args.topic, source=args.source)
+        try:
+            rid = tape.remember(_read(args.text), topic=args.topic, source=args.source,
+                                authority=args.authority)
+        except ValueError as exc:
+            # Same contract as capture: refuse inside the documented {0,2,3}, never an
+            # uncaught raise on exit 1 that reads as a broken tape.
+            print(f"remember refused: {exc}", file=sys.stderr)
+            return 2
         print(f"remembered {rid}")
         return 0
 
     if args.cmd == "rest":
         report = tape.rest()
-        print(f"rest: consolidated {len(report.consolidated)}, forgot {len(report.forgotten)}")
+        waiting = len(tape.pending())
+        line = (f"rest: consolidated {len(report.consolidated)}, "
+                f"forgot {len(report.forgotten)}")
+        if report.refused:
+            # Computed and never printed would be a count nobody reads.
+            line += f", {len(report.refused)} refused at the canon door"
+        # Say it out loud. A queue nobody is told about is just a pile.
+        print(line + (f", {waiting} awaiting your word" if waiting else ""))
+        return 0
+
+    if args.cmd == "pending":
+        waiting = tape.pending()
+        if not waiting:
+            print("pending: nothing is waiting on you")
+            return 0
+        print(f"pending: {len(waiting)} awaiting your word — promote with --id <n>")
+        for e in waiting:
+            # A row can reach this list precisely BECAUSE its score is unreadable (a stored
+            # NaN comes back as NULL). Formatting it as a number crashed the one command the
+            # ritual runs — the library method survived, so the suite never saw it.
+            score = _score(e.importance)
+            shown = "unscored" if score is None else f"importance {score:g}"
+            if e.status == "refused":
+                shown += ", refused at the canon door"
+            # This is the screen where his consent is actually asked. wake was split by
+            # authority this release; the queue where he JUDGES inference against fact
+            # showed his own low-scored words and a pure inference identically.
+            print(f"  [{e.id}] {_one_line(e.topic)} ({shown}, {e.authority}) "
+                  f"— {_one_line(e.text)}")
+        return 0
+
+    if args.cmd == "promote":
+        try:
+            tape.promote(args.id)
+        except ValueError as exc:
+            # Fail closed and loud: a promotion that silently did nothing would let him
+            # believe he had kept something.
+            print(f"promote refused: {exc}", file=sys.stderr)
+            return 2
+        print(f"promoted event {args.id} into canon")
         return 0
 
     if args.cmd == "audit":
-        with open(args.surfaces, encoding="utf-8") as fh:
-            surfaces = json.load(fh)
+        try:
+            with open(args.surfaces, encoding="utf-8") as fh:
+                surfaces = json.load(fh)
+        except (OSError, ValueError) as exc:
+            print(f"audit: cannot read {args.surfaces!r}: {exc}", file=sys.stderr)
+            return 2
         breaches = tape.audit(surfaces)
         for br in breaches:
             print(f"✗ BREACH {br.surface}: {br.phrase!r} live — {br.reason}")
