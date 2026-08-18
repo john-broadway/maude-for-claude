@@ -1,5 +1,5 @@
-<!-- Version: 0.29.0 -->
-<!-- Revised: 2026-08-17 -->
+<!-- Version: 0.29.1 -->
+<!-- Revised: 2026-08-18 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Security Policy

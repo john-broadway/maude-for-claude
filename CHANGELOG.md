@@ -1,6 +1,6 @@
-<!-- Version: 0.29.0 -->
+<!-- Version: 0.29.1 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-08-17 -->
+<!-- Revised: 2026-08-18 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,37 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.29.1 — the letter is archived before it is rewritten
+
+The live `letter-from-maude.md` is one user-global file shared by every lane, and the rest
+ritual's step 5 said *rewrite* with nothing before it — so on 2026-08-17, two lanes rested
+in one day and the second erased the first lane's letter. The 32 dated archive copies
+already on disk proved the archive convention was real practice; it just lived in habit,
+never in the tool, and a mechanism that lives in memory instead of the tool is the shape
+this house keeps booking as a defect.
+
+Now it is a step with a command. `maude_letter_archive` copies the live letter to a dated
+name before any rewrite: the date comes from the old letter's own header line (a date in
+the body never names the copy), the slug is sanitized to `[a-z0-9-]` with newlines caught
+by `tr` before the line-oriented `sed` ever sees them, a same-named archive holding
+different bytes is stepped past — never over — and the copy is read back byte-for-byte
+before success is reported, `cmp` when the box has it and python3 `filecmp` when it does
+not, so a missing compare tool can never masquerade as a failed copy and wedge the ritual.
+Both doors gate on it: `commands/rest.md` rewrites only on `ARCHIVED` or
+`NO_PRIOR_LETTER`, and `agents/maude.md` — whose own operative text still said plain
+*rewrite*, a second door two independent lenses caught — now archives first through the
+anchored helper, with an archive-first fallback even when the helper cannot load. No copy,
+no rewrite, ever.
+
+Three adversarial rounds, each fix sent back to the lens that found it, and the pattern
+held again: round 2's defect was in round 1's fix (an unanchored source path that made the
+agent's gate prose instead of mechanism), and the advisor caught round 3's (the new
+variable shadowed `$SLUG`, which rest.md's preamble already owns — same name, different
+thing, in the newest layer). Eighteen tests on the helper, both directions, including a
+lying `cp` that lands wrong bytes and exits 0. Also riding: the ship rail's `open` now
+finds the ship branch by its shape instead of trusting a name, closing the wrong-branch
+commit path from the 0.29.0 night. Suite 308 python, 55 shell files.
 
 ## v0.29.0 — promotion belongs to him, and the store nobody counted
 

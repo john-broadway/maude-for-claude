@@ -299,6 +299,22 @@ fi
 test_start "the ship branch still exists after the build returns"
 if git rev-parse --verify -q refs/heads/tret >/dev/null; then _pass; else _fail "build lost its branch"; fi
 
+# `open` used to auto-move to the ship branch only from `main`. Its sibling fix returns
+# build to the SOURCE branch, which is usually not main — so open accepted the source as
+# the PR head and gh refused with "no commits between main and <source>". Both fixes were
+# right; the seam between them was not.
+test_start "ship open REFUSES a source branch that is many commits ahead, not just main"
+git checkout -q -B feature-src main 2>/dev/null
+printf 'a\n' > f1.md && git add f1.md && git commit -qm "one"
+printf 'b\n' > f2.md && git add f2.md && git commit -qm "two"
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run 2>&1)"; RC=$?
+git checkout -q main
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'ahead of origin/main'; then
+  _pass
+else
+  _fail "accepted a multi-commit source branch as the PR head (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
 cd "$DIR" || exit 1
 teardown_test_env
 print_summary

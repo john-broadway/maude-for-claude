@@ -222,7 +222,13 @@ cmd_open() {
   done
   local branch
   branch="$(git rev-parse --abbrev-ref HEAD)" || die "cannot read current branch"
-  [ "$branch" != "main" ] || { b="$(git for-each-ref --sort=-committerdate --format="%(refname:short)" "refs/heads/ship-*" | head -1)"; [ -n "$b" ] && { printf "ship: open: moving to %s\\n" "$b"; git checkout -q "$b"; } || die "open: no ship branch found — run build first"; }
+  # A ship branch is not a NAME, it is a shape: exactly one commit ahead of origin/main.
+  # The old check only refused `main`, so when the sibling fix returned build to the
+  # SOURCE branch, open silently accepted the source as the PR head and gh refused with
+  # "no commits between main and <source>". Checking the shape catches that, and still
+  # accepts a build output under any name.
+  _ahead="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)"
+  [ "$_ahead" = "1" ] || die "open: '$branch' is $_ahead commit(s) ahead of origin/main; a ship branch is exactly 1. Run build, then check out the ship branch."
   [ -n "$title" ] || title="ship: $branch"
 
   local body draft_flag=""
