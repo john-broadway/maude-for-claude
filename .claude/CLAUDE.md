@@ -40,7 +40,7 @@ hooks/       — 8 lifecycle events + scripts
 | `~/.claude/maude/identity.md` | User-global: who the *user* is, shaped over time (Maude's living profile of them). |
 | `~/.claude/maude/patterns.md` | User-global: cross-project patterns about Claude. |
 | `~/.claude/maude/projects.json` | User-global: light index of walked workspaces. |
-| `~/.claude/maude/letter-from-maude.md` | User-global: Maude's letter to her next self — tone and judgment. Rewritten at `/maude:rest`, read on wake. |
+| `~/.claude/maude/letter-from-maude.md` | User-global: Maude's letter to her next self — tone and judgment. At `/maude:rest` the prior letter is archived to a dated copy, then this one is rewritten; read on wake. |
 
 ## Locked Decisions
 

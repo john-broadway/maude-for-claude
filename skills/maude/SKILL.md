@@ -71,7 +71,8 @@ The six mechanics underneath:
                                        identity.md  (about you, shaped over time)
                                        projects.json (index of every project she's walked)
                                        letter-from-maude.md (her letter to her next self —
-                                                     rewritten at /maude:rest, read on wake)
+                                                     archived then rewritten at /maude:rest,
+                                                     read on wake)
 
 <project>/.remember/                 ← remember plugin (if installed) — she READS
                                        all of: now.md, today-*.md, recent.md,
@@ -192,7 +193,7 @@ Maude ships knowing; everything else must be on the map to be written.
 **Arrival + rituals (Claude's missing rhythm):**
 - **`/maude:found`** — arrival inventory. Walks the workspace, populates/refreshes the house-map. Run this first in any new project. Idempotent.
 - **`/maude:wake`** — morning ritual: brief + house-walk + 1-3 things to know first.
-- **`/maude:rest`** — end-of-session ritual: digest + tomorrow's starting point + close-the-loop check + her letter to her next self (`letter-from-maude.md` — tone and judgment for the Maude who wakes next).
+- **`/maude:rest`** — end-of-session ritual: digest + tomorrow's starting point + close-the-loop check + her letter to her next self (`letter-from-maude.md` — tone and judgment for the Maude who wakes next, the prior letter archived to a dated copy first).
 
 **Recall + locate (Claude's missing memory):**
 - **`/maude:save [note]`** — composes a session digest, writes to Anthropic memory + every other destination in the house-map.

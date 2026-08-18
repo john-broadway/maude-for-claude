@@ -797,6 +797,55 @@ maude_identity_append() {
   ' "$id" > "$tmp" 2>/dev/null && mv "$tmp" "$id" || { rm -f "$tmp"; return 1; }
 }
 
+# Archive the live user-global letter to a dated copy BEFORE /maude:rest
+# rewrites it. The live letter is ONE file shared by every lane, so without
+# this step the second lane to rest in a day silently erases the first
+# (2026-08-17: two lanes rested, the earlier letter survived only because
+# that session still held its own text in context).
+# Usage: maude_letter_archive "<slug of the OLD letter's theme>"
+# Prints the archive path. rc 0 = archived (or already archived, byte-equal);
+# rc 1 = empty slug; rc 2 = nothing to archive (letter missing/empty);
+# rc 3 = the copy is NOT VERIFIED to have landed (absent, truncated, or
+# differing) — the caller must NOT rewrite the letter.
+# Byte-equality: cmp(1) when present, else python3 filecmp (python3 is the
+# plugin's stated floor, so "compare tool missing" can never wedge the rest
+# ritual into refusing a perfectly good archive).
+maude_files_equal() {
+  if command -v cmp >/dev/null 2>&1; then
+    cmp -s "$1" "$2"
+  else
+    python3 -c 'import sys, filecmp; sys.exit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else 1)' \
+      "$1" "$2" 2>/dev/null
+  fi
+}
+maude_letter_archive() {
+  local slug="$1" letter d base a n
+  # Nothing to archive beats a bad slug: a first-ever rest with a placeholder
+  # slug must hear "no prior letter", not "archive failed".
+  letter="$(maude_user_dir)/letter-from-maude.md"
+  [ -s "$letter" ] || return 2
+  # Newlines first (tr, not sed — sed is line-oriented and never sees them),
+  # then case-fold and collapse everything non-alphanumeric to hyphens.
+  slug="$(printf '%s' "$slug" | tr '\n\r' '  ' | tr '[:upper:]' '[:lower:]' \
+    | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+  [ -n "$slug" ] || return 1
+  # The letter format mandates a dated header on line 1, so ONLY that line's
+  # first date names the copy (a date in the body must not); a header-less
+  # letter is stamped with the day it was archived. head both sides: a line
+  # carrying two dates would otherwise put a newline inside the filename.
+  d="$(head -n 1 "$letter" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -n 1)"
+  [ -n "$d" ] || d="$(date +%Y-%m-%d)"
+  base="$(maude_user_dir)/letter-from-maude-$d-$slug"
+  a="$base.md"; n=2
+  # A same-named archive holding DIFFERENT bytes is someone else's letter:
+  # step past it, never over it.
+  while [ -e "$a" ] && ! maude_files_equal "$letter" "$a"; do a="$base-$n.md"; n=$((n+1)); done
+  [ -e "$a" ] || cp "$letter" "$a" 2>/dev/null
+  # Read the copy back — a cp that half-landed must not report success.
+  maude_files_equal "$letter" "$a" || return 3
+  printf '%s\n' "$a"
+}
+
 # Retention window (days) for the append-only artifacts in her closet: trace
 # JSONL and pre-compact snapshots. Default 30 — well past the 7-day window that
 # the remember plugin's recent.md reads, so a sweep never strands a recent read.
