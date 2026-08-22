@@ -14,7 +14,7 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
-command -v python3 >/dev/null 2>&1 || exit 0
+maude_python3_ok || exit 0
 
 DB="$(maude_project_dir)/.maude/plugin/tape/tape.db"
 [ -f "$DB" ] || exit 0

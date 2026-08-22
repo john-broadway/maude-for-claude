@@ -28,6 +28,10 @@ trap 'rm -rf "$STUB_DIR"' EXIT
 # non-zero exit.
 cat > "$STUB_DIR/python3" <<EOF
 #!/usr/bin/env bash
+# maude_python3_ok probes with \`-c pass\` before real work — answer it like a
+# working interpreter and keep it out of the capture, so assertions still see
+# the real invocation's args whatever order the calls land in.
+if [ "\${1:-}" = "-c" ] && [ "\${2:-}" = "pass" ]; then exit 0; fi
 { printf 'ARGS:'; printf ' %q' "\$@"; printf '\n'; printf 'STDIN:'; cat; printf '\n'; } > "$CAPTURE"
 if [ "\${STUB_MODE:-ok}" = "loud" ]; then
   printf 'noise on stdout\n'

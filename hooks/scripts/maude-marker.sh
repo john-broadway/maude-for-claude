@@ -26,8 +26,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # CLAUDE_PLUGIN_ROOT when a hook calls us; the repo root when John calls us by path.
 ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$DIR/../.." && pwd)}"
 
-if ! command -v python3 >/dev/null 2>&1; then
-  printf 'maude-marker: python3 is required and was not found on PATH.\n' >&2
+# Probe by executing, not presence: Windows resolves python3 to the Microsoft
+# Store alias stub, which `command -v` finds and which then runs nothing.
+if ! python3 -c 'pass' >/dev/null 2>&1; then
+  printf 'maude-marker: a working python3 is required and was not found on PATH.\n' >&2
   exit 2
 fi
 

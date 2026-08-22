@@ -1,4 +1,4 @@
-<!-- Version: 0.29.1 -->
+<!-- Version: 0.29.2 -->
 <!-- Created: 2026-06-18 CDT -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 

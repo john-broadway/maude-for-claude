@@ -15,7 +15,7 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
-command -v python3 >/dev/null 2>&1 || exit 0
+maude_python3_ok || exit 0
 
 MEM="$(maude_mem_dir)"
 [ -d "$MEM" ] || exit 0
