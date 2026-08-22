@@ -100,7 +100,7 @@ maude_marker_house() {
 
 # 0 (true) if $2 is a valid unspent link for key $1. CONSUMES it on success.
 maude_marker_verify() {
-  command -v python3 >/dev/null 2>&1 || return 1
+  maude_python3_ok || return 1
   PYTHONPATH="$PLUGIN_ROOT" python3 -m maude_marker verify "$1" "$2" \
     --state "$MARKER_STATE" --ledger "$MARKER_LEDGER" >/dev/null 2>&1
 }

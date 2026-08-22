@@ -580,6 +580,20 @@ maude_file_size() {
   printf '%s' "$s"
 }
 
+# True iff python3 actually RUNS — probe by executing, never by presence.
+# `command -v python3` passes on interpreters that then fail at the call site:
+# Windows resolves python3 to the Microsoft Store alias stub (present on every
+# box, executes nothing, exit 9009), and a macOS without Command Line Tools
+# ships a shim that dies the same way. A probe that answers the same whether
+# the interpreter works or not is not a check. Cached per-process so repeated
+# gates in one hook pay the interpreter start once.
+maude_python3_ok() {
+  if [ -z "${_MAUDE_PY3_OK:-}" ]; then
+    if python3 -c 'pass' >/dev/null 2>&1; then _MAUDE_PY3_OK=y; else _MAUDE_PY3_OK=n; fi
+  fi
+  [ "$_MAUDE_PY3_OK" = "y" ]
+}
+
 # Print FILE's sha256, or nothing (exit 1) when unreadable. sha256sum is GNU-only —
 # macOS ships `shasum` and BSD `md5` — so this hashes with python3 stdlib, which the
 # plugin floor already requires. Never prints a placeholder: a digest both sides could

@@ -1,11 +1,48 @@
-<!-- Version: 0.29.1 -->
+<!-- Version: 0.29.2 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-08-18 -->
+<!-- Revised: 2026-08-22 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.29.2 — the house without bash, and the interpreter that wasn't one
+
+The first field reports arrived as one sentence — *"his claude said she ain't working"* —
+and nothing else: no issue, no error text, no OS. The reproduction came from staging the
+shipped tree on a real family Windows box, and it explained the sentence exactly. On
+Windows without [Git for Windows](https://git-scm.com/downloads/win), `bash` on PATH is
+the **WSL stub in System32**; Claude Code (which runs bash hooks through Git Bash when
+present, PowerShell otherwise, since 2.1.120) hands it the hook path and the stub eats
+the backslashes: `/bin/bash: C:UsersYou...maude-session-start.sh: No such file or
+directory`, exit 127 — **every hook, every event, every session.** A Claude watching
+thirty of its own hooks fail nonstop reports exactly what was reported.
+
+No field in hooks.json conjures an interpreter, so the fix is the honest one: the README
+now states the Windows floor plainly (Git for Windows required), documents both failure
+shapes an adopter will actually see and where they surface (`/plugin` → Errors), covers
+`CLAUDE_CODE_GIT_BASH_PATH` for a Git Bash that's installed but unfound — and carries a
+line addressed to the *Claude* reading the plugin cache mid-error, because on an
+agent-read plugin the docs are runtime help. The install section also stopped lying
+about enabling: since Claude Code 2.1.221 `/plugin install` activates the plugin itself;
+the manual toggle is only for older builds.
+
+The same box taught a second, subtler class: its `python3` resolved to the Microsoft
+Store alias stub — present on every Windows box, runs nothing, exit 9009 (a macOS
+without Command Line Tools ships the same shape). Nine scripts gated python work on
+`command -v python3`, a presence test both stubs pass, so the failure landed at the call
+site instead of the gate. `maude_python3_ok` now probes by **executing** (`python3 -c
+pass`, cached per-process); the gated sites route through it, the two per-turn hooks
+carry no probe at all (their real, already-tolerated call is the check), the marker CLI
+inlines the same probe (standalone by design, it never sources the shared helper), and
+a test holds the class shut: a present-but-broken interpreter must read as absent, and
+no hook script may test python3 by presence again. Session-start names a broken
+interpreter once — the vault, the tape, and the eye sit out — instead of thirty hooks
+erroring. A probe that answers the same whether the thing works or not
+is not a check — that law was already on the wall; now it's in the tool.
 
 ---
 

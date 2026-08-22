@@ -6,7 +6,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 
 TRANSCRIPT="${1:-}"
 [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] || exit 0
-command -v python3 >/dev/null 2>&1 || exit 0
+maude_python3_ok || exit 0
 
 SELF="$(maude_self_dir)"
 mkdir -p "$SELF" 2>/dev/null
@@ -54,7 +54,7 @@ fi
 # session it was spawned from. maude_timeout bounds via timeout(1) or python3
 # (macOS ships no timeout binary — issue #39 wave 2 undarkened the eye there).
 # If NEITHER exists, dark is still safer than an unbounded orphaned blink.
-command -v timeout >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1 || exit 0  # portability-shim
+command -v timeout >/dev/null 2>&1 || maude_python3_ok || exit 0  # portability-shim
 BLINK_TIMEOUT="${MAUDE_EYE_TIMEOUT:-30}"
 
 PROMPT="You are Maude's eye — a quiet observer watching Claude (an AI coding agent) work.

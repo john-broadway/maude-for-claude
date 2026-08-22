@@ -22,8 +22,9 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
-command -v python3 >/dev/null 2>&1 || exit 0
-
+# No python3 gate here: this fires on EVERY user turn, and the real
+# `python3 -m maude_vault` call below is already checked and silenced — the
+# call is the probe. Session-start names a broken interpreter once.
 DB="$(maude_project_dir)/.maude/plugin/vault.db"
 [ -f "$DB" ] || exit 0
 

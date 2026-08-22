@@ -27,6 +27,12 @@ maude_retention_sweep
 if ! command -v jq >/dev/null 2>&1; then
   printf 'Maude: jq not found — the irreversible-command gate is OFF this session (fail-open), and drift-watch, tier-1, and watch-list nudges are disabled. Install jq to restore them.\n' >&2
 fi
+# Probed by executing, not presence: Windows resolves python3 to the Microsoft
+# Store alias stub and a CLT-less macOS ships a shim — both are "present" and
+# run nothing. Named once here; the organs themselves sit out quietly.
+if ! maude_python3_ok; then
+  printf 'Maude: python3 is missing or not working on this box — the vault, the tape, and the eye sit out this session. Install python 3 (on Windows: real python, not the Store alias) to restore them.\n' >&2
+fi
 case "${MAUDE_RUN_GOVERNOR:-on}" in
   off|OFF|0|false|no|NO)
     printf 'Maude: run-governor is OFF this session (MAUDE_RUN_GOVERNOR=%s) — no run-length checkpoints or pauses.\n' "$MAUDE_RUN_GOVERNOR" >&2
