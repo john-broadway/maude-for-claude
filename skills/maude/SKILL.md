@@ -200,6 +200,7 @@ Maude ships knowing; everything else must be on the map to be written.
 
 **Audit (passive, on-demand):**
 - **`/maude:verify`** — programmatic project audit (`scripts/maude-verify.sh`): version consistency, JSON validity, link integrity, header dates, watch-list paths, worn-framing scan. Leads with a count; catches "ready" before it actually is.
+- **`/maude:freshen`** — re-checks the memory vault's live-state claims against the world (`scripts/maude-freshen.sh`): walks `now_*.md` files for `verify:` lines (a read-only command + a mandatory expectation), runs each fail-closed, reports CONFIRMED / STALE / CHECK-FAILED / UNVERIFIABLE. Report-first — never edits memory. Wake runs its cheap local subset automatically.
 
 **Care + conscience (Claude's missing partner):**
 - **`/maude:teach <fact>`** — the user tells her a fact about themselves directly; she records it under `## Told by the user` in `identity.md` (told-not-observed, cross-project). The one user-initiated counterpart to her observed-only profiling.

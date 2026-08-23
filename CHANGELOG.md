@@ -1,11 +1,95 @@
-<!-- Version: 0.29.2 -->
+<!-- Version: 0.30.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-08-22 -->
+<!-- Revised: 2026-08-23 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.30.0 — the vault learns to look
+
+A memory vault stores claims about live state — "the push is pending", "the
+fleet is up", "the daily gate runs" — and a claim with no attached re-check
+goes stale by luck. In one real day, eleven such claims failed a live look:
+pushes that had already landed, sockets nine days dark behind a green panel, a
+"daily" workflow that had never run once. Every catch happened because someone
+chose to look. This release is the mechanism that looks.
+
+**The `verify:` convention.** An open item in a `now_*.md` memory file can now
+carry its own re-check, inline: `verify: `<command>` ⇒ `<expected>``. One
+read-only command, one mandatory expectation — a probe that reads the same
+pass-or-fail is not a check. An item without one is still legal; it reports as
+a memory, not a reading. Grammar and authoring rules:
+`docs/specs/2026-08-22-freshen-verify-lines-design.md`.
+
+**`/maude:freshen`** (`scripts/maude-freshen.sh`) walks the vault's `now_*.md`
+files, classifies every verify command **before anything runs** — a fail-closed,
+per-flag allowlist (bare `git` would admit `git push`, so the *verb* is what's
+judged; `curl` is deny-by-default; `jq` loses env/file access; the write-capable
+multi-tools are refused outright; secret-shaped targets refused by name) — and
+executes the survivors under the house timeout with `pipefail` on. Verdicts are honest four
+ways: **CONFIRMED** (the world still matches), **STALE** (the vault is behind —
+the signal), **CHECK-FAILED** (the probe itself broke — loud and distinct,
+because a checker that fails open into a plausible answer is worse than one
+that crashes), **UNVERIFIABLE** (never executed, reason named). Report-first:
+freshen edits no memory file, ever — it hands over the drift list; the human
+decides what closes.
+
+**Wake runs the cheap subset.** `/maude:wake` now includes a `--wake` freshen
+pass — local commands only (git ahead-counts, file states; 117ms measured
+against the real roster), network-class lines skipped and *said so*: a
+clean wake pass is not a clean roster, and the report refuses to imply it.
+`/maude:receipts` counts what freshen catches (stale claims and broken probes,
+counts never content). And the docs say the quiet part: where a domain goes
+stale repeatedly, the durable answer is a **sensor** whose output is the truth
+— freshen is the net under claims that don't yet have one, not the end state.
+
+**The classifier is the gate, and an adversarial lens broke the first one six
+ways** — arbitrary code execution (`find -execdir … {} +`, `sqlite3 -readonly
+db ".shell …"`), arbitrary file write (`git diff --output=`, `curl --trace`,
+`find -fprint`), deletion, and secret exfiltration, several walked in on a
+**tab** that stepped past a space-anchored deny, and all of them auto-runnable
+through the wake pass at session start. The lesson is architectural: a command
+*head* on an allowlist is not a gate — every multi-tool reaches write or exec
+through a flag or verb no deny-list names. It took **five adversarial rounds**
+to close the class, each breaking the one before it. Round 1 broke it six
+ways; the fix dropped the two tools whose normal operation *is* exec/write
+(**`sqlite3` and `find` are gone entirely** — no real check needs them, that's
+a sensor's job), flipped `curl` to deny-by-default, cut `git` to pure-read
+verbs, and stripped `jq` of env and file access. Round 2 broke *that* through
+a subtler seam — the classifier tokenizes the raw string but bash strips
+quotes and expands braces *before* executing, so a quoted flag or a brace path
+desynced classify from exec — so `"` `'` `\` `{` `}` were banned outright,
+which makes the tokenizer match bash's word-splitting exactly (classify ==
+exec, no denylist desyncable). Round 3 found one write left — `file -C`
+compiles `magic.mgc` to the working directory — and a last word-separator seam
+(`< ( )`); `file` joined `sort` and `uniq` off the reader list, and those
+three characters were banned too. Round 4 confirmed every text-only verify
+line holds, and closed the one exec still reachable through *on-disk* git
+config: `-c` blocks config-as-code on the command line, but a poisoned
+`~/.gitconfig` would run `core.fsmonitor`/`diff.external` on freshen's own
+trusted-repo reads at session start — so every command now runs with global
+and system git config off and those knobs force-set inert. Round 5 broke
+nothing in the code — it proved the classifier holds and caught only that a
+comment misdescribed the lone residual (a per-driver `textconv`/`filter` an
+attacker-controlled repo can select, outside the text-only threat surface the
+trust model bounds). Every exploit across the five rounds is now a test that
+runs the real engine and proves, by the absence of the file it would have
+created, that nothing executed — a refusal you never watched refuse is not a
+gate.
+
+Teeth proven both directions besides: a planted stale claim goes loud, a clean
+fixture stays silent, and the real seed shapes (git ahead-counts, jq
+projections, `curl | jq` against a live API) still confirm through the
+hardened gate. Several holes were self-caught between rounds by working through
+the lens's own questions (`find`'s missing write actions, `sort -o`/`uniq`'s
+output files, `curl @file` exfil); and the suite's own first run reproduced
+the fixture-staleness class the whole mechanism exists to catch, when a claim
+counted its parent directory and a sibling test wrote beside it. 53 freshen
+assertions; the fleet stays green end to end.
 
 ---
 

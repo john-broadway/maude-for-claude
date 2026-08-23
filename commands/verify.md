@@ -50,6 +50,14 @@ Capture the full output. Read the findings, then:
 
 If you receive findings and Claude or the user wants to push/commit anyway, that's a `/maude:conscience` decision, not a `/maude:verify` decision. Verify reports state. Conscience runs the override gate.
 
+## Verify vs. freshen
+
+Verify audits a **repo's internal consistency** (versions, links, JSON).
+`/maude:freshen` audits the **memory vault against the live world** — it
+re-runs the read-only verify lines attached to open items in `now_*.md`
+files. Different subject, different cadence; reach for freshen when the
+question is "is what we *remember* still true," not "is this repo ready."
+
 ## Worn-framing config (per-project)
 
 Create `<project>/.maude/plugin/worn-framings.txt` with one phrase per line to scan for project-specific stale phrases. Lines starting with `#` are comments. Example:

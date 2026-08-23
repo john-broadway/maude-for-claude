@@ -1,5 +1,5 @@
-<!-- Version: 0.29.2 -->
-<!-- Revised: 2026-08-22 -->
+<!-- Version: 0.30.0 -->
+<!-- Revised: 2026-08-23 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Skill
