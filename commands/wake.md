@@ -46,7 +46,21 @@ MAP="$SELF/house-map.md"
 3. **Trace check** (if `[ -d "$SELF/trace" ]`):
    - tail the most recent JSONL — what was Claude doing last
    - Surface any repeated tool calls or stuck patterns
-4. **Surface 1-3 things first.** Pick what matters most: an unresolved blocker, an open punch list item, a half-written file from yesterday, a save that didn't happen, a pattern that's been recurring.
+4. **Cheap freshen pass** (if the plugin ships `scripts/maude-freshen.sh` and `$MEM` has `now_*.md` files):
+
+   ```bash
+   bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-freshen.sh" --wake
+   ```
+
+   The `--wake` mode honors tier discipline by construction: LOCAL read-only
+   commands only (git ahead-counts, file states — sub-second), network-class
+   verify lines skipped, ~8s total budget. **A clean wake pass is NOT a clean
+   roster** — most live-state claims are network-class and only the full
+   `/maude:freshen` sweep reads them. If any line is STALE, it belongs in
+   "What's pending" — a vault claim the world has moved past is exactly the
+   thing to know first. If everything ran clean, it's one clause in the brief,
+   not a section.
+5. **Surface 1-3 things first.** Pick what matters most: an unresolved blocker, an open punch list item, a half-written file from yesterday, a save that didn't happen, a stale vault claim the freshen pass caught, a pattern that's been recurring.
 
 ## Greeting — by the user's real clock, never the box clock
 

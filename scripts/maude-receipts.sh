@@ -87,6 +87,12 @@ else
     # condition re-observed, so it lives behind the fence.
     | ( [ $ev[] | select(.kind=="verify" and ((.payload // "")|test("commit-without-verify"))) ]|length ) as $vcommit
     | ( [ $ev[] | select(.kind=="verify" and ((.payload // "")|test("stop-without-verify"))) ]|length ) as $vstop
+    # Freshen events carry counts in the payload (stale=N checkfailed=N) —
+    # sum the caught-drift counts across runs; counts, never claim content.
+    | ( [ $ev[] | select(.kind=="freshen")
+        | (.payload // "") | capture("stale=(?<s>[0-9]+)").s | tonumber ] | add // 0 ) as $freshstale
+    | ( [ $ev[] | select(.kind=="freshen")
+        | (.payload // "") | capture("checkfailed=(?<c>[0-9]+)").c | tonumber ] | add // 0 ) as $freshbroken
     | "| what she caught | count | reading it honestly |",
       "|---|---|---|",
       "| sole-copy saves | \($saves) | rm -rf aimed at a sole-copy path, blocked before it fired |",
@@ -95,6 +101,8 @@ else
       "| red-key clear refusals | \($redrefused) | attempts to self-clear a red key, refused (that clear is a human hand by design) |",
       "| drift catches | \($drift) | repeated-action drift, nudged at the moment it fired |",
       "| commit-without-verify whispers | \($vcommit) | one per commit that landed with unverified code — distinct acts |",
+      "| stale vault claims caught (freshen) | \($freshstale) | a memory claim about live state that no longer matched the world when re-checked |",
+      "| broken freshen probes | \($freshbroken) | verify commands that errored or timed out — the probe needs fixing, loud by design |",
       "| friction and bookkeeping (not value) | | |",
       "| push-clears | \($pushclears) | routine git-push toll booth; counted separately BY RULE — never a save |",
       "| stop-without-verify whispers | \($vstop) | re-observed per TURN while a session sat unverified — repetition, NOT distinct catches |",
