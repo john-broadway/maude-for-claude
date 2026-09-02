@@ -256,3 +256,4 @@ assert_exit "$RC" "2" "bare root still blocked"
 
 print_summary
 teardown_test_env
+exit "$FAILED"

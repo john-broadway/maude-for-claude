@@ -45,7 +45,7 @@ BLOBS="$UNDO_DIR/blobs"
 # Hooks receive CLAUDE_PROJECT_DIR; the Bash tool does NOT, so `maude_project_dir`
 # falls through to a process-tree/filesystem walk and can land somewhere else. Measured
 # on the live box 2026-07-30: the hooks resolved <workspace> and captured 9 entries,
-# while the very same script run from a Bash call resolved /root and answered "nothing
+# while the very same script run from a Bash call resolved ~ and answered "nothing
 # captured yet". Someone whose file WAS recoverable would have been told it was not —
 # which is the one failure this pillar must never have. A capture writes its store path
 # here; list/restore fall back to it instead of reporting an empty store they never

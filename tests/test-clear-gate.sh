@@ -43,6 +43,18 @@ test_start "clear-gate writes friendly message to stdout"
 OUT="$(bash "$CLEAR" reset-hard 2>/dev/null)"
 assert_contains "$OUT" "Maude: gate cleared" "friendly msg"
 
+test_start "clear-gate names the file it wrote (the writer's half of the 09-02 split)"
+assert_contains "$OUT" "token: " "names the token file"
+named="$(printf '%s\n' "$OUT" | sed -n 's/^ *token: //p' | head -1)"
+case "$named" in */.maude/plugin/care.json) ok=0;; *) ok=1;; esac
+assert_exit "$ok" "0" "the named file is a .maude/plugin/care.json"
+[ -f "$named" ]
+assert_exit "$?" "0" "and it exists"
+# Shape and existence are not identity: a decoy care.json the clear never wrote
+# would pass both. The test env hands the script CLAUDE_PROJECT_DIR, so the
+# exact file it must have written is known.
+assert_eq "$named" "$CLAUDE_PROJECT_DIR/.maude/plugin/care.json" "and it is the file the clear wrote"
+
 test_start "different keys coexist in care.json"
 # Both yellow keys → both land in care.json. (Red keys go to care-redclear.json,
 # covered by the v0.10.1 section below.)

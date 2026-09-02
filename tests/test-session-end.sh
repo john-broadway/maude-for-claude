@@ -108,3 +108,4 @@ assert_ne "$COUNT_AFTER" "$COUNT_BEFORE" "trace grew"
 
 teardown_test_env
 print_summary
+exit "$FAILED"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ship.sh — the one-button ship rail (PUBLISHING.md, mechanized).
 #
-#   scripts/ship.sh build [-m "msg"]   → clean public branch off origin/main,
+#   scripts/ship.sh build [-m "msg"]   → clean public branch off the PUBLIC main,
 #                                        internal set stripped (.publishignore),
 #                                        leak-audit + gates, prints John's line
 #   <John pastes the one push line>
@@ -11,6 +11,7 @@
 #                                        law is structural, not remembered)
 #
 # Env seams (tests): SHIP_BRANCH (branch name), SHIP_SOURCE_REF (default main),
+#   SHIP_PUBLIC_REMOTE (which remote is public; normally resolved by URL),
 # SHIP_SKIP_GATES=1 (skip make test/lint/verify — test fixtures only).
 set -u
 
@@ -20,16 +21,83 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not in a git repo"
 cd "$ROOT" || die "cannot cd to repo root"
 SRC="${SHIP_SOURCE_REF:-main}"
 
+# ── the PUBLIC remote, resolved by URL and never by NAME ──────────────────────────
+#
+# Every `$PUB/main` below used to read `origin/main`, which worked only because THIS
+# repo is the one place in the estate where `origin` means github. That coupling was
+# a trap, not a convention: this script's leak audit IS `git diff $PUB/main`, so it
+# compares the stripped tree against WHAT IS ALREADY PUBLISHED. Point it at canon and
+# it compares the internal tree against itself, finds nothing to flag, and reports
+# clean while shipping everything. Renaming the remotes to match the rest of the
+# estate would have done exactly that, silently.
+#
+# So the name is no longer load-bearing. Resolution order, fail-closed:
+#   1. $SHIP_PUBLIC_REMOTE, if set (tests, and any deliberate override)
+#   2. exactly one remote whose URL names github.com
+#   3. exactly one remote total, and it is not a gitea host
+#   4. refuse, naming what it found
+resolve_public_remote() {
+  if [ -n "${SHIP_PUBLIC_REMOTE:-}" ]; then
+    git remote get-url "$SHIP_PUBLIC_REMOTE" >/dev/null 2>&1 \
+      || die "SHIP_PUBLIC_REMOTE='$SHIP_PUBLIC_REMOTE' is not a remote of this repo"
+    printf '%s' "$SHIP_PUBLIC_REMOTE"; return 0
+  fi
+  local r u gh="" gh_n=0 all="" all_n=0
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    u="$(git remote get-url "$r" 2>/dev/null)" || continue
+    all="$all $r"; all_n=$((all_n + 1))
+    case "$u" in *github.com*) gh="$r"; gh_n=$((gh_n + 1)) ;; esac
+  done < <(git remote)
+
+  if [ "$gh_n" -eq 1 ]; then printf '%s' "$gh"; return 0; fi
+  if [ "$gh_n" -gt 1 ]; then
+    die "cannot tell which remote is public: $gh_n of them name github.com ($all). Set SHIP_PUBLIC_REMOTE."
+  fi
+  if [ "$all_n" -eq 1 ]; then
+    u="$(git remote get-url "${all# }")"
+    case "$u" in
+      *gitea*) die "the only remote (${all# }) is canon, not a public one. There is nothing to ship against. Set SHIP_PUBLIC_REMOTE if this is wrong." ;;
+    esac
+    printf '%s' "${all# }"; return 0
+  fi
+  [ "$all_n" -eq 0 ] && die "this repo has no remotes; ship needs a public one"
+  die "no remote names github.com and there are $all_n to choose from ($all). Set SHIP_PUBLIC_REMOTE."
+}
+PUB="$(resolve_public_remote)" || exit 1
+# Say which remote the audit is about to run against. $PUB and `gh`'s own repo
+# resolution are two independent authorities and nothing cross-checks them, so the
+# operator gets to see what this run actually chose. An adversarial pass asked for
+# this; it also gives the resolver tests a way to observe the REAL script instead of
+# a fragment cut out of it.
+printf 'ship: public remote = %s (%s)\n' "$PUB" "$(git remote get-url "$PUB" 2>/dev/null)"
+
 # ── leak-audit: the pre-push guard's shapes, run LOCALLY before any push ──
 # Patterns are regexes, never literals, so this script can't bait the guard.
-# Audits ADDED lines of what would ship (index vs origin/main) — parity with
+# Audits ADDED lines of what would ship (index vs the PUBLIC main) - parity with
 # the guard's commit-scan, without re-judging pre-existing public content.
 audit_staged() {
+  # The baseline must EXIST. Every diff below sends stderr to /dev/null, so against a
+  # ref that does not resolve `grep -c` returns 0 and the name-only loop iterates zero
+  # files: a vacuous pass that looks exactly like a clean audit.
+  #
+  # HONEST LABEL: this line is UNREACHABLE through cmd_build today, and I tried twice
+  # to make it fire. Three things upstream beat it to the failure -- the caller's own
+  # rev-parse, the fetch that restores a deleted ref, and the checkout that cannot
+  # create a branch from a missing commit. It sits here so that a SECOND caller cannot
+  # inherit the fail-open, not because it guards anything now. Do not read it as tested.
+  git rev-parse --verify -q "$PUB/main" >/dev/null \
+    || die "audit baseline $PUB/main does not resolve — refusing to report an audit it could not run"
   # Patterns assembled by concatenation so no line of THIS script carries a
   # guard-shaped literal — the rail must be able to ship itself (the audit
   # flagged its own pattern-definition line on the first dogfood run).
   local p_ip='([0-9]{1,3}\.){3}[0-9]{1,3}'
-  local p_paths='/ro'; p_paths="${p_paths}ot/|/ho"; p_paths="${p_paths}me/[a-z]|/Us"; p_paths="${p_paths}ers/[A-Za-z]"
+  # The path patterns anchor on a BOUNDARY, not a trailing slash. Requiring the
+  # slash meant a bare home literal (the root account's, with nothing after it)
+  # sailed straight through: on 2026-09-02 this audit refused three such lines in
+  # one file and passed two more in the SAME file, then reported it clean.
+  # A guard that catches most instances of a shape is not a guard for that shape.
+  local p_paths='/ro'; p_paths="${p_paths}ot(/|[^a-zA-Z0-9_-]|$)|/ho"; p_paths="${p_paths}me/[a-z]|/Us"; p_paths="${p_paths}ers/[A-Za-z]"
   local p_infra='\.bf'; p_infra="${p_infra}f\.lan|gite"; p_infra="${p_infra}a@"
   local p_key='BEGIN[A-Z ]*PRIVATE KEY'
   local p_cred='(sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[abprs]-|AKIA|AIza)[A-Za-z0-9_-]{8,}'
@@ -42,18 +110,18 @@ audit_staged() {
     [ -n "$f" ] || continue
     # Binary blobs expand to no diff text at all — un-auditable, so they
     # don't ship through this rail. (numstat prints "-<TAB>-" for binaries.)
-    if git diff --cached origin/main --numstat -- "$f" 2>/dev/null | grep -q '^-'; then
+    if git diff --cached "$PUB/main" --numstat -- "$f" 2>/dev/null | grep -q '^-'; then
       printf 'ship: BINARY — %s: cannot be leak-audited; ship it by hand with John or add to .publishignore\n' "$f" >&2
       bad=1
       continue
     fi
-    hits="$(git diff --cached origin/main --unified=0 -- "$f" 2>/dev/null \
+    hits="$(git diff --cached "$PUB/main" --unified=0 -- "$f" 2>/dev/null \
       | grep '^+' | grep -v '^+++' | grep -cE "$pats")"
     if [ "${hits:-0}" -gt 0 ]; then
       printf 'ship: LEAK SHAPE — %s: %s added line(s) match guard patterns\n' "$f" "$hits" >&2
       bad=1
     fi
-  done < <(git diff --cached --name-only -z origin/main 2>/dev/null)
+  done < <(git diff --cached --name-only -z "$PUB/main" 2>/dev/null)
   [ "$bad" -eq 0 ] || die "leak-audit failed — fix the files above (never override the guard)"
 }
 
@@ -86,14 +154,14 @@ cmd_build() {
   if ! git show "$SRC:.publishignore" 2>/dev/null | grep -qvE '^[[:space:]]*(#|$)'; then
     die "no usable .publishignore on '$SRC' — refusing to build (fail-closed)"
   fi
-  git fetch -q origin || die "cannot fetch origin"
-  git rev-parse --verify -q origin/main >/dev/null || die "origin/main not found"
+  git fetch -q "$PUB" || die "cannot fetch $PUB"
+  git rev-parse --verify -q "$PUB/main" >/dev/null || die "$PUB/main not found"
 
   local branch="${SHIP_BRANCH:-ship-$(date -u +%Y%m%d-%H%M%S)}"
   git rev-parse --verify -q "refs/heads/$branch" >/dev/null \
     && die "branch '$branch' already exists — inspect it, then delete (git branch -D $branch) or pick another name"
   SHIP_ORIG_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-  git checkout -q -B "$branch" origin/main || die "cannot create branch $branch"
+  git checkout -q -B "$branch" "$PUB/main" || die "cannot create branch $branch"
   SHIP_BUILD_BRANCH="$branch"
   trap build_epilogue EXIT
   # Worktree/index = the source tree, then strip the internal set.
@@ -112,7 +180,7 @@ cmd_build() {
     make verify || die "gate failed: make verify"
   fi
 
-  if git diff --cached --quiet origin/main; then
+  if git diff --cached --quiet "$PUB/main"; then
     die "nothing to ship — public tree already matches $SRC minus the internal set"
   fi
   git commit -qm "$msg" || die "commit failed"
@@ -121,7 +189,7 @@ cmd_build() {
   printf '\nship: branch %s built, audited%s, committed.\n' \
     "$branch" "$([ -n "${SHIP_SKIP_GATES:-}" ] && printf ' (gates SKIPPED)')"
   printf 'ship: John'\''s hand — paste this line:\n\n'
-  printf '  ! cd %s && git push -u origin %s\n\n' "$ROOT" "$branch"
+  printf '  ! cd %s && git push -u %s %s\n\n' "$ROOT" "$PUB" "$branch"
   printf 'ship: then run: scripts/ship.sh open --review "<one-line second-lens reference>"\n'
   # RETURN to the source branch. A warning was tried first and was not enough: on
   # 2026-08-17 a fix was written, tested green and committed onto the ship branch after a
@@ -222,13 +290,13 @@ cmd_open() {
   done
   local branch
   branch="$(git rev-parse --abbrev-ref HEAD)" || die "cannot read current branch"
-  # A ship branch is not a NAME, it is a shape: exactly one commit ahead of origin/main.
+  # A ship branch is not a NAME, it is a shape: exactly one commit ahead of the public main.
   # The old check only refused `main`, so when the sibling fix returned build to the
   # SOURCE branch, open silently accepted the source as the PR head and gh refused with
   # "no commits between main and <source>". Checking the shape catches that, and still
   # accepts a build output under any name.
-  _ahead="$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)"
-  [ "$_ahead" = "1" ] || die "open: '$branch' is $_ahead commit(s) ahead of origin/main; a ship branch is exactly 1. Run build, then check out the ship branch."
+  _ahead="$(git rev-list --count "$PUB/main"..HEAD 2>/dev/null || echo 0)"
+  [ "$_ahead" = "1" ] || die "open: '$branch' is $_ahead commit(s) ahead of $PUB/main; a ship branch is exactly 1. Run build, then check out the ship branch."
   [ -n "$title" ] || title="ship: $branch"
 
   local body draft_flag=""

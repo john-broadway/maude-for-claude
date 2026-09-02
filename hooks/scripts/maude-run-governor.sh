@@ -85,6 +85,11 @@ case "$MODE" in
     if [ "$ACTIONS" -ge "$HARD_A" ] 2>/dev/null || [ "$ELAPSED_MIN" -ge "$HARD_M" ] 2>/dev/null; then
       maude_log_trace "run-governor" "blocked actions=$ACTIONS elapsed_min=$ELAPSED_MIN"
       printf 'Maude: run-governor — %s tool-actions / %s min since John last spoke. Hard checkpoint: you have run unattended a long time. Take a turn with John, or run /maude:conscience run-governor to continue with a fresh budget.\n' "$ACTIONS" "$ELAPSED_MIN" >&2
+      # NAME THE FILE WE LOOKED IN — this is the second reader of the yellow token
+      # (after maude-gate.sh), and its writer maude-clear-gate.sh names where it
+      # wrote. Same split shape as the 2026-09-02 bug: hook reads, Bash-tool
+      # script infers. Without this line the two could disagree in silence.
+      printf '       (looked in: %s)\n' "$CARE" >&2
       exit 2
     fi
 

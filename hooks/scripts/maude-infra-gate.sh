@@ -148,4 +148,8 @@ fi
 maude_log_trace "infra-gate" "blocked=infra-destructive tool=$BARE node=$NODE vmid=$VMID"
 printf 'Maude: destructive infrastructure tool "%s" against a non-sandbox target (node="%s" vmid="%s"). Irreversible. Configured sandbox targets are allowed automatically; for anything else run /maude:conscience infra-destructive only intentionally.\n' \
   "$BARE" "${NODE:-?}" "${VMID:-?}" >&2
+# NAME THE FILE WE LOOKED IN — the red-tier reader's twin of the line in
+# maude-gate.sh. The writer (maude-clear-red.sh) names where it wrote; without
+# this line a split between the two would show only as "cleared" then a refusal.
+printf '       (looked in: %s)\n' "$CARE" >&2
 exit 2

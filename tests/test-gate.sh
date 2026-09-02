@@ -29,9 +29,24 @@ assert_exit "$RC" "2" "git push exit"
 test_start "gate stderr on git push mentions key hint"
 assert_contains "$ERR" "/maude:conscience git-push" "stderr"
 
+test_start "gate names the file it looked in (the reader's half of the 09-02 split)"
+assert_contains "$ERR" "(looked in: " "names the care file it read"
+looked="$(printf '%s\n' "$ERR" | sed -n 's/^ *(looked in: \(.*\))$/\1/p' | head -1)"
+case "$looked" in */.maude/plugin/care.json) ok=0;; *) ok=1;; esac
+assert_exit "$ok" "0" "the named file is a .maude/plugin/care.json"
+# Shape is not identity: a print naming a file the gate never read would pass the
+# two checks above. The test env hands the gate CLAUDE_PROJECT_DIR, so the exact
+# file it must have read is known.
+assert_eq "$looked" "$CLAUDE_PROJECT_DIR/.maude/plugin/care.json" "and it is the file the gate read"
+
 test_start "gate blocks --force"
 run_gate "git push origin main --force"
 assert_exit "$RC" "2" "force-push exit"
+
+test_start "a RED-key block names the red file it looked in, not the yellow one"
+assert_contains "$ERR" "(looked in: " "names the care file it read"
+looked="$(printf '%s\n' "$ERR" | sed -n 's/^ *(looked in: \(.*\))$/\1/p' | head -1)"
+assert_eq "$looked" "$(redclear_path)" "care-redclear.json for a red key"
 
 test_start "gate stderr on --force says force-push"
 assert_contains "$ERR" "force-push" "stderr"

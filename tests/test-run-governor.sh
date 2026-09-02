@@ -62,6 +62,11 @@ test_start "gate HARD-PAUSES (exit 2) at the action ceiling"
 seed_rs 80 "$(date +%s)"; run_gate '{}'
 assert_exit "$RC" "2" "hard pause"
 
+test_start "gate hard-pause names the file it looked in (the second reader of the yellow token)"
+assert_contains "$ERR" "(looked in: " "names the care file it read"
+looked="$(printf '%s\n' "$ERR" | sed -n 's/^ *(looked in: \(.*\))$/\1/p' | head -1)"
+assert_eq "$looked" "$CLAUDE_PROJECT_DIR/.maude/plugin/care.json" "and it is the file the governor read"
+
 test_start "gate hard-pause message names the override"
 assert_contains "$ERR" "/maude:conscience run-governor" "override hint"
 
