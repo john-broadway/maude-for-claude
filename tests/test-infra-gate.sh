@@ -23,6 +23,11 @@ assert_exit "$RC" "2" "prod delete blocked"
 test_start "block names the infra-destructive key"
 assert_contains "$ERR" "infra-destructive" "key hint"
 
+test_start "the block names the file it looked in (the red twin of the gate's line)"
+assert_contains "$ERR" "(looked in: " "names the care file it read"
+looked="$(printf '%s\n' "$ERR" | sed -n 's/^ *(looked in: \(.*\))$/\1/p' | head -1)"
+assert_eq "$looked" "$(redclear_path)" "and it is care-redclear.json"
+
 test_start "blocks wipe_store on prod"
 run_infra "mcp__testsrv__wipe_store" '{"node":"prod-x","storage":"data"}'
 assert_exit "$RC" "2" "wipe_store blocked"

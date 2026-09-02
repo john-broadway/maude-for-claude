@@ -23,6 +23,14 @@ set -uo pipefail
 V="${1:-}"
 [ -n "$V" ] || { printf 'usage: release.sh <version>   e.g. release.sh 0.9.1\n' >&2; exit 2; }
 
+# The version must LOOK like a version before anything else. The semver case below uses a
+# negated class ([!0-9.a-z-]) that matches nothing in an all-lowercase word, so "broker"
+# fell straight through to the writers: measured here 2026-09-02 (a cwd drift ran
+# `release.sh broker 0.40.0` against this repo and stamped 20 files), and on proximo
+# 2026-09-01 the same way. Class-swept from proximo/pacioli.
+printf '%s' "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+([a-z0-9.-]*)?$' \
+  || { printf 'release: refusing "%s" — not an X.Y.Z version.\n' "$V" >&2; exit 1; }
+
 # Honest semver: pre-1.0 software stays 0.x; a major>=1 must be intentional, never
 # an accident of this script. Mirror the workspace version-audit discipline.
 case "$V" in
@@ -85,7 +93,11 @@ if [ "$RC" -eq 0 ]; then
   printf 'NEXT (yours, in our words): write the CHANGELOG v%s entry + the README "What'"'"'s new" v%s entry,\n' "$V" "$V"
   printf 'then build the curated commit -> branch -> PR for review. release.sh never pushes.\n'
   printf 'AFTER the tag lands (maintainer'"'"'s hand — the Releases tab must not fall behind the tags, #38):\n'
-  printf '  scripts/release-notes.sh %s > /tmp/notes-v%s.md && gh release create v%s --title "v%s" --notes-file /tmp/notes-v%s.md\n' "$V" "$V" "$V" "$V" "$V"
+  # The TITLE carries the reason, never a bare version. It is one of the few lines a
+  # visitor reads WITHOUT clicking anything, and this NEXT block was handing out the
+  # bare form. Same defect John flagged on proximo (bare release titles, 2026-08-24)
+  # and again on the public commit subject (2026-09-01); class-swept here 2026-09-02.
+  printf '  scripts/release-notes.sh %s > /tmp/notes-v%s.md && gh release create v%s --title "v%s: <the one-line reason, from the CHANGELOG heading>" --notes-file /tmp/notes-v%s.md\n' "$V" "$V" "$V" "$V" "$V"
 else
   printf 'release.sh: GATE NOT GREEN — fix the findings above before building the release commit.\n'
 fi

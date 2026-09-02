@@ -1,11 +1,78 @@
-<!-- Version: 0.30.0 -->
+<!-- Version: 0.30.1 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-08-23 -->
+<!-- Revised: 2026-09-02 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.30.1 - the gate token was landing in the wrong closet
+
+`/maude:conscience git-push` would print "gate cleared" and the very next push
+would be refused anyway. The clear script and the gate were reading two
+different files.
+
+Both ask the same resolver where the workspace root is. Hooks are handed
+`CLAUDE_PROJECT_DIR` and get it right. The Bash tool subprocess is not handed
+it, so a script started from there has to infer, and the inference walked the
+process tree looking for a process named `claude`. That worked when it was
+written. It stopped being true when Claude Code grew a daemon. In the tree
+measured on 2026-09-02 the processes holding the real working directory were
+named by version, and the one still called `claude` sat at `$HOME`, which the
+resolver refuses on purpose; in another tree the same day `claude` sat at the
+workspace root, so the name is not a stable signal in either direction. So the
+walk matched the wrong process, gave up the moment it refused it, and fell back
+to searching upward from the current directory, where it found whichever
+subproject you happened to be standing in.
+
+The token went to that subproject. The gate looked in the workspace root. The
+clear reported success every time.
+
+A name is not an identity. The fix stops asking what a process is called and
+uses `CLAUDE_PID`, which Claude Code currently exports to the Bash tool: its own
+process id, pointing at its own working directory. That is a narrower guess than
+matching a name, not a certainty. It is an observed signal rather than a
+documented interface, verified on 2.1.258, so the resolver treats it as a
+preference and falls through when it is absent or unreadable. The walk stays as
+the fallback, and it no longer abandons the search the moment one candidate is
+refused.
+
+Two things the walk still cannot do, said plainly rather than guessed at. A tool
+shell standing in a subproject and a session rooted at that subproject are
+identical from the process tree, so the walk prefers the nearest match, and a
+test pins that limit instead of hiding it. And in the process walk, a closet
+at the temp directory itself or a hand-made empty one is no longer evidence of
+anything. That is as far as a contents test can go: a wrong answer runs the same
+code a right one does and leaves the same files, `trace/` first and `care.json`
+after, so the walk cannot tell those two closets apart, and a test pins that
+limit rather than hiding it. The temp-directory
+refusal applies to the filesystem search too; the contents test does not, because
+that search has no candidates to choose between and a genuinely new closet has no
+contents yet.
+
+Where the system has no `/proc` to read, which includes macOS, neither the
+process id nor the process walk can tell you anything, and the filesystem search
+upward from the current directory is the only resolver left. That is the search
+which finds whichever subproject you are standing in, and this release does not
+change that: on those systems the subproject gap is exactly as wide as it was.
+The only thing the search gains there is the temp-directory refusal.
+
+Both sides now name their file. The clear prints where it wrote. The gate prints
+where it looked. The red tier's twins, the red clear script and the
+infrastructure gate, name theirs too, and so does the run governor, the second
+reader of the yellow token: one lens found the red clear still silent, its
+failure line still naming a file it never writes, six commits after the yellow
+twin lost that literal; the next found the governor silent. That is the part
+worth keeping, because it is
+what makes the next disagreement visible at a glance rather than after an hour.
+
+One more thing rides along: the Release page title. The tag workflow minted it
+as the bare tag, and nine of the last ten pages read as a version number and
+nothing else. The title now comes from this file's heading, `vX.Y.Z: the
+reason`, and a heading with no reason refuses to mint rather than minting bare.
 
 ---
 

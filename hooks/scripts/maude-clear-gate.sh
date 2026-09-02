@@ -172,9 +172,16 @@ MINS=$((DURATION / 60))
 # written → the gate still blocks.
 if maude_care_set "$CARE" --arg k "$KEY" --argjson until "$UNTIL" '.gate_cleared[$k] = {until: $until}'; then
   printf 'Maude: gate cleared for "%s" — %d minute(s). One matching command will pass, then the token clears.\n' "$KEY" "$MINS"
+  # SAY WHERE THE TOKEN LANDED. A writer that will not name its file cannot be
+  # checked against the reader, and on 2026-09-02 that gap hid a real split: this
+  # script wrote to <subproject>/.maude/plugin/care.json (resolver fell to the
+  # filesystem walk-up) while the gate hook read <workspace>/.maude/plugin/care.json.
+  # The clear said "cleared" and the gate refused anyway. The resolver is fixed;
+  # this line is what makes the NEXT such split visible in one glance.
+  printf '       token: %s\n' "$CARE"
   maude_log_trace "gate-cleared" "key=$KEY duration=$DURATION"
 else
-  printf 'Maude: could NOT clear the gate for "%s" — care.json could not be written. The gate still stands.\n' "$KEY" >&2
+  printf 'Maude: could NOT clear the gate for "%s" — %s could not be written. The gate still stands.\n' "$KEY" "$CARE" >&2
   exit 1
 fi
 

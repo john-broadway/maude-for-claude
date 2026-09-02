@@ -109,8 +109,21 @@ test_start "a valid marker link clears the red gate"
 OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[3]}" 2>&1)"; RC=$?
 assert_exit "$RC" "0" "valid marker"
 
+test_start "the red clear names the file it wrote (the red twin of the yellow line)"
+assert_contains "$OUT" "token: " "names the token file"
+named="$(printf '%s\n' "$OUT" | sed -n 's/^ *token: //p' | head -1)"
+assert_eq "$named" "$(redclear_path)" "and it is care-redclear.json, the file the red gates read"
+
 test_start "the red token landed in care-redclear.json"
 assert_file_exists "$(redclear_path)" "redclear written"
+
+test_start "the red token is IN care-redclear.json and NOT in care.json (existence is not content)"
+until_red="$(jq -r --arg k "$RED_KEY" '.gate_cleared[$k].until // 0' "$(redclear_path)" 2>/dev/null)"
+[ "${until_red:-0}" -gt "$(date +%s)" ] 2>/dev/null
+assert_exit "$?" "0" "a live token for the key sits in care-redclear.json"
+yellow="$TEST_TMP/.maude/plugin/care.json"
+in_yellow="$( { [ -f "$yellow" ] && jq -r --arg k "$RED_KEY" '.gate_cleared[$k] // "absent"' "$yellow" 2>/dev/null; } || echo absent)"
+assert_eq "$in_yellow" "absent" "and nothing for the key in care.json"
 
 test_start "replaying the same link is refused"
 OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[3]}" 2>&1)"; RC=$?
@@ -356,3 +369,4 @@ assert_exit "$RC" "2" "clear-red invocation blocked for Claude"
 
 print_summary
 teardown_test_env
+exit "$FAILED"

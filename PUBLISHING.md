@@ -1,4 +1,4 @@
-<!-- Version: 0.30.0 -->
+<!-- Version: 0.30.1 -->
 <!-- Created: 2026-06-30 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
@@ -47,8 +47,17 @@ else must be made to agree with it.
 
 ## The push protocol
 
+> **REMOTE NAMES CHANGED 2026-08-30.** This repo now follows the estate convention:
+> **`origin` is gitea (canon)** and **`github` is the public mirror**. It used to be the
+> other way round, and it was the only repo in the estate like that. Every command below
+> that talks to the public side now says `github`. If you are following this by hand, that
+> distinction is load-bearing: the leak audit IS `git diff <public>/main`, so running it
+> against canon compares the internal tree with itself, finds nothing, and reports clean
+> while shipping everything. `ship.sh` no longer depends on either name (it resolves the
+> public remote by URL and refuses when it cannot tell), but a human at a keyboard still can.
+
 > **The one-button rail (2026-07-17): `scripts/ship.sh`.** It mechanizes steps 1–4:
-> `ship.sh build` makes the clean public branch off `origin/main` (internal set stripped per
+> `ship.sh build` makes the clean public branch off the PUBLIC main (internal set stripped per
 > `.publishignore`), runs the **leak-audit locally** (the guard's own shapes — a block never
 > costs John a `!`), runs the gates, and prints John's single push line. After his push,
 > `ship.sh open --review "<second-lens reference>"` opens the PR with the review documented
@@ -63,19 +72,19 @@ GitHub gets a *clean squash*, never this history.
 
 ### 1. Build the clean public squash
 GitHub's `main` keeps a **scrubbed** history (pre-v0.8 commits carry since-removed infra
-identifiers). **Never** push local/gitea full history to `origin`. Instead:
+identifiers). **Never** push local/gitea full history to `github`. Instead:
 
 ```bash
-git fetch origin
-git checkout -B publish-vX origin/main
+git fetch github
+git checkout -B publish-vX github/main
 git read-tree --reset -u main          # worktree/index = local main's exact tree
 git rm -r --cached docs/superpowers     # exclude dev scaffolding from public
 git commit -m "release: vX — <summary>"
-git diff origin/main..HEAD              # LEAK-AUDIT what actually ships
+git diff github/main..HEAD              # LEAK-AUDIT what actually ships
 ```
 
 ### 2. Pre-public-push checklist (all four, every time)
-1. **Leak-audit** the `origin/main..HEAD` diff — no secrets, IPs, real paths, hostnames, or the
+1. **Leak-audit** the `github/main..HEAD` diff — no secrets, IPs, real paths, hostnames, or the
    redacted-marker shapes. (Test fixtures use synthetic `/srv/app/...` paths, so the pre-push
    guard stays quiet — a root-or-home path hit now means a real leak to investigate, not a fixture.)
 2. **Independent review** of substantive changes (a second-lens / redteam pass, not just green CI).
@@ -88,7 +97,7 @@ The auto-mode classifier reserves a raw public-content `git push` for John. He r
 the pre-push guard's known-fixture flag):
 
 ```
-! cd <repo> && ALLOW_PUBLIC_PUSH=1 git push -u origin publish-vX
+! cd <repo> && ALLOW_PUBLIC_PUSH=1 git push -u github publish-vX
 ```
 
 ### 4. PR → CI → merge → tag (Claude may drive the MECHANICS — the merge needs a second lens)
@@ -105,10 +114,10 @@ fine, process was not.)
 gh pr create --base main --head publish-vX --title "release: vX — …" --body "…"
 gh pr checks <PR#> --watch          # lint · verify · tests · gitleaks must pass
 gh pr merge <PR#> --merge --delete-branch
-git fetch origin
-git tag -a vX origin/main -m "vX — <summary>"
+git fetch github
+git tag -a vX github/main -m "vX — <summary>"
 # clear the maude git-push gate first (see Gotchas), then:
-git push origin vX                  # 0-commit tag push — classifier-allowed
+git push github vX                  # 0-commit tag push — classifier-allowed
 ```
 
 ### 5. Sweep the satellites (Section B) — `gh api` contents PUT (classifier-allowed)
@@ -117,7 +126,7 @@ For each satellite file: fetch content+sha, apply the version edit(s), `gh api -
 `scripts/check-satellites.sh` greps the live satellites for an expected version.)
 
 ### 6. Verify — run it like an end-user
-Grep **every** surface (repo on `origin` + the satellites) for the **old** version. Expect zero,
+Grep **every** surface (repo on `github` + the satellites) for the **old** version. Expect zero,
 excluding historical CHANGELOG / highlight entries. If a leaf is stale, you missed it — go back.
 
 ## Gotchas (the leaves that bit us, 2026-06-30)

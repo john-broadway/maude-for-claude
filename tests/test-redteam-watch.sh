@@ -88,7 +88,7 @@ assert_ne "$(last_rt)" "null" "build the list must not read as an implementer"
 test_start "a BUILD dispatch does NOT stamp (the implementer is not a lens)"
 reset_all
 agent_done "Build 7e first-light wiring TDD" \
-           "You are a careful TDD implementer in the WICK monorepo. Implement Inc 7e." | bash "$RT" stamp
+           "You are a careful TDD implementer in the estate monorepo. Implement Inc 7e." | bash "$RT" stamp
 assert_eq "$(last_rt)" "null" "implementer did not stamp"
 
 # The two guards MASK EACH OTHER unless the cases are separated. Mutation proved it:

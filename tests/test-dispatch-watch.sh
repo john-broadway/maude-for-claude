@@ -214,3 +214,4 @@ assert_exit "$RC" "0" "exit"
 
 teardown_test_env
 print_summary
+exit "$FAILED"

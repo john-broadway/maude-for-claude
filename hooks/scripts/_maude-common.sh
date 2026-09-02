@@ -155,6 +155,54 @@ _maude_inferred_root_ok() {
   [ "$cc" != "$hc" ]
 }
 
+# Is a candidate in a LOCATION that could sanely hold a workspace? Path-shaped
+# refusal only, no content test, so it is safe for the filesystem walk-up too.
+# /tmp is 1777 and /tmp/.maude/plugin exists on real boxes; a root resolved there
+# would put care.json, gate tokens, the vault and the trace log into
+# world-writable, reboot-volatile storage.
+_maude_root_location_ok() {
+  local cand _mco_t
+  cand="${1%/}"
+  [ -n "$cand" ] || return 1
+  case "$cand" in
+    /tmp|/var/tmp|/) return 1 ;;
+  esac
+  # Canonicalise both sides. The process walk hands a canonical candidate
+  # (readlink /proc/N/cwd) but the filesystem walk-up hands a logical one (pwd),
+  # and $TMPDIR may be spelled through a symlink, so a raw compare would miss.
+  # KNOWN GAP (0.30.2): the case above matches the raw spelling, so a symlink TO
+  # /tmp, or macOS's /private/tmp, is not refused by it.
+  if [ -n "${TMPDIR:-}" ]; then
+    _mco_t="${TMPDIR%/}"
+    if [ "$(_maude_canon "$cand" 2>/dev/null || printf '%s' "$cand")" \
+         = "$(_maude_canon "$_mco_t" 2>/dev/null || printf '%s' "$_mco_t")" ]; then
+      return 1
+    fi
+  fi
+  return 0
+}
+
+# Is a candidate a PLAUSIBLE closet, used only where the process walk must choose
+# BETWEEN candidates? Adds a content test on top of the location test, and
+# the content test refuses a closet holding none of care.json, trace/ or vault.db
+# (a hand-made empty one, or one only the eye has touched) and nothing more. LIMIT, pinned
+# in tests/test-project-dir-resolution.sh (13b): the closet the plugin itself
+# leaves (maude_ensure_self_dir makes trace/; maude-clear-gate.sh then writes
+# care.json) passes this test, and a wrong answer runs exactly that code, so this
+# cannot separate a mis-resolution's closet from a real one.
+#
+# NOT used by the filesystem walk-up, which climbs a single path and takes the
+# first hit — it has no candidates to choose between, and a legitimately fresh
+# closet there would be refused for having no content yet.
+_maude_closet_ok() {
+  local cand
+  cand="${1%/}"
+  _maude_root_location_ok "$cand" || return 1
+  [ -f "$cand/.maude/plugin/care.json" ] \
+    || [ -d "$cand/.maude/plugin/trace" ] \
+    || [ -f "$cand/.maude/plugin/vault.db" ]
+}
+
 # Project root — prefer $CLAUDE_PROJECT_DIR (set by Claude Code), fall back to pwd.
 # This matches the remember plugin's anchoring so .maude/ and .remember/ stay siblings.
 maude_project_dir() {
@@ -165,15 +213,22 @@ maude_project_dir() {
   #      point a hook at a project dir without touching CLAUDE_PROJECT_DIR.
   #      Unset in normal use, so default behavior is unchanged.)
   #   1. $CLAUDE_PROJECT_DIR if set (always for hooks)
-  #   2. Walk up the process tree looking for the `claude` process; read its
-  #      cwd. On Linux this matches what hooks see, regardless of how many
-  #      bash subshells are layered between the script and Claude Code.
+  #   2. Walk up the PROCESS tree. Prefer the nearest `claude`-named ancestor's
+  #      cwd; if none qualifies, take the nearest ancestor cwd that already
+  #      holds a .maude/plugin closet. On Linux this matches what hooks see,
+  #      regardless of how many subshells (or daemon processes) are layered
+  #      between the script and Claude Code.
   #   3. Walk up the FILESYSTEM from pwd looking for an existing
-  #      .maude/plugin/ closet (non-Linux fallback / edge cases).
+  #      .maude/plugin/ closet (non-Linux fallback / edge cases). DANGER: from a
+  #      subproject this finds the SUBPROJECT's closet, which is not what the
+  #      hooks read. Step 2 exists to make this a genuine last resort.
   #   4. pwd (first-time setup, no closet anywhere).
   #
-  # Steps 2-4 are INFERENCE and are barred from returning $HOME — see
-  # _maude_inferred_root_ok. Steps 0-1 are DECLARATIONS and are not.
+  # Steps 1.5-3 are INFERENCE and are barred from returning $HOME — see
+  # _maude_inferred_root_ok. Step 4 is the last resort and returns pwd AS-IS,
+  # $HOME or /tmp included: a first-time setup in an odd place is the operator's
+  # call, and refusing would hand the caller nothing (0.30.2 question). Steps
+  # 0-1 are DECLARATIONS and are not barred.
   #
   # $MAUDE_PROC_ROOT / $MAUDE_PROC_START_PID are test seams (they let
   # tests/test-project-dir-resolution.sh drive the walk against a fixture
@@ -187,27 +242,108 @@ maude_project_dir() {
     printf '%s' "$CLAUDE_PROJECT_DIR"
     return
   fi
+  # 1.5. $CLAUDE_PID — Claude Code naming its OWN process id. Stronger than the
+  # walk below, so it outranks it. It is NOT treated as fully declarative: the
+  # $HOME guard and the location test still apply (a lens found this step alone
+  # accepting a $TMPDIR root the two steps below it refuse), because a stale or recycled pid landing at $HOME
+  # would mint the phantom closet that guard exists to prevent. So a project
+  # genuinely rooted at $HOME resolves via step 1 for hooks but is refused here —
+  # a known, deliberate asymmetry, not an oversight. Verified live 2026-09-02: it IS exported to the
+  # Bash tool subprocess and /proc/$CLAUDE_PID/cwd is the workspace root. In the
+  # tree measured that morning its `comm` was the VERSION string ("2.1.258"), which
+  # is exactly why matching on the name `claude` found the wrong process there; in
+  # another tree the same day `comm` was `claude` at the workspace root. The name
+  # is not a stable signal in either direction, so it is not used here.
+  #
+  # Guarded, never required: under a PID namespace or in a container /proc/<pid>
+  # may be unreadable. Then we FALL THROUGH to the walk rather than collapsing —
+  # making this the walk's starting pid would strand the resolver on iteration 0.
+  if [ -n "${CLAUDE_PID:-}" ]; then
+    cc_cwd="$(readlink "${MAUDE_PROC_ROOT:-/proc}/$CLAUDE_PID/cwd" 2>/dev/null)"
+    if [ -n "$cc_cwd" ] && _maude_root_location_ok "$cc_cwd" \
+       && _maude_inferred_root_ok "$cc_cwd"; then
+      printf '%s' "$cc_cwd"
+      return
+    fi
+  fi
+
+  # The walk collects TWO candidates in one pass and never abandons early.
+  #
+  #   claude_hit — nearest ancestor named `claude` whose cwd passes the guard.
+  #                Still the strongest of the signals left once CLAUDE_PID has
+  #                produced nothing, and it must outrank the closet
+  #                probe: in a classic session an intermediate shell may sit in a
+  #                subproject that has its own closet, and `claude`'s cwd is the
+  #                right answer there.
+  #   closet_hit — nearest ancestor whose cwd passes the guard AND already holds
+  #                a .maude/plugin closet. This is what survives the daemon tree
+  #                (2026-09-02): Claude Code's worker processes are named by
+  #                VERSION ("2.1.258") rather than `claude`, and the process still
+  #                named `claude` sits at $HOME, which the guard correctly refuses.
+  #                Keying only on the name skipped the one ancestor that knew.
+  #
+  # A refused candidate must NEVER `break`. It did, and that abandoned a walk
+  # which had already passed the correct answer at depth 0 — the resolver then
+  # fell to the filesystem walk-up and returned a SUBPROJECT's closet. Live cost:
+  # maude-clear-gate.sh wrote its token to <subproject>/.maude/plugin/care.json
+  # while the gate hook read <workspace>/.maude/plugin/care.json. The clear
+  # printed success; the gate refused anyway. Pinned by tests 7 and 8 in
+  # tests/test-project-dir-resolution.sh.
   procroot="${MAUDE_PROC_ROOT:-/proc}"
   pid="${MAUDE_PROC_START_PID:-${PPID:-}}"
   i=0
+  local claude_hit closet_hit
+  claude_hit=""
+  closet_hit=""
   while [ -n "$pid" ] && [ "$pid" != "0" ] && [ "$i" -lt 16 ]; do
-    if [ -r "$procroot/$pid/comm" ]; then
-      cmd="$(cat "$procroot/$pid/comm" 2>/dev/null)"
-      if [ "$cmd" = "claude" ]; then
-        cc_cwd="$(readlink "$procroot/$pid/cwd" 2>/dev/null)"
-        if _maude_inferred_root_ok "$cc_cwd"; then
-          printf '%s' "$cc_cwd"
-          return
-        fi
-        break
+    cc_cwd="$(readlink "$procroot/$pid/cwd" 2>/dev/null)"
+    if [ -n "$cc_cwd" ] && _maude_inferred_root_ok "$cc_cwd"; then
+      # The location test applies here too: this branch outranks the closet
+      # probe, so without it a claude-named ancestor at $TMPDIR handed back the
+      # very root step 1.5 had just refused (a lens proved it; test 12c pins it).
+      if [ -z "$claude_hit" ] && [ -r "$procroot/$pid/comm" ] \
+         && [ "$(cat "$procroot/$pid/comm" 2>/dev/null)" = "claude" ] \
+         && _maude_root_location_ok "$cc_cwd"; then
+        claude_hit="$cc_cwd"
+      fi
+      # NEAREST, deliberately — not outermost.
+      #
+      # An earlier draft preferred the outermost closet along the same path, to
+      # skip the tool shell's own subproject cwd. That REGRESSED a session
+      # legitimately rooted IN a subproject: it climbed past the true root. Proven
+      # with a fixture, and it is the mirror image of the bug being fixed.
+      #
+      # The two shapes are INDISTINGUISHABLE from the process tree — "tool shell
+      # standing in a subproject" and "session rooted at that subproject" produce
+      # the same ancestors. No walk heuristic can separate them, so trading one
+      # silent wrong answer for another is not progress. The walk stays
+      # conservative and $CLAUDE_PID (step 1.5) is what actually resolves it. The
+      # remaining gap is pinned as a documented residual in
+      # tests/test-project-dir-resolution.sh rather than papered over.
+      if [ -z "$closet_hit" ] && _maude_closet_ok "$cc_cwd"; then
+        closet_hit="$cc_cwd"
       fi
     fi
     pid="$(_maude_ppid "$procroot/$pid")" || break
     i=$((i + 1))
   done
+  if [ -n "$claude_hit" ]; then
+    printf '%s' "$claude_hit"
+    return
+  fi
+  if [ -n "$closet_hit" ]; then
+    printf '%s' "$closet_hit"
+    return
+  fi
   d="$(pwd)"
   while [ "$d" != "/" ] && [ -n "$d" ]; do
-    if [ -d "$d/.maude/plugin" ] && _maude_inferred_root_ok "$d"; then
+    # Same LOCATION test as the process walk — not the contents test, see
+    # _maude_closet_ok. Without it this step accepts /tmp, which has a real
+    # .maude/plugin on some boxes. It matters most
+    # where there is NO /proc (macOS): steps 1.5 and 2 produce nothing there, so
+    # this is the ONLY resolver, and it is the one that finds a subproject.
+    if [ -d "$d/.maude/plugin" ] && _maude_root_location_ok "$d" \
+       && _maude_inferred_root_ok "$d"; then
       printf '%s' "$d"
       return
     fi

@@ -256,9 +256,14 @@ MINS=$((DURATION / 60))
 # written → the gate still blocks.
 if maude_care_set "$CARE" --arg k "$KEY" --argjson until "$UNTIL" '.gate_cleared[$k] = {until: $until}'; then
   printf 'Maude: gate cleared for "%s" — %d minute(s). One matching command will pass, then the token clears.\n' "$KEY" "$MINS"
+  # SAY WHERE THE TOKEN LANDED — the red twin of the line in maude-clear-gate.sh.
+  # v0.30.1 added it to the yellow script and a lens found this one still silent,
+  # with the failure line below still naming a file this script never writes.
+  # A writer that will not name its file cannot be checked against its reader.
+  printf '       token: %s\n' "$CARE"
   maude_log_trace "gate-cleared" "key=$KEY duration=$DURATION"
 else
-  printf 'Maude: could NOT clear the gate for "%s" — care.json could not be written. The gate still stands.\n' "$KEY" >&2
+  printf 'Maude: could NOT clear the gate for "%s" — %s could not be written. The gate still stands.\n' "$KEY" "$CARE" >&2
   exit 1
 fi
 

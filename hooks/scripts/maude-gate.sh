@@ -459,7 +459,17 @@ if [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
   fi
 fi
 
-# No live token — block
+# No live token — block.
+# NAME THE FILE WE LOOKED IN. The clear-script names the file it WROTE; without
+# this the reader stayed silent, so a resolver split showed up only as "cleared"
+# followed by a refusal, with nothing on either side to compare. That is exactly
+# how the 2026-09-02 bug hid. One line closes the loop from the reader's side.
 maude_log_trace "gate" "blocked=$MATCHED_KEY"
 printf 'Maude: %s\n' "$MATCHED_MSG" >&2
+# Deliberately does NOT repeat the matched key. An earlier draft did, and that
+# put the key into stderr from a second source — which let nine assertions in
+# test-gate.sh ("...block names its conscience key") pass even with the primary
+# message suppressed. A diagnostic must not become an alternative supply of the
+# thing other tests are checking for.
+printf '       (looked in: %s)\n' "$CARE" >&2
 exit 2

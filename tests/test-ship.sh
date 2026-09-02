@@ -315,6 +315,152 @@ else
   _fail "accepted a multi-commit source branch as the PR head (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
 fi
 
+# ── the PUBLIC remote is resolved by URL, never by NAME ─────────────────
+#
+# Added 2026-08-30. Every `$PUB/main` in ship.sh used to read `origin/main`,
+# which worked only because this repo is the one place in the estate where
+# `origin` means github. The leak audit IS `git diff $PUB/main`, so pointing
+# it at canon makes it compare the internal tree against itself, find nothing,
+# and report clean while shipping everything. These tests exist so the rename
+# to the estate convention (origin=gitea, github=github) cannot do that.
+#
+# NOTE the fixture above has ONE remote on a local path, so it exercises the
+# single-remote rule and NOT the github rule. Every case below builds its own
+# remote set; a test that reuses the fixture would prove nothing new.
+
+_pubremote() {  # echo the remote ship.sh treats as public, or "REFUSED: <its own message>"
+  # Runs the REAL script. The first draft sed-extracted resolve_public_remote and ran
+  # the text in a subshell with its own die(), which meant these tests could never see
+  # a defect in how $PUB is USED, and they asserted on a "REFUSED:" string the rail
+  # never emits. An adversarial pass proved the cost: two mutants that blinded the
+  # audit and the fetch both survived the whole suite.
+  #
+  # With no subcommand ship.sh still resolves and announces, then dies on usage. We key
+  # on the announcement, not the exit code.
+  local dir="$1"; shift
+  local out
+  out="$( cd "$dir" && env "$@" bash "$SHIP" 2>&1 )"
+  if printf '%s\n' "$out" | grep -q '^ship: public remote = '; then
+    printf '%s\n' "$out" | sed -n 's/^ship: public remote = \([^ ]*\) .*/\1/p' | head -1
+  else
+    printf 'REFUSED: %s' "$(printf '%s\n' "$out" | head -1)"
+  fi
+}
+
+_mkrepo() {  # $1=dir, then name=url pairs
+  local d="$1"; shift
+  git init -q -b main "$d"; ( cd "$d" || exit 1
+    git config user.email t@example.invalid; git config user.name t
+    printf x > f; git add f; git commit -qm c
+    for spec in "$@"; do git remote add "${spec%%=*}" "${spec#*=}"; done )
+}
+
+R="$TEST_TMP/remotes"; mkdir -p "$R"
+
+test_start "public remote is the github one even when it is NOT named origin"
+_mkrepo "$R/a" "origin=https://gitea.example.invalid/o/x.git" "github=https://github.com/john-broadway/x.git"
+assert_eq "$(_pubremote "$R/a")" "github" "post-rename shape"
+
+test_start "public remote is still found when github IS named origin"
+_mkrepo "$R/b" "origin=https://github.com/john-broadway/x.git" "gitea=https://gitea.example.invalid/o/x.git"
+assert_eq "$(_pubremote "$R/b")" "origin" "pre-rename shape"
+
+test_start "two github remotes REFUSE rather than guess"
+_mkrepo "$R/c" "one=https://github.com/a/x.git" "two=https://github.com/b/x.git"
+case "$(_pubremote "$R/c")" in REFUSED*) _pass ;; *) _fail "picked one instead of refusing: $(_pubremote "$R/c")" ;; esac
+
+test_start "a lone GITEA remote REFUSES (there is nothing public to ship against)"
+_mkrepo "$R/d" "origin=https://gitea.example.invalid/o/x.git"
+case "$(_pubremote "$R/d")" in REFUSED*) _pass ;; *) _fail "accepted canon as public: $(_pubremote "$R/d")" ;; esac
+
+test_start "a lone non-gitea remote is accepted (the test-fixture shape)"
+_mkrepo "$R/e" "origin=$FIX/origin.git"
+assert_eq "$(_pubremote "$R/e")" "origin" "single local remote"
+
+test_start "no remotes at all REFUSES"
+_mkrepo "$R/f"
+case "$(_pubremote "$R/f")" in REFUSED*) _pass ;; *) _fail "accepted a repo with no remotes: $(_pubremote "$R/f")" ;; esac
+
+test_start "SHIP_PUBLIC_REMOTE overrides the URL rule"
+_mkrepo "$R/g" "origin=https://gitea.example.invalid/o/x.git" "github=https://github.com/john-broadway/x.git"
+assert_eq "$(_pubremote "$R/g" SHIP_PUBLIC_REMOTE=origin)" "origin" "explicit override"
+
+test_start "SHIP_PUBLIC_REMOTE naming a remote that is not there REFUSES"
+case "$(_pubremote "$R/g" SHIP_PUBLIC_REMOTE=nosuch)" in REFUSED*) _pass ;; *) _fail "accepted a phantom remote" ;; esac
+
+test_start "build roots on the PUBLIC main after a rename, not on canon"
+# The whole point, end to end. Put the repo into the ESTATE convention
+# (origin=canon, github=public) and give canon a DIFFERENT lineage. If ship.sh
+# followed the NAME it would root on canon and the leak audit would go blind.
+#
+# The public bare repo lives under a directory literally called github.com so its
+# URL satisfies the same rule a real remote does. Without that the resolver
+# refuses two local paths, which is correct and is asserted separately above.
+CANON="$TEST_TMP/canon.git"; git init -q --bare "$CANON"
+mkdir -p "$TEST_TMP/github.com"; PUBBARE="$TEST_TMP/github.com/pub.git"
+git init -q --bare "$PUBBARE"
+cd "$FIX/repo" || exit 1
+git push -q "$PUBBARE" "$(git rev-parse origin/main)":refs/heads/main
+git push -q "$CANON" main:main
+git remote remove origin
+git remote add github "$PUBBARE"
+git remote add origin "$CANON"
+git fetch -q github; git fetch -q origin
+SHIP_BRANCH=ship-rename SHIP_SKIP_GATES=1 "$SHIP" build -m "rename probe" >/dev/null 2>&1
+_base="$(git merge-base ship-rename github/main 2>/dev/null)"
+assert_eq "$_base" "$(git rev-parse github/main)" "ship branch is rooted on the PUBLIC main"
+
+test_start "and that ship branch is NOT rooted on canon"
+assert_ne "$(git merge-base ship-rename origin/main 2>/dev/null)" "$(git rev-parse origin/main)" "must not root on canon"
+
+test_start "the leak audit diffs against the PUBLIC main, not canon"
+# THE test for this change, and the one the first ten missed. An adversarial pass
+# reverted ONLY audit_staged's baseline to origin/main -- the exact catastrophe the
+# decoupling exists to prevent -- and the suite stayed 32/32 green. The rename tests
+# above assert where the BRANCH is rooted, which comes from a different line; the
+# leak-plant tests run in the original fixture where origin IS the public remote, so
+# a hardcoded origin/main is indistinguishable from correct there.
+#
+# So plant a leak that CANON ALREADY CARRIES and the public main does not. Audited
+# against public/main it is an ADDED line and must be caught. Audited against canon
+# it is unchanged, and the audit goes blind while reporting clean.
+#
+# --no-verify is on the PLANT'S DELIVERY to the bare canon repo, never on the subject
+# under test: the estate's own pre-push guard fires on fixture pushes and would make
+# this flaky by environment rather than by behaviour.
+git checkout -q main
+printf 'internal box at %s\n' "$QUAD" > canon-only-leak.md
+git add canon-only-leak.md && git commit -qm "a leak that canon already carries"
+git push -q --no-verify "$CANON" main:main
+git fetch -q origin
+_out="$(SHIP_BRANCH=ship-auditbase SHIP_SKIP_GATES=1 "$SHIP" build 2>&1)"; _rc=$?
+git checkout -qf main >/dev/null 2>&1
+git branch -qD ship-auditbase >/dev/null 2>&1
+git reset -q --hard HEAD~1
+if [ "$_rc" -ne 0 ] && printf '%s' "$_out" | grep -q 'canon-only-leak.md'; then
+  _pass
+else
+  _fail "audit was blind to a leak canon already had (rc=$_rc): $(printf '%s' "$_out" | head -c 200)"
+fi
+
+test_start "build fetches the PUBLIC remote, not whatever is named origin"
+# The second surviving mutant: `git fetch -q origin` in place of "$PUB". Invisible to
+# every other test because the fixture pre-fetches both remotes, so a wrong fetch
+# target still finds a usable ref sitting in the repo.
+#
+# Delete the public remote-tracking ref and build. A build that fetches the right
+# remote restores it; one that fetches canon leaves it gone and dies on the missing
+# baseline. (No $PUB here: that is ship.sh's variable, not this file's. Referencing
+# it under `set -u` killed this suite on the first draft.)
+git update-ref -d refs/remotes/github/main
+SHIP_BRANCH=ship-fetch SHIP_SKIP_GATES=1 "$SHIP" build -m "fetch probe" >/dev/null 2>&1
+if git rev-parse --verify -q refs/remotes/github/main >/dev/null 2>&1; then
+  _pass
+else
+  _fail "build left refs/remotes/github/main deleted, so it fetched something else"
+fi
+git checkout -qf main >/dev/null 2>&1; git branch -qD ship-fetch >/dev/null 2>&1
+
 cd "$DIR" || exit 1
 teardown_test_env
 print_summary

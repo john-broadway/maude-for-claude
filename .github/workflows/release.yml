@@ -38,4 +38,7 @@ jobs:
             exit 0
           fi
           bash scripts/release-notes.sh "${TAG#v}" > /tmp/notes.md
-          gh release create "$TAG" --title "$TAG" --notes-file /tmp/notes.md
+          # The title is the stranger's line. Rendered from the CHANGELOG heading;
+          # a heading with no reason fails this step rather than minting a bare title.
+          TITLE="$(bash scripts/release-notes.sh --title "${TAG#v}")"
+          gh release create "$TAG" --title "$TITLE" --notes-file /tmp/notes.md

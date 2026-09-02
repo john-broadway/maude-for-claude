@@ -263,7 +263,7 @@ assert_eq "$(blob_count)" "1" "recent blob kept"
 # ── FINDING THE STORE FROM A COMMAND ────────────────────────────────────────
 # Hooks get CLAUDE_PROJECT_DIR; the Bash tool does NOT. Measured on the live box:
 # the hooks resolved <workspace> and wrote 9 entries, while the same script invoked
-# from a Bash call resolved /root and reported "nothing captured yet". A user whose
+# from a Bash call resolved ~ and reported "nothing captured yet". A user whose
 # file WAS recoverable would have been told it wasn't — the precise lie this pillar
 # is most prone to. So a capture registers its store user-globally, and list/restore
 # fall back to that registry rather than claiming an empty store they never found.
