@@ -84,7 +84,7 @@ case "$MODE" in
     # Hard ceiling — actions OR minutes.
     if [ "$ACTIONS" -ge "$HARD_A" ] 2>/dev/null || [ "$ELAPSED_MIN" -ge "$HARD_M" ] 2>/dev/null; then
       maude_log_trace "run-governor" "blocked actions=$ACTIONS elapsed_min=$ELAPSED_MIN"
-      printf 'Maude: run-governor — %s tool-actions / %s min since John last spoke. Hard checkpoint: you have run unattended a long time. Take a turn with John, or run /maude:conscience run-governor to continue with a fresh budget.\n' "$ACTIONS" "$ELAPSED_MIN" >&2
+      printf 'Maude: run-governor — %s tool actions / %s min since the last human turn. Hard checkpoint: you have run unattended a long time. Take a turn with your human, or run /maude:conscience run-governor to continue with a fresh budget.\n' "$ACTIONS" "$ELAPSED_MIN" >&2
       # NAME THE FILE WE LOOKED IN — this is the second reader of the yellow token
       # (after maude-gate.sh), and its writer maude-clear-gate.sh names where it
       # wrote. Same split shape as the 2026-09-02 bug: hook reads, Bash-tool
@@ -95,7 +95,7 @@ case "$MODE" in
 
     # Soft threshold — whisper once per budget.
     if { [ "$ACTIONS" -ge "$SOFT_A" ] 2>/dev/null || [ "$ELAPSED_MIN" -ge "$SOFT_M" ] 2>/dev/null; } && [ "$SOFT_WARNED" != "true" ]; then
-      printf 'Maude: run-governor — %s actions / %s min since a human turn. Worth a checkpoint: summarize where you are and what RED line is next. (Hard pause at %s actions / %s min.)\n' "$ACTIONS" "$ELAPSED_MIN" "$HARD_A" "$HARD_M" >&2
+      printf 'Maude: run-governor — %s tool actions / %s min since the last human turn. Worth a checkpoint: summarize where you are and what RED line is next. (Hard pause at %s tool actions / %s min.)\n' "$ACTIONS" "$ELAPSED_MIN" "$HARD_A" "$HARD_M" >&2
       maude_care_set "$CARE" '.run_state.soft_warned = true'
       maude_log_trace "run-governor" "soft-warn actions=$ACTIONS elapsed_min=$ELAPSED_MIN"
     fi

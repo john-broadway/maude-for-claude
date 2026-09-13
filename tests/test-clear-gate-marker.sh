@@ -367,6 +367,28 @@ GATE_SH2="$HOOKS_DIR/maude-gate.sh"
 OUT="$(make_bash_tool_input "bash $CLEARRED sole-copy-target --marker abc" | bash "$GATE_SH2" 2>&1 >/dev/null)"; RC=$?
 assert_exit "$RC" "2" "clear-red invocation blocked for Claude"
 
+# ── The red script's paste line names ITSELF (the UX lens, 2026-09-06, D1): both of its
+# refusal paths handed the person a line that ran the yellow script, which refuses every
+# red key, so a person following the instruction landed back where he started. The
+# yellow script's refusal names the red one (tested above); this is the reverse.
+test_start "the hard-path refusal's paste line runs the red script, not the yellow one"
+mkdir -p "$HOME/.claude/maude"
+mkchain filter-branch 3
+OUT="$(bash "$CLEARRED" filter-branch 2>&1)"; RC=$?
+assert_exit "$RC" "1" "refused without a link"
+PASTE="$(printf '%s\n' "$OUT" | grep -E '^[[:space:]]*! bash' | head -1)"
+assert_contains "$PASTE" "$(basename "$CLEARRED")" "the paste line names the red script"
+assert_not_contains "$PASTE" "$(basename "$CLEAR")" "and not the yellow one"
+
+test_start "the soft-path refusal's paste line runs the red script too"
+FRESH_HOME="$(mktemp -d)"
+OUT="$(HOME="$FRESH_HOME" bash "$CLEARRED" filter-repo 2>&1)"; RC=$?
+rm -rf "$FRESH_HOME"
+assert_exit "$RC" "1" "refused without --john"
+PASTE="$(printf '%s\n' "$OUT" | grep -E '^[[:space:]]*! bash' | head -1)"
+assert_contains "$PASTE" "$(basename "$CLEARRED")" "the paste line names the red script"
+assert_not_contains "$PASTE" "$(basename "$CLEAR")" "and not the yellow one"
+
 print_summary
 teardown_test_env
 exit "$FAILED"

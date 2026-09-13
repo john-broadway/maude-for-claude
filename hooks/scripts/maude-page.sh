@@ -47,7 +47,7 @@ case "$PROMPT" in
 esac
 
 OUT="$(printf '%s' "$PROMPT" | PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m maude_vault page \
-  --db "$DB" --k 5 --log "$(maude_project_dir)/.maude/plugin/recall-log.jsonl" 2>/dev/null)"
+  --db "$DB" --k 5 --mem "$(maude_mem_dir)" --log "$(maude_project_dir)/.maude/plugin/recall-log.jsonl" 2>/dev/null)"
 if [ -n "$OUT" ]; then
   printf '%s\n' "$OUT"
   # #49: log the bill — hook class + bytes, never content.

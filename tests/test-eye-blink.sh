@@ -6,7 +6,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/proj/.maude/plugin"
 export CLAUDE_PLUGIN_ROOT="$ROOT"
 export MAUDE_PROJECT_DIR_OVERRIDE="$WORK/proj"

@@ -722,7 +722,8 @@ def cmd_profile(args, tape) -> int:
 # pass/fail wording, no score. It reuses measure_texts and _count_shadow_hits so the
 # draft is measured by the exact same rules as the stored profile.
 
-def voice_report_lines(draft: str, profile: dict) -> list[str]:
+def voice_report_lines(draft: str, profile: dict, *, profile_ts: float | None = None,
+                       newer_rows: int | None = None) -> list[str]:
     """Format the --voice report for one draft against a stored profile. Numbers only —
     the model/John own the verdict, this only ever reports (a-guard-that-answers-the-
     easy-question law: this function must never emit PASS/FAIL/score wording)."""
@@ -744,6 +745,14 @@ def voice_report_lines(draft: str, profile: dict) -> list[str]:
     hammer_hits = [phrase for phrase in hammers if f" {phrase} " in padded]
 
     lines = ["voice report (numbers, not a verdict):"]
+    if profile_ts:
+        # A derived cache with no invalidation must at least say its age: 879 of 3,254
+        # voice rows had arrived after the profile was computed and the report never said
+        # so (the memory lens, 2026-09-06).
+        import datetime
+        when = datetime.datetime.fromtimestamp(float(profile_ts), datetime.timezone.utc).strftime("%Y-%m-%d")
+        since = "" if newer_rows is None else f"; {newer_rows} voice rows since"
+        lines.append(f"  profile computed {when}{since}")
     lines.append(
         f"  sentence length (words): draft median {d_median:.1f} / p90 {d_p90:.1f} "
         f"vs profile median {p_sentence.get('median', 0.0):.1f} / "

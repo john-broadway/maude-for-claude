@@ -18,6 +18,14 @@ import sys
 from .tape import Tape, _score, looks_secretish
 
 
+def _when(ts) -> str:
+    """'  [YYYY-MM-DD]' for a dated row, '' for one that has no date (a seed)."""
+    if not ts:
+        return ""
+    import datetime
+    return "  [" + datetime.datetime.fromtimestamp(float(ts), datetime.timezone.utc).strftime("%Y-%m-%d") + "]"
+
+
 def _one_line(text: str) -> str:
     """Render stored content so it can never counterfeit one of our own headers.
 
@@ -233,19 +241,22 @@ def main(argv: list[str] | None = None) -> int:
         # his; a rendering he approved, or an inference he promoted, is Claude's wording and
         # saying otherwise hands his voice away. promote.md already promised authority is
         # preserved — it was true in the table and false on the screen.
-        entries = brief.canon_entries or [(t, "user-verbatim") for t in brief.canon_texts]
-        his = [t for t, a in entries if a == "user-verbatim"]
-        ours = [(t, a) for t, a in entries if a != "user-verbatim"]
+        entries = brief.canon_entries or [(t, "user-verbatim", None, None) for t in brief.canon_texts]
+        his = [(t, ts, sha) for t, a, ts, sha in entries if a == "user-verbatim"]
+        ours = [(t, a, ts) for t, a, ts, sha in entries if a != "user-verbatim"]
+        # Each row carries its date, so two rulings on one topic can be ranked, and a
+        # verbatim row the tape never heard him type says so (the memory lens, 2026-09-06).
         if his:
             print("\nHIS WORDS (his rendering — use verbatim, never re-render):")
-            for text in his:
-                print(f"  • {_one_line(text)}")
+            for text, ts, sha in his:
+                tag = "" if sha else "  [unverified: no voice row holds it]"
+                print(f"  • {_one_line(text)}{_when(ts)}{tag}")
         if ours:
             # Header deliberately does NOT contain the substring "HIS WORDS" — a reader splitting
             # on that string would otherwise land inside this block. Never substring-match.
             print("\nCLAUDE'S WORDING, APPROVED BY HIM (never quote as his):")
-            for text, authority in ours:
-                print(f"  ◦ {_one_line(text)}  [{authority}]")
+            for text, authority, ts in ours:
+                print(f"  ◦ {_one_line(text)}  [{authority}]{_when(ts)}")
         if rejections:
             print(f"\nNEVER RENDER ({len(rejections)}):")
             for hit in rejections:
@@ -299,7 +310,12 @@ def main(argv: list[str] | None = None) -> int:
             if profile is None:
                 print("voice: no profile stored — run profile first")
             else:
-                for line in voice.voice_report_lines(draft, profile):
+                row = tape._conn.execute("SELECT ts FROM voice_profile WHERE id = 1").fetchone()
+                profile_ts = row[0] if row else None
+                (newer,) = tape._conn.execute(
+                    "SELECT COUNT(*) FROM voice WHERE ts > ?", (profile_ts or 0,)).fetchone()
+                for line in voice.voice_report_lines(draft, profile, profile_ts=profile_ts,
+                                                     newer_rows=newer):
                     print(line)
 
         if not tape.list_rejections():

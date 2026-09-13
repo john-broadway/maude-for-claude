@@ -119,6 +119,55 @@ test_start "maude_date_epoch falls back to BSD date -j -f"
 E="$(PATH="$BSD_BIN:$PATH" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_date_epoch 2026-01-01')"
 assert_eq "$E" "$WANT" "BSD date parse"
 
+# ── maude_days_between ──────────────────────────────────────────────────
+# The DST span is the whole reason this helper exists. US Central springs forward on
+# 2026-03-08 (verified here: -0600 before, -0500 after), so 03-06 to 03-20 contains a
+# 23-hour day. Measured as raw seconds that span is 3600 short of 14*86400 and floor
+# division calls it 13. Both ends are local midnights and the division rounds, so it
+# reads 14 in every zone.
+# Same guard as tests/test-verify.sh, and for the same reason. Without a 2026 spring-forward
+# in this box's zone database the span has no short day: the assertion below reads 14 whether
+# the rounding is present or not, and the raw-seconds control below it fails with
+# "expected=13 got=14" and no explanation. Three prior passes named this; it stayed open
+# because the fix went into the other file only.
+if [ "$(TZ=America/Chicago date -d 2026-03-08T00:30:00 +%z 2>/dev/null)" \
+   = "$(TZ=America/Chicago date -d 2026-03-08T23:30:00 +%z 2>/dev/null)" ]; then
+  test_start "this box's zone database really has the 2026 spring-forward"
+  _fail "no 2026 spring-forward in tzdata: the DST tests cannot discriminate here and were NOT run"
+else
+
+test_start "maude_days_between is exact across a spring-forward"
+D="$( export TZ=America/Chicago; maude_days_between 2026-03-06 2026-03-20 )"
+assert_eq "$D" "14" "spring-forward span counts calendar days"
+
+# The control this fix exists for. If someone reinstates the raw-seconds expression, the
+# test above goes red and this one explains why; if THIS one ever reads 14, the zone
+# database moved under us and the test above proves nothing.
+test_start "the raw-seconds expression this replaced really does get it wrong"
+A="$( export TZ=America/Chicago; maude_date_epoch 2026-03-06 )"
+B="$( export TZ=America/Chicago; maude_date_epoch 2026-03-20 )"
+assert_eq "$(( (B - A) / 86400 ))" "13" "the defect the rounding absorbs"
+
+fi
+
+# Outside the guard on purpose: neither of these can discriminate the fix from the defect,
+# so neither needs the transition — and silencing them with it costs coverage for nothing.
+# A fall-back LENGTHENS the span, so the raw-seconds form already answered 14 here; this is
+# a regression guard, not a discriminator. Only the spring-forward test above tells the two
+# implementations apart.
+test_start "maude_days_between is exact across a fall-back"
+D="$( export TZ=America/Chicago; maude_days_between 2026-10-25 2026-11-08 )"
+assert_eq "$D" "14" "fall-back span counts calendar days"
+
+test_start "maude_days_between is unchanged in a zone with no transitions"
+D="$( export TZ=UTC; maude_days_between 2026-03-06 2026-03-20 )"
+assert_eq "$D" "14" "no-DST zone"
+
+test_start "maude_days_between rejects garbage"
+E="$(maude_days_between not-a-date 2026-01-01)"
+RC=$?
+if [ -z "$E" ] && [ "$RC" -ne 0 ]; then _pass; else _fail "expected empty+nonzero, got '$E' rc=$RC"; fi
+
 # ── maude_epoch_iso ─────────────────────────────────────────────────────
 test_start "maude_epoch_iso renders epoch as ISO Z (GNU path)"
 assert_eq "$(maude_epoch_iso 1767225600)" "2026-01-01T00:00:00Z" "epoch→ISO"

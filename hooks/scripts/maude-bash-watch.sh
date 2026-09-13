@@ -23,6 +23,10 @@ printf '%s' "$INPUT" | bash "$DIR/maude-undo.sh" capture-bash 2>/dev/null
 # UNDELIVERED. The tests/test-redteam-watch.sh wiring rows pin this.
 printf '%s' "$INPUT" | bash "$DIR/maude-redteam-watch.sh" check
 
+# RULES rail — on a `git commit`, whisper once per class that was touched this session and
+# never named by a design. Same channel rule as the redteam call: stderr is the whisper.
+printf '%s' "$INPUT" | bash "$DIR/maude-rules-watch.sh" check
+
 CMD=""
 if command -v jq >/dev/null 2>&1; then
   CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
