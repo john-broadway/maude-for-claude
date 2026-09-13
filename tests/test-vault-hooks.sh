@@ -11,7 +11,6 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 
 WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/mem" "$WORK/proj/.maude/plugin"
 cp "$DIR/vault/fixtures/mem/"*.md "$WORK/mem/"
 

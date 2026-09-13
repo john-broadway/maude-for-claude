@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS canon (
     text          TEXT NOT NULL,
     source        TEXT,
     authority     TEXT DEFAULT 'user-verbatim',
-    superseded_by INTEGER              -- NULL = current truth
+    superseded_by INTEGER,             -- NULL = current truth
+    ts            REAL,                -- when it was said; carried from the event
+    voice_sha     TEXT                 -- the voice row that holds the utterance, if heard
 );
 CREATE TABLE IF NOT EXISTS events (
     id         INTEGER PRIMARY KEY,
@@ -35,7 +37,8 @@ CREATE TABLE IF NOT EXISTS events (
     source     TEXT,
     authority  TEXT DEFAULT 'agent-inference',
     importance REAL DEFAULT 0.5,
-    status     TEXT DEFAULT 'buffered'   -- buffered | consolidated | forgotten
+    status     TEXT DEFAULT 'buffered',  -- buffered | consolidated | forgotten
+    voice_sha  TEXT                      -- for his verbatim words: the voice row that heard them
 );
 CREATE TABLE IF NOT EXISTS voice (
     id       INTEGER PRIMARY KEY,
@@ -127,6 +130,7 @@ class Event:
     authority: str
     importance: float
     status: str
+    voice_sha: str | None = None   # his verbatim words: the voice row that heard them
 
 
 @dataclass(frozen=True)
@@ -145,11 +149,12 @@ class Brief:
     canon_texts: list[str]
     rejection_count: int
     identity: list[str]
-    # (text, authority) for the same rows as canon_texts, in the same order. The plain
-    # list stayed for existing callers; the replay surface needs the authority, because
-    # printing an inference he approved under "HIS WORDS" hands his voice to Claude's
-    # wording — the exact thing this whole gate exists to prevent, one inch further on.
-    canon_entries: list[tuple[str, str]] = field(default_factory=list)
+    # (text, authority, ts, voice_sha) for the same rows as canon_texts, in the same
+    # order. The plain list stayed for existing callers; the replay surface needs the
+    # authority, because printing an inference he approved under "HIS WORDS" hands his
+    # voice to Claude's wording, and the date and the pointer, because a row with neither
+    # cannot be ranked against its neighbour or checked against what he typed.
+    canon_entries: list[tuple[str, str, float | None, str | None]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -195,11 +200,105 @@ class Tape:
         self._migrate()
         self._conn.commit()
 
+    # The tape's own schema step. 0: before ts/voice_sha had their backfills recorded as
+    # done; 1: the 2026-09-06 backfills landed. Kept in the db header (PRAGMA
+    # user_version), which is written under the same transaction as the backfill, so a
+    # half-done migration reads as not done and runs again on the next open.
+    _MIGRATION = 1
+
     def _migrate(self) -> None:
-        """Primary durable state — evolve in place, never drop (unlike the disposable vault)."""
+        """Primary durable state — evolve in place, never drop (unlike the disposable vault).
+
+        ONE transaction for the columns and their backfills. Python's sqlite3 opens a
+        transaction for DML and not for DDL, so an ALTER TABLE used to commit on its own
+        while its UPDATE waited for the commit at the end of __init__, tens of seconds
+        later; a hook killed in between (the SessionStart budget, 2026-09-06) left the
+        column present and empty, and a guard on the column's absence never ran the
+        backfill again. The live tape carried ts on 163 rows, every one NULL (the 23rd
+        lens, BLOCKING-2). Now the step is keyed on the header's user_version, written in
+        the same transaction, so it lands whole or runs again; and the voice lookup is one
+        scan of the voice table, not one per canon row (BLOCKING-1: 137 rows x 3,271 voice
+        rows was 56 s at a door budgeted at 10). Each backfill also keys on its own
+        column's absence: a store whose header claims the version while the column is
+        missing (a partial restore, a hand repair) used to get the column and no backfill,
+        the original end state by design (the 24th lens, IMPORTANT-7)."""
         cols = {row[1] for row in self._conn.execute("PRAGMA table_info(canon)")}
-        if "embedding" not in cols:
-            self._conn.execute("ALTER TABLE canon ADD COLUMN embedding TEXT")
+        ecols = {row[1] for row in self._conn.execute("PRAGMA table_info(events)")}
+        (done,) = self._conn.execute("PRAGMA user_version").fetchone()
+        need_ts, need_vs = "ts" not in cols, "voice_sha" not in cols
+        need_cols = "embedding" not in cols or need_ts or need_vs or "voice_sha" not in ecols
+        if not need_cols and done >= self._MIGRATION:
+            return
+        self._conn.execute("BEGIN")
+        try:
+            if "embedding" not in cols:
+                self._conn.execute("ALTER TABLE canon ADD COLUMN embedding TEXT")
+            if "ts" not in cols:
+                # Canon had no time, and promotion threw the event's time away (the
+                # memory lens, 2026-09-06): Jost and Ribot could not be asked of canon
+                # at all. Backfill from the event that became the row, by text; a seeded
+                # row stays undated.
+                self._conn.execute("ALTER TABLE canon ADD COLUMN ts REAL")
+            if "voice_sha" not in cols:
+                self._conn.execute("ALTER TABLE canon ADD COLUMN voice_sha TEXT")
+            if "voice_sha" not in ecols:
+                self._conn.execute("ALTER TABLE events ADD COLUMN voice_sha TEXT")
+            if done < self._MIGRATION or need_ts:
+                self._conn.execute(
+                    "UPDATE canon SET ts = (SELECT MIN(e.ts) FROM events e WHERE e.text = canon.text) "
+                    "WHERE ts IS NULL"
+                )
+            if done < self._MIGRATION or need_vs:
+                # His verbatim rows point at the voice row that heard them, where one
+                # exists; the rest replay marked unverified. The label was typed by the
+                # agent for every one of them (the memory lens, 2026-09-06); the pointer
+                # is what makes it falsifiable.
+                unmatched = self._conn.execute(
+                    "SELECT id, text FROM canon WHERE authority = 'user-verbatim' AND voice_sha IS NULL"
+                ).fetchall()
+                if unmatched:
+                    heard = self._heard()
+                    for cid, text in unmatched:
+                        sha = self._find_voice_sha(text, heard)
+                        if sha:
+                            self._conn.execute(
+                                "UPDATE canon SET voice_sha = ? WHERE id = ?", (sha, cid))
+            if done < self._MIGRATION:
+                # Never backwards: a store whose header is AHEAD of this build (a newer
+                # Maude wrote it) keeps its version, or a downgrade would re-run every
+                # later migration's backfills as if they had never happened (the 25th
+                # lens, MINOR-4). The column-absence backfills above run either way.
+                self._conn.execute(f"PRAGMA user_version = {self._MIGRATION}")
+            self._conn.execute("COMMIT")
+        except BaseException:
+            self._conn.execute("ROLLBACK")
+            raise
+
+    def _heard(self) -> list[tuple[str, str]]:
+        """Every voice row, newest first, whitespace-normalised once."""
+        rows = self._conn.execute("SELECT sha, text FROM voice ORDER BY ts DESC").fetchall()
+        return [(sha, _WS.sub(" ", (t or "").lower()).strip()) for sha, t in rows]
+
+    def _find_voice_sha(self, text: str, heard: list[tuple[str, str]] | None = None) -> str | None:
+        """The sha of a voice row that carries this text, whitespace-normalised, newest
+        first; None when the tape never heard it. Substring, because a captured line is
+        often one line out of a longer prompt he typed. A caller with many needles passes
+        one `heard` scan for all of them."""
+        needle = _WS.sub(" ", text.lower()).strip()
+        if not needle:
+            return None
+        if heard is None:
+            heard = self._heard()
+        for sha, line in heard:
+            if line == needle:
+                return sha
+        # A substring is a fingerprint only when it is long enough to be one: a bare "go"
+        # pointed at the newest prompt that merely contained the letters.
+        if len(needle) >= 24:
+            for sha, line in heard:
+                if needle in line:
+                    return sha
+        return None
 
     def reject(self, phrase: str, *, reason: str, source: str) -> None:
         """Record a phrasing the user rejected, so it can never reach the page again.
@@ -320,8 +419,12 @@ class Tape:
         source: str,
         authority: str = "user-verbatim",
         supersedes: int | None = None,
+        ts: float | None = None,
+        voice_sha: str | None = None,
     ) -> int:
-        """Encode a canon memory and return its id. If it corrects an older entry, that entry
+        """Encode a canon memory and return its id. `ts` is when it was said (an event's
+        own time when promoted; now when remembered directly); `voice_sha` points at the
+        voice row that heard a verbatim line, when the tape has one. If it corrects an older entry, that entry
         is marked superseded (kept, never deleted) — reconsolidation, not duplication.
 
         Refuses a credential shape, like capture() and the voice path. This is the LAST
@@ -330,10 +433,11 @@ class Tape:
         through this method, which is why the check lives here and not at each caller.
         """
         _refuse_secrets("remember", text=text, topic=topic, source=source,
-                        authority=authority)
+                        authority=authority, voice_sha=voice_sha)
         cur = self._conn.execute(
-            "INSERT INTO canon (topic, text, source, authority) VALUES (?, ?, ?, ?)",
-            (topic, text, source, authority),
+            "INSERT INTO canon (topic, text, source, authority, ts, voice_sha) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (topic, text, source, authority, time.time() if ts is None else ts, voice_sha),
         )
         new_id = cur.lastrowid
         if self._embedder is not None:
@@ -405,17 +509,20 @@ class Tape:
                 f"refusing to capture: importance {importance!r} is outside 0..1. "
                 "The thresholds live in that range; a score beyond it means nothing."
             )
+        # His verbatim words point at the voice row that heard them, when there is one.
+        voice_sha = self._find_voice_sha(text) if authority == "user-verbatim" else None
         cur = self._conn.execute(
-            "INSERT INTO events (ts, topic, text, source, authority, importance, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, 'buffered')",
-            (time.time(), topic, text, source, authority, importance),
+            "INSERT INTO events (ts, topic, text, source, authority, importance, status, voice_sha) "
+            "VALUES (?, ?, ?, ?, ?, ?, 'buffered', ?)",
+            (time.time(), topic, text, source, authority, importance, voice_sha),
         )
         self._conn.commit()
         return cur.lastrowid
 
     def _event(self, row) -> Event:
         return Event(id=row[0], ts=row[1], topic=row[2], text=row[3],
-                     source=row[4], authority=row[5], importance=row[6], status=row[7])
+                     source=row[4], authority=row[5], importance=row[6], status=row[7],
+                     voice_sha=row[8] if len(row) > 8 else None)
 
     _SQLITE_MAX_INT = 2 ** 63 - 1
     _SQLITE_MIN_INT = -(2 ** 63)
@@ -432,7 +539,7 @@ class Tape:
         ):
             return None
         row = self._conn.execute(
-            "SELECT id, ts, topic, text, source, authority, importance, status "
+            "SELECT id, ts, topic, text, source, authority, importance, status, voice_sha "
             "FROM events WHERE id = ?", (event_id,)
         ).fetchone()
         return self._event(row) if row else None
@@ -440,7 +547,7 @@ class Tape:
     def buffered(self) -> list[Event]:
         """The live buffer: events still awaiting consolidation or forgetting."""
         rows = self._conn.execute(
-            "SELECT id, ts, topic, text, source, authority, importance, status "
+            "SELECT id, ts, topic, text, source, authority, importance, status, voice_sha "
             "FROM events WHERE status = 'buffered' ORDER BY id"
         ).fetchall()
         return [self._event(r) for r in rows]
@@ -450,7 +557,7 @@ class Tape:
         more (nothing will retry them) and they are not archived (nobody chose that), so
         they belong on his list until he does something about them."""
         rows = self._conn.execute(
-            "SELECT id, ts, topic, text, source, authority, importance, status "
+            "SELECT id, ts, topic, text, source, authority, importance, status, voice_sha "
             "FROM events WHERE status = 'refused' ORDER BY id"
         ).fetchall()
         return [self._event(r) for r in rows]
@@ -504,9 +611,13 @@ class Tape:
         auto-promoted at any score), and his own words scored under the bar (which rest won't
         consolidate and forget won't archive). Both would otherwise sit unseen forever, and a
         tape whose promise is 'nothing cut' cannot hold a memory nothing can see."""
-        return ([e for e in self.buffered()
+        # His words first, newest first: five of his own lines sat scattered among 312
+        # inferences in id order, below the bar rest needs and above the floor forget
+        # needs (the memory lens, 2026-09-06). The list is the one thing he reads.
+        rows = ([e for e in self.buffered()
                  if not self._auto_consolidates(e, consolidate_at)]
                 + self.refused())
+        return sorted(rows, key=lambda e: (-_AUTHORITY_RANK.get(e.authority, 0), -(e.ts or 0.0)))
 
     def promote(self, event_id: int) -> int:
         """His hand on the door: move one buffered event into canon. Refuses anything not
@@ -524,7 +635,8 @@ class Tape:
             raise ValueError(f"no such event: {event_id}")
         if e.status != "buffered":
             raise ValueError(f"event {event_id} is already {e.status}, not pending")
-        new_id = self.remember(e.text, topic=e.topic, source=e.source, authority=e.authority)
+        new_id = self.remember(e.text, topic=e.topic, source=e.source, authority=e.authority,
+                               ts=e.ts, voice_sha=e.voice_sha)
         self._conn.execute(
             "UPDATE events SET status = 'consolidated' WHERE id = ?", (event_id,)
         )
@@ -563,7 +675,8 @@ class Tape:
             if not self._auto_consolidates(e, consolidate_at):
                 continue                       # everything else is on his list — pending()
             try:
-                self.remember(e.text, topic=e.topic, source=e.source, authority=e.authority)
+                self.remember(e.text, topic=e.topic, source=e.source, authority=e.authority,
+                              ts=e.ts, voice_sha=e.voice_sha)
             except ValueError:
                 # A refusal at the canon door must not end the cycle for the whole tape —
                 # and must not vanish either. _auto_consolidates knows only the refusal the
@@ -587,10 +700,10 @@ class Tape:
         """Play the video: the current truth (superseded scenes excluded), the count of lines
         never to render, and who the tape knows it is."""
         rows = self._conn.execute(
-            "SELECT text, authority FROM canon WHERE superseded_by IS NULL ORDER BY id"
+            "SELECT text, authority, ts, voice_sha FROM canon WHERE superseded_by IS NULL ORDER BY id"
         ).fetchall()
         canon_texts = [r[0] for r in rows]
-        canon_entries = [(r[0], r[1] or "agent-inference") for r in rows]
+        canon_entries = [(r[0], r[1] or "agent-inference", r[2], r[3]) for r in rows]
         (rejection_count,) = self._conn.execute("SELECT COUNT(*) FROM rejections").fetchone()
         identity = [e.text for e in self.recall("maude-identity")]
         return Brief(canon_texts=canon_texts, rejection_count=rejection_count,

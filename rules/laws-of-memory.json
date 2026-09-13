@@ -1,0 +1,280 @@
+{
+  "class": "memory",
+  "name": "The laws of memory, human and machine",
+  "status": "draft",
+  "read_on": "2026-09-03",
+  "heading": "laws? of memory",
+  "sources_note": "reference_laws-of-memory-sources-2026-09-03",
+  "laws": [
+    {
+      "id": "memory-01-recency-and-primacy",
+      "name": "Recency and primacy",
+      "aliases": [
+        "recency and primacy",
+        "kahana",
+        "recency",
+        "primacy",
+        "ebbinghaus"
+      ],
+      "family": "order",
+      "url": "https://osf.io/preprints/psyarxiv/aczu9",
+      "ask": "is the important thing first or last, never buried in the middle, and is the recent thing findable?",
+      "source": "Kahana, Diamond & Aka, Laws of Human Memory (PsyArXiv, draft 2022-07-01); Ebbinghaus 1885, the forgetting curve."
+    },
+    {
+      "id": "memory-02-contiguity-and-similarity",
+      "name": "Contiguity and similarity",
+      "aliases": [
+        "contiguity and similarity",
+        "kahana",
+        "contiguity",
+        "similarity"
+      ],
+      "family": "cue",
+      "url": "https://osf.io/preprints/psyarxiv/aczu9",
+      "ask": "is it stored next to what it will be recalled with, and is a look-alike that must stay separate kept separate?",
+      "source": "Kahana, Diamond & Aka, Laws of Human Memory (PsyArXiv, draft 2022-07-01)."
+    },
+    {
+      "id": "memory-03-repetition-and-spacing",
+      "name": "Repetition and spacing",
+      "aliases": [
+        "repetition and spacing",
+        "kahana",
+        "repetition",
+        "spacing",
+        "ebbinghaus"
+      ],
+      "family": "reuse",
+      "url": "https://osf.io/preprints/psyarxiv/aczu9",
+      "ask": "is a thing that must stick re-surfaced on a schedule, not re-read once?",
+      "source": "Kahana, Diamond & Aka, Laws of Human Memory (PsyArXiv, draft 2022-07-01); Ebbinghaus 1885, the spacing effect."
+    },
+    {
+      "id": "memory-04-cue-driven-encoding-retrieval",
+      "name": "Cue-driven, encoding–retrieval",
+      "aliases": [
+        "cue-driven, encoding–retrieval",
+        "cue-driven"
+      ],
+      "family": "cue",
+      "url": "https://books.google.com/books/about/Principles_of_Memory.html?id=cBO9RRppTIgC",
+      "ask": "is it stored under the cue it will be asked for under?",
+      "source": "Surprenant & Neath, Principles of Memory (Psychology Press, 2009)."
+    },
+    {
+      "id": "memory-05-cue-overload-and-relative-distinctiveness",
+      "name": "Cue overload and relative distinctiveness",
+      "aliases": [
+        "cue overload and relative distinctiveness",
+        "cue overload"
+      ],
+      "family": "overload",
+      "url": "https://books.google.com/books/about/Principles_of_Memory.html?id=cBO9RRppTIgC",
+      "ask": "how many things share this cue, and does this one stand out among them?",
+      "source": "Surprenant & Neath, Principles of Memory (Psychology Press, 2009)."
+    },
+    {
+      "id": "memory-06-reconstruction-and-impurity",
+      "name": "Reconstruction and impurity",
+      "aliases": [
+        "reconstruction and impurity"
+      ],
+      "family": "provenance",
+      "url": "https://books.google.com/books/about/Principles_of_Memory.html?id=cBO9RRppTIgC",
+      "ask": "is a recalled thing marked as recalled, and does it carry its provenance?",
+      "source": "Surprenant & Neath, Principles of Memory (Psychology Press, 2009); Schacter, The seven sins of memory (American Psychologist, 1999; update Memory, 2022), misattribution and bias."
+    },
+    {
+      "id": "memory-07-jost-and-ribot",
+      "name": "Jost and Ribot",
+      "aliases": [
+        "jost and ribot",
+        "jost",
+        "ribot"
+      ],
+      "family": "consolidate",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/15482065/",
+      "ask": "is the newest memory treated as the most fragile, and does consolidation get time before anything is trusted?",
+      "source": "Wixted, On Common Ground: Jost's (1897) law of forgetting and Ribot's (1881) law of retrograde amnesia (Psychological Review, 2004)."
+    },
+    {
+      "id": "memory-08-working-memory-is-small",
+      "name": "Working memory is small",
+      "aliases": [
+        "working memory is small",
+        "miller",
+        "cowan"
+      ],
+      "family": "chunk",
+      "url": "https://en.wikipedia.org/wiki/The_Magical_Number_Seven,_Plus_or_Minus_Two",
+      "ask": "how many things does this ask a person, or a context window, to hold at once?",
+      "source": "Miller 1956, The Magical Number Seven, Plus or Minus Two (Psychological Review); Cowan's revision to about four chunks."
+    },
+    {
+      "id": "memory-09-locality",
+      "name": "Locality",
+      "aliases": [
+        "locality",
+        "denning"
+      ],
+      "family": "order",
+      "url": "https://dl.acm.org/doi/10.1145/1070838.1070856",
+      "ask": "is the hot set small and near, the cold set cheap and far?",
+      "source": "Denning, The Locality Principle (Communications of the ACM 48(7), 2005)."
+    },
+    {
+      "id": "memory-10-the-five-minute-rule",
+      "name": "The five-minute rule",
+      "aliases": [
+        "the five-minute rule",
+        "five-minute rule"
+      ],
+      "family": "reuse",
+      "url": "https://en.wikipedia.org/wiki/Five-minute_rule",
+      "ask": "what is re-used often enough to stay resident, and was that interval measured, not assumed?",
+      "source": "Gray & Putzolu 1985/87; Gray & Graefe 1997; Graefe 2007, the five-minute rule."
+    },
+    {
+      "id": "memory-11-littles-law",
+      "name": "Little's law",
+      "aliases": [
+        "little's law"
+      ],
+      "family": "pace",
+      "url": "https://en.wikipedia.org/wiki/Little%27s_law",
+      "ask": "how much is in flight, and for how long?",
+      "source": "Little 1961, L = λW."
+    },
+    {
+      "id": "memory-12-belady",
+      "name": "Bélády",
+      "aliases": [
+        "bélády",
+        "belady"
+      ],
+      "family": "reuse",
+      "url": "https://en.wikipedia.org/wiki/B%C3%A9l%C3%A1dy%27s_anomaly",
+      "ask": "can adding memory make this worse under the policy chosen?",
+      "source": "Bélády 1969, the anomaly: more frames can mean more faults under a bad replacement policy."
+    },
+    {
+      "id": "memory-13-the-memory-wall",
+      "name": "The memory wall",
+      "aliases": [
+        "the memory wall",
+        "memory wall"
+      ],
+      "family": "pace",
+      "url": "https://link.springer.com/rwe/10.1007/978-0-387-09766-4_234",
+      "ask": "what waits on memory, and how often?",
+      "source": "Wulf & McKee 1995, the memory wall (ACM SIGARCH Computer Architecture News; excerpt via the Springer Encyclopedia of Parallel Computing)."
+    },
+    {
+      "id": "memory-14-the-log-first",
+      "name": "The log first",
+      "aliases": [
+        "the log first",
+        "write-ahead",
+        "wal",
+        "kreps"
+      ],
+      "family": "consolidate",
+      "url": "https://en.wikipedia.org/wiki/Write-ahead_logging",
+      "ask": "is the write appended and read back before it is trusted, and is every other copy a follower?",
+      "source": "write-ahead logging; Kreps 2013, \"The Log\" (LinkedIn Engineering); this house's append-never-overwrite, read-back law."
+    },
+    {
+      "id": "memory-15-cache-invalidation",
+      "name": "Cache invalidation",
+      "aliases": [
+        "cache invalidation",
+        "karlton"
+      ],
+      "family": "one-place",
+      "url": "https://martinfowler.com/bliki/TwoHardThings.html",
+      "ask": "which copy is canon, and does every other copy know when it went stale?",
+      "source": "Karlton, via Fowler, one of the two hard things in computer science; this house's move-the-source-of-truth, let-followers-follow law."
+    },
+    {
+      "id": "memory-16-tiering",
+      "name": "Tiering",
+      "aliases": [
+        "tiering",
+        "coala"
+      ],
+      "family": "order",
+      "url": "https://arxiv.org/abs/2309.02427",
+      "ask": "which tier and which function does this live in, and what promotes it?",
+      "source": "CoALA (Sumers, Yao, Narasimhan & Griffiths, 2023); \"Memory in the Age of AI Agents\" survey, the three axes."
+    },
+    {
+      "id": "memory-17-remember-the-decision",
+      "name": "Remember the decision",
+      "aliases": [
+        "remember the decision"
+      ],
+      "family": "distinct",
+      "url": "https://arxiv.org/abs/2605.10870",
+      "ask": "does what is kept preserve the distinctions that change a decision?",
+      "source": "\"Remember the Decision, Not the Description\" (arXiv 2605.10870)."
+    },
+    {
+      "id": "memory-18-governed-consolidation",
+      "name": "Governed consolidation",
+      "aliases": [
+        "governed consolidation",
+        "ssgm"
+      ],
+      "family": "consolidate",
+      "url": "https://arxiv.org/abs/2603.11768",
+      "ask": "is consistency verified before consolidation, does age decay it, and is what enters long-term memory controlled and attributed?",
+      "source": "SSGM, Governing Evolving Memory in LLM Agents (arXiv 2603.11768); Mem0, State of AI Agent Memory 2026."
+    },
+    {
+      "id": "memory-19-a-window-is-not-a-history",
+      "name": "A window is not a history",
+      "aliases": [
+        "a window is not a history"
+      ],
+      "family": "expectation",
+      "url": "https://github.com/john-broadway/maude-for-claude/blob/main/CHANGELOG.md",
+      "ask": "does the reader know how far back it can see?",
+      "source": "this house, earned"
+    },
+    {
+      "id": "memory-20-the-index-is-not-the-content",
+      "name": "The index is not the content",
+      "aliases": [
+        "the index is not the content"
+      ],
+      "family": "one-place",
+      "url": "https://github.com/john-broadway/maude-for-claude/blob/main/CHANGELOG.md",
+      "ask": "does the index carry pointers only?",
+      "source": "this house, earned"
+    },
+    {
+      "id": "memory-21-promotion-is-his",
+      "name": "Promotion is his",
+      "aliases": [
+        "promotion is his"
+      ],
+      "family": "provenance",
+      "url": "https://github.com/john-broadway/maude-for-claude/blob/main/CHANGELOG.md",
+      "ask": "whose words are these, and who may promote them?",
+      "source": "this house, earned"
+    },
+    {
+      "id": "memory-22-supersede-never-erase",
+      "name": "Supersede, never erase",
+      "aliases": [
+        "supersede, never erase",
+        "supersede"
+      ],
+      "family": "one-place",
+      "url": "https://github.com/john-broadway/maude-for-claude/blob/main/CHANGELOG.md",
+      "ask": "is a retired fact retired by a pointer, or by an erasure?",
+      "source": "this house, earned"
+    }
+  ]
+}

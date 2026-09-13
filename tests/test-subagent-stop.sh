@@ -29,6 +29,16 @@ last="$(tail -1 "$(trace_path)")"
 test_start "subagent-stop records 'unknown' when field missing"
 assert_contains "$last" "agent=unknown" "fallback name"
 
+
+# The harness's SubagentStop stdin carries agent_id and agent_type (hooks reference); the
+# id is what ties a stop back to the launch that is waiting on it. Log both, id shortened.
+test_start "subagent-stop records agent_type and the agent id from the harness's own fields"
+: > "$(trace_path)"
+printf '{"hook_event_name":"SubagentStop","agent_id":"a7f93cda58bbfd3cf","agent_type":"general-purpose"}' | bash "$SUB" >/dev/null 2>&1
+last="$(tail -1 "$(trace_path)")"
+assert_contains "$last" "agent=general-purpose" "agent_type recorded"
+assert_contains "$last" "id=a7f93cda" "agent id recorded (8 chars)"
+
 print_summary
 teardown_test_env
 exit $FAILED

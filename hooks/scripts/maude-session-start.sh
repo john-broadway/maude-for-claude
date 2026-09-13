@@ -17,13 +17,13 @@ MAP="$(maude_map_path)"
 # ── Once-per-session housekeeping ────────────────────────────────────────────
 # SessionStart is the once-per-start hook (it fires at each start/resume/clear/
 # compact, not per turn), so it's the natural chokepoint for:
-#   1. Pruning append-only artifacts (trace JSONL, pre-compact snapshots) past
-#      the retention window — they grew unbounded before.
+#   1. Pruning append-only artifacts (trace JSONL, pre-compact snapshots, undo blobs)
+#      past the retention window — they grew unbounded before. The sweep runs LAST,
+#      after the brief is printed and billed (see the bottom of this file).
 #   2. A single jq-missing notice. Without jq the irreversible-command gate is
 #      fail-OPEN (silently disabled), and drift-watch / tier-1 / watch-list
 #      nudges are off too. This is a SAFETY notice, not cosmetic — so it must
 #      fire even when there's no memory to brief (i.e. before the early-exit).
-maude_retention_sweep
 if ! command -v jq >/dev/null 2>&1; then
   printf 'Maude: jq not found — the irreversible-command gate is OFF this session (fail-open), and drift-watch, tier-1, and watch-list nudges are disabled. Install jq to restore them.\n' >&2
 fi
@@ -48,8 +48,10 @@ HAS_MAP=""
 TOPIC_COUNT=0
 
 # Tier 1: Anthropic auto-memory live buffer
+# Append-only, oldest-first: the newest entry is the LAST header, never the first
+# (the wake read the first one as "now" until 2026-09-06).
 if [ -f "$MEM/now.md" ]; then
-  NOW_LINE="$(grep -m1 -E '^## [0-9]{2}:[0-9]{2}' "$MEM/now.md" | head -c 200)"
+  NOW_LINE="$(grep -E '^## [0-9]{2}:[0-9]{2}' "$MEM/now.md" | tail -1 | head -c 200)"
   [ -z "$NOW_LINE" ] && NOW_LINE="$(head -1 "$MEM/now.md" | head -c 200)"
 fi
 
@@ -83,9 +85,16 @@ if [ -s "$REMEMBER/now.md" ]; then
 fi
 
 # Tier 2: remember plugin's handoff file (the dense, intentional signal from last session)
+# The handoff file is append-only under the house law: the LAST "## Next" block is the
+# last handoff (grep -m1 read the first of thirty-one and labelled it "Last" until
+# 2026-09-06). The line carries the file's own age, so a stale handoff says so.
+REMEMBER_AGE=""
 if [ -s "$REMEMBER/remember.md" ]; then
-  REMEMBER_HANDOFF="$(grep -m1 -A1 '^## Next' "$REMEMBER/remember.md" 2>/dev/null | tail -1 | head -c 200)"
+  REMEMBER_HANDOFF="$(grep -A1 '^## Next' "$REMEMBER/remember.md" 2>/dev/null \
+    | grep -vE '^## |^--$|^[[:space:]]*$' | tail -1 | head -c 200)"
   [ -z "$REMEMBER_HANDOFF" ] && REMEMBER_HANDOFF="$(head -3 "$REMEMBER/remember.md" | tail -1 | head -c 200)"
+  REMEMBER_AGE_D=$(( ( $(date +%s) - $(maude_mtime "$REMEMBER/remember.md") ) / 86400 ))
+  if [ "$REMEMBER_AGE_D" -lt 1 ]; then REMEMBER_AGE="today"; else REMEMBER_AGE="${REMEMBER_AGE_D}d ago"; fi
 fi
 
 # Tier 3: cross-project patterns (her own home base) — one scar per wake, rotating.
@@ -108,8 +117,22 @@ if [ -s "$USER_DIR/letter-from-maude.md" ]; then
   LETTER_LINE="$(grep -m1 -v -E '^#|^[[:space:]]*$' "$USER_DIR/letter-from-maude.md" 2>/dev/null | head -c 160)"
 fi
 
-# Tier 4: house-map status
-[ -f "$MAP" ] && HAS_MAP="✓"
+# Tier 4: house-map status. The map is a dated document ("# Walked: YYYY-MM-DD"); the
+# tick used to throw that date away and assert a currency the file never claimed. Now
+# the tick carries the date the map claims and the age of the file, and past a week it
+# names the re-walk. A presence check is not a currency check.
+MAP_NOTE=""
+if [ -f "$MAP" ]; then
+  HAS_MAP="✓"
+  MAP_WALKED="$(grep -m1 -oE '^# Walked: [0-9]{4}-[0-9]{2}-[0-9]{2}' "$MAP" 2>/dev/null | sed 's/^# Walked: //')"
+  if [ -n "$MAP_WALKED" ]; then
+    MAP_AGE_D=$(( ( $(date +%s) - $(maude_mtime "$MAP") ) / 86400 ))
+    MAP_NOTE=" walked $MAP_WALKED, ${MAP_AGE_D}d old"
+    [ "$MAP_AGE_D" -gt 7 ] && MAP_NOTE="$MAP_NOTE; /maude:found"
+  else
+    MAP_NOTE=", undated"
+  fi
+fi
 
 # Tier 5: simple count of memory files in Anthropic dir
 [ -d "$MEM" ] && TOPIC_COUNT="$(find "$MEM" -maxdepth 1 -name "*.md" 2>/dev/null | wc -l | tr -d ' ')"
@@ -153,18 +176,98 @@ else
   CUSHION_LINE="Cushions: never flipped — /maude:cushions when you have a minute."
 fi
 
+# A background lens leaves a PENDING stamp at launch (redteam-watch); if its session ends
+# first, nothing promotes it and nothing says so (the 23rd lens, 2026-09-06: the next
+# wake read a 477-byte stub as "running"). Name a pending entry older than ten minutes:
+# a live lens in a sibling session is younger than that; a dead one only gets older.
+# Expired gate tokens are pruned once per session. The prune at a reservation only runs when
+# that key's token is LIVE, so a store holding nothing but expired rows was never cleaned and
+# the PostToolUse cheap exit stayed dead on any box that had ever been given a clear (the
+# 27th lens, MINOR-2). Both files, best effort, never blocking.
+if command -v jq >/dev/null 2>&1; then
+  _NOWS=$(date +%s)
+  for _tf in "$(maude_self_dir)/care.json" "$(maude_redclear_file)"; do
+    [ -s "$_tf" ] || continue
+    jq -e --argjson now "$_NOWS" '(.gate_cleared // {}) | if type=="object" then to_entries else [] end
+      | any((.value.until? // 0 | if type == "number" then . else 0 end) <= $now)' "$_tf" >/dev/null 2>&1 || continue
+    maude_care_set "$_tf" --argjson now "$_NOWS" \
+      '.gate_cleared = ((.gate_cleared // {}) | if type == "object" then . else {} end
+         | with_entries(select((.value.until? // 0 | if type == "number" then . else 0 end) > $now)))' >/dev/null 2>&1 \
+      && maude_log_trace "gate" "pruned expired tokens from $(basename "$_tf")"
+  done
+fi
+
+PENDING_LINE=""
+_CARE_FILE="$(maude_self_dir)/care.json"
+if [ -s "$_CARE_FILE" ] && command -v jq >/dev/null 2>&1; then
+  _CUT_EPOCH=$(( $(date +%s) - 600 ))
+  # Through the shared helper: `date -d` is GNU-only and test-portability refuses it here.
+  # A box with neither `date -d` nor `date -r` cannot tell a pending entry's age; then
+  # every pending entry is named ("~" sorts after any ISO time). The line exists because
+  # a dead lens is visible only if something says so: loud, never silent (MINOR-4).
+  _CUT="$(maude_epoch_iso "$_CUT_EPOCH" 2>/dev/null)" || _CUT="~"
+  if [ -n "$_CUT" ]; then
+    # Every entry's own type is guarded too: one malformed entry used to silence the line
+    # for every good one beside it, which is the failure this line exists to prevent (the
+    # 25th lens, MINOR-1). Oldest first, and the others' subjects are named rather than
+    # counted (MINOR-2: "and 4 more" withheld exactly what the reader needed).
+    PENDING_LINE="$(jq -r --arg cut "$_CUT" '
+      # Total: jq raises on join over a non-scalar, and one bad entry took the whole line
+      # down — silence, in the line whose only job is not to be silent (the 26th lens,
+      # IMPORTANT-5). Bounded: the byte cut used to end mid-sha, and a truncated ref reads
+      # exactly like a whole one (MINOR-5).
+      # Bounded per SUBJECT as well as per entry: this hook writes up to 64 refs on one
+      # pending entry, so bounding the number of subjects still let one of them run the line
+      # past its budget and end mid-sha, and a truncated ref reads exactly like a whole one
+      # (the 27th lens, IMPORTANT-4).
+      # TOTAL IN THE SUBJECT TOO. An empty refs array joined to the empty string and the
+      # sentence lost the only noun it had: "its stamp on  is pending" — which is what
+      # this box printed at the wake on 2026-09-07. refs:[] is not a corrupt entry, it is
+      # what the stamp writes whenever a brief names no literal sha, so the empty case is
+      # ordinary. A reader given a blank subject cannot tell "named nothing" from "the
+      # line broke"; say which.
+      def refstr: (if type == "array"
+                   then ((map(tostring) | .[0:4] | join(",")) + (if length > 4 then " +\(length - 4)" else "" end))
+                   else (. // "" | tostring) end)
+                  | if ((gsub(",";"") | gsub(" ";"")) == "") then "an unnamed subject" else . end;
+      [(.redteam_pending // {}) | if type=="object" then to_entries[] else empty end
+       | select((.value | type) == "object")
+       | select(((.value.ts // "") | tostring) < $cut)]
+      | sort_by((.value.ts // "") | tostring)
+      | if length == 0 then empty
+        else "A lens dispatched at \(.[0].value.ts // "?") (session \(.[0].value.sid // "?")) never reported; its stamp on \((.[0].value.refs) | refstr) is pending"
+             + (if length > 1
+                then " (and \(length - 1) more, on " + ([.[1:5][] | (.value.refs | refstr)] | join(" · "))
+                     + (if length > 5 then " and \(length - 5) other" + (if length == 6 then "" else "s" end) else "" end) + ")."
+                else "." end) end' "$_CARE_FILE" 2>/dev/null)"
+    # Bounding the ref COUNT per subject is not bounding the LINE: four subjects at four
+    # 40-character shas passes the budget before a word of prose, and a byte cut lands
+    # mid-sha where a fragment reads exactly like a whole reference (the 28th lens,
+    # IMPORTANT-4). Cut on a separator, and always close the sentence.
+    if [ "${#PENDING_LINE}" -gt 700 ]; then
+      _PL="$(printf '%.700s' "$PENDING_LINE")"
+      case "$_PL" in
+        *" · "*) _PL="${_PL% · *}" ;;
+        *,*)     _PL="${_PL%,*}" ;;
+      esac
+      PENDING_LINE="$_PL … (truncated; /maude:notice has the rest)."
+    fi
+  fi
+fi
+
 GREETING="$(maude_greeting)"
 # Composed into a variable so the brief's bill can be logged (#49) — the
 # emission itself is unchanged.
 BRIEF="$({
   [ -n "$GREETING" ] && printf '%s ' "$GREETING"
   printf 'Maude here.'
-  [ -n "$HAS_MAP" ] && printf ' (house-map ✓)'
+  [ -n "$HAS_MAP" ] && printf ' (house-map ✓%s)' "$MAP_NOTE"
   printf '\n'
   [ -n "$DIGEST_LINE" ] && printf '  %s\n' "$DIGEST_LINE"
   [ -n "$CONTINUITY_LINE" ] && printf '  %s\n' "$CONTINUITY_LINE"
+  [ -n "$PENDING_LINE" ] && printf '  %s\n' "$PENDING_LINE"
   [ -n "$LEFTOFF_LINE" ] && printf '  Where you left off (%s): %s\n' "$LEFTOFF_SRC" "$LEFTOFF_LINE"
-  [ -n "$REMEMBER_HANDOFF" ] && printf '  Last handoff (.remember): %s\n' "$REMEMBER_HANDOFF"
+  [ -n "$REMEMBER_HANDOFF" ] && printf '  Last handoff (.remember, %s): %s\n' "$REMEMBER_AGE" "$REMEMBER_HANDOFF"
   [ -n "$NOW_LINE" ]          && printf '  Anthropic now: %s\n' "$NOW_LINE"
   [ -n "$PATTERN_HINT" ]      && printf '  Cross-project pattern: %s\n' "$PATTERN_HINT"
   [ -n "$LETTER_LINE" ]       && printf '  Letter from my last self: %s\n' "$LETTER_LINE"
@@ -175,6 +278,11 @@ BRIEF="$({
 printf '%s\n' "$BRIEF"
 # #49: the brief is injected context — log its bill (hook + bytes, no content).
 maude_log_spend "session-start" "$(printf '%s' "$BRIEF" | wc -c | tr -d ' ')"
+
+# The closet sweep runs AFTER the brief has been printed and billed. It used to run
+# first, and on a big store it ate the whole hook budget: her greeting, the one
+# once-per-session presence the plugin promises, never landed (2026-09-06).
+maude_retention_sweep
 
 # Chore brief — the ledger makes the labor visible (one line, silent when idle).
 CHORES="$DIR/../../scripts/maude-chores.sh"

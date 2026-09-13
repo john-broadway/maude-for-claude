@@ -1,5 +1,5 @@
-<!-- Version: 0.30.1 -->
-<!-- Revised: 2026-09-02 -->
+<!-- Version: 0.31.0 -->
+<!-- Revised: 2026-09-03 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 ---
 name: Feature Request

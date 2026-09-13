@@ -20,7 +20,6 @@ DB="$DB_DIR/tape.db"
 
 STUB_DIR="$(mktemp -d)"
 CAPTURE="$STUB_DIR/capture.out"
-trap 'rm -rf "$STUB_DIR"' EXIT
 
 # A stub python3 that records its argv + stdin to $CAPTURE, then behaves per
 # $STUB_MODE: "ok" (default) mimics a silent successful CLI; "loud" mimics the

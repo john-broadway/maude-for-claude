@@ -220,33 +220,75 @@ case "$SUB" in
       exit 0
     fi
     printf 'Maude: undo store %s\n' "$UNDO_DIR"
-    n=0
-    while IFS= read -r line; do
-      [ -n "$line" ] || continue
-      n=$((n + 1))
-      printf '%s\n' "$(printf '%s' "$line" | jq -r --arg n "$n" '
-        "  [" + $n + "] " + .ts + "  " + .tool + "  " + .path
-        + (if .skip then "   NOT RECOVERABLE (" + .skip + ")"
-           elif (.existed | not) then "   (created — undo deletes it)"
-           else "   " + (.bytes|tostring) + "b" end)')"
-    done < "$LEDGER"
-    [ "$n" -eq 0 ] && printf 'Maude: nothing captured yet — the undo store is empty.\n'
+    # Newest first, ten by default: the entry a person needs is the one just clobbered,
+    # and sixty lines oldest-first put it last, off the top of his scrollback (the UX
+    # lens, 2026-09-06, D7). The index is the ledger line number, so it never shifts;
+    # `list --all` shows every line, still newest first. One jq pass over the file,
+    # never one fork per line.
+    LIMIT=10; [ "${2:-}" = "--all" ] && LIMIT=0
+    n="$(grep -c . "$LEDGER" 2>/dev/null)"; [ -n "$n" ] || n=0
+    if [ "$n" -gt 0 ]; then
+      # Raw lines, numbered by PHYSICAL line: that is what `restore <n>` reads, so the
+      # two agree. EVERY row is total: a field of the wrong type used to raise inside the
+      # jq program, abort the whole stream at rc 0 with stderr silenced, and drop the
+      # OLDEST entries in silence — three rounds of the same failure under a narrower
+      # trigger each time (the 23rd lens IMPORTANT-1, the 24th's IMPORTANT-4, the 25th's
+      # IMPORTANT-4). A line that is not a JSON OBJECT, or whose path could not name a file
+      # (not a string, empty, or only whitespace — three rounds found that one value at a
+      # time), is listed as unreadable and the rest stand
+      # (one bad line used to abort the whole listing at rc 0 and make `restore last`
+      # say nothing was recoverable; a blank line used to shift every number below it
+      # so `restore 3` put back the file the listing had called [2] — the 23rd lens,
+      # IMPORTANT-1/2). A blank line is no entry and takes no line of the listing.
+      jq -rRn '[inputs] | to_entries | reverse | .[]
+        | (.key + 1) as $n | (.value | try fromjson catch null) as $v
+        | if (.value | length) == 0 then empty
+          elif ($v | type) != "object" then "  [" + ($n | tostring) + "] UNREADABLE LINE (not a JSON object) — skipped; the entries around it stand"
+          elif (($v.path | type) != "string") or ((($v.path | gsub("[ \\t]"; "")) | length) == 0) then "  [" + ($n | tostring) + "] UNREADABLE LINE (no usable path) — skipped; the entries around it stand"
+          else "  [" + ($n | tostring) + "] " + (($v.ts // "?") | tostring) + "  " + (($v.tool // "?") | tostring) + "  " + $v.path
+            + (if $v.skip != null then "   NOT RECOVERABLE (" + ($v.skip | tostring) + ")"
+               elif ($v.existed | not) then "   (created — undo deletes it)"
+               else "   " + (($v.bytes // "?") | tostring) + "b" end) end' "$LEDGER" 2>/dev/null \
+        | { if [ "$LIMIT" -gt 0 ]; then head -n "$LIMIT"; else cat; fi; }
+      [ "$LIMIT" -gt 0 ] && [ "$n" -gt "$LIMIT" ] && printf '  +%s more: /maude:undo list --all\n' "$((n - LIMIT))"
+    else
+      printf 'Maude: nothing captured yet — the undo store is empty.\n'
+    fi
     exit 0
     ;;
 
   restore)
     SEQ="${2:-}"
-    case "$SEQ" in ''|*[!0-9]*) printf 'Maude: usage — restore <n>, from /maude:undo list.\n' >&2; exit 1 ;; esac
+    case "$SEQ" in last|''|*[!0-9]*) ;; esac
+    if [ "$SEQ" != "last" ]; then
+      case "$SEQ" in ''|*[!0-9]*) printf 'Maude: usage — restore <n> from /maude:undo list, or restore last.\n' >&2; exit 1 ;; esac
+    fi
     maude_undo_resolve_store || { printf 'Maude: no undo store found (looked in %s and %s).\n' "$UNDO_DIR" "$STORE_REGISTRY" >&2; exit 1; }
+    if [ "$SEQ" = "last" ]; then
+      # The newest entry that can be put back; a skip was never captured and is not one.
+      # A usable path is part of being recoverable: an empty object at the tail used to
+      # capture `restore last` and then die blaming a pruned blob (the 25th lens).
+      SEQ="$(jq -rRn '[inputs] | to_entries | map((.value | try fromjson catch null) as $v | select(($v | type) == "object" and $v.skip == null and ($v.path | type) == "string" and ((($v.path | gsub("[ \\t]"; "")) | length) > 0)) | .key + 1) | last // empty' "$LEDGER" 2>/dev/null)"
+      [ -n "$SEQ" ] || { printf 'Maude: nothing recoverable to restore.\n' >&2; exit 1; }
+    fi
     LINE="$(sed -n "${SEQ}p" "$LEDGER" 2>/dev/null)"
     [ -n "$LINE" ] || { printf 'Maude: no entry %s.\n' "$SEQ" >&2; exit 1; }
+    printf '%s' "$LINE" | jq -e 'type == "object" and (.path | type) == "string" and (((.path | gsub("[ \\t]"; "")) | length) > 0)' >/dev/null 2>&1 \
+      || { printf 'Maude: entry %s is not readable (a partial line, or no usable path?) — nothing put back.\n' "$SEQ" >&2; exit 1; }
 
     RPATH="$(printf '%s' "$LINE" | jq -r '.path')"
     RBLOB="$(printf '%s' "$LINE" | jq -r '.blob // ""')"
-    RSKIP="$(printf '%s' "$LINE" | jq -r '.skip // ""')"
+    # `//` treats false as absent, so a `skip: false` row printed NOT RECOVERABLE and was
+    # then acted on. Three readers of this field used three tests and agreed on every value
+    # but one: `skip: ""` is not null, so the listing called it a skip, while `tostring` of
+    # it is empty and the actor went ahead and overwrote the file (the 28th lens,
+    # IMPORTANT-5). PRESENCE is the question, so presence is what all three ask; the text
+    # is only for the message.
+    RHASSKIP="$(printf '%s' "$LINE" | jq -r 'if .skip == null then "no" else "yes" end')"
+    RSKIP="$(printf '%s' "$LINE" | jq -r 'if .skip == null then "" else (.skip | tostring) end')"
     REXISTED="$(printf '%s' "$LINE" | jq -r '.existed')"
 
-    if [ -n "$RSKIP" ]; then
+    if [ "$RHASSKIP" = yes ]; then
       printf 'Maude: entry %s was never captured (%s) — there is nothing to put back.\n' "$SEQ" "$RSKIP" >&2
       exit 1
     fi

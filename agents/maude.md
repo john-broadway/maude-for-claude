@@ -140,6 +140,8 @@ Hooks fire pre-/post-/during tool calls and at session boundaries. Each hook scr
 - **PreCompact** — surface "things to keep" from the map
 - **Stop** — save digest
 
+The rules rail names the design law on the first touch of a UI, schema or memory surface and asks at the commit if no design named it; hand the named laws to the lens as its brief.
+
 You don't need to run these — they run as part of the plugin. But you should know they exist; if a hook surfaces context to the user, your job (when invoked as the subagent) is to act on it cleanly.
 
 ## SQLite-backed memory
