@@ -205,8 +205,17 @@ cmd_build() {
 # --review is prose, and prose is not a guardrail: `open --review "looks fine"`
 # was accepted on faith. When her care.json state is reachable, a non-draft
 # open ALSO requires a redteam-watch STAMP — an adversarial dispatch that
-# actually COMPLETED (hooks/scripts/maude-redteam-watch.sh writes it) — newer
-# than the last commit of the content being shipped.
+# actually COMPLETED (hooks/scripts/maude-redteam-watch.sh writes it) — that
+# NAMES the commit being shipped and is newer than it.
+#
+# NAMING it is the 2026-09-04 change. "Newer than the tip" alone was satisfied
+# on this repo by a stamp written 48 seconds after the v0.31.0 release commit
+# by a dispatch that had STARTED before that commit existed: it could not have
+# read a line of it, and the gate called it proven. A timestamp answers "did a
+# lens finish after this?" The question being asked is "did a lens look at
+# THIS?", and only a ref answers that. Stamps written before the change name
+# nothing and no longer satisfy — a missed stamp costs one refusal and a re-run,
+# a false one costs a release nothing reviewed.
 #
 # SOFT, and honestly so (same framing as maude-gate.sh's care-file backstops):
 # care.json has no write-protection, so a planted stamp — or deleting the file,
@@ -215,12 +224,15 @@ cmd_build() {
 # (shipping with no lens ever dispatched), not the deliberate forgery.
 # Further seams, stated: the stamp is HOUSE-wide, not session-scoped
 # (redteam-watch stores per-sid but ship.sh cannot know which sid shipped —
-# a sibling session's lens can satisfy it); it proves a lens RAN, not that it
-# was good or read THIS diff; freshness is measured against $SRC (what build
-# ships), so a commit added to the ship branch after build is outside it.
+# a sibling session's lens can satisfy it); it proves a lens RAN and was
+# POINTED at this tip, never that it was any good or that it read carefully —
+# the ref comes from the brief's own text, so it is the dispatch's claim about
+# its subject, not an observation of what the reviewer read; freshness is
+# measured against $SRC (what build ships), so a commit added to the ship
+# branch after build is outside it.
 # A home without her state keeps the prose-only behavior — the rail tightens
 # where the mechanism exists. Env seam (tests): SHIP_CARE_FILE.
-# Returns 0 = satisfied or unknowable; 1 = stamp missing/stale (msg printed).
+# Returns 0 = satisfied or unknowable; 1 = no stamp names the tip (msg printed).
 # ISO→epoch, GNU then BSD (Z and ±HHMM forms); empty on failure (an
 # unparseable time is "unknowable", and lens_check degrades open, not guesses).
 iso_epoch() {
@@ -234,48 +246,95 @@ iso_epoch() {
   printf '%s' "$e"
 }
 lens_check() {
-  local care="" c stamp tip tip_s stamp_s now_s
+  local c cands care="" tip tip_s tip_sha now_s
   if [ -n "${SHIP_CARE_FILE:-}" ]; then
-    care="$SHIP_CARE_FILE"
+    cands="$SHIP_CARE_FILE"
   else
-    # Take the candidate carrying the NEWEST stamp, not the first that EXISTS. A
-    # repo-local care.json that exists and is empty used to shadow the real one
-    # permanently — and under the canonical-root law the session's project dir IS the
-    # workspace root, so the stamp always lands in the parent and the repo-local file is
-    # always empty. The gate was unsatisfiable for this repo and silent about it.
-    local best="" best_s="" c_stamp c_s
-    for c in "$ROOT/.maude/plugin/care.json" "$(dirname "$ROOT")/.maude/plugin/care.json"; do
-      [ -f "$c" ] || continue
-      [ -n "$care" ] || care="$c"          # remember one, so the message can name a file
-      command -v jq >/dev/null 2>&1 || continue
-      c_stamp="$(jq -r '(.last_redteam_iso // {}) | [.[]] | max // empty' "$c" 2>/dev/null)"
-      [ -n "$c_stamp" ] || continue
-      c_s="$(iso_epoch "$c_stamp")"
-      [ -n "$c_s" ] || continue
-      if [ -z "$best_s" ] || [ "$c_s" -gt "$best_s" ]; then best_s="$c_s"; best="$c"; fi
-    done
-    [ -n "$best" ] && care="$best"
+    # BOTH candidates, every time. lens_check used to pick one file up front — first the
+    # first that EXISTED (so an empty repo-local care.json shadowed the real one forever),
+    # then the one carrying the newest stamp. Neither tiebreak is right once a stamp has to
+    # NAME something: the newest stamp in one file can name the wrong ref while an older
+    # stamp in the other names the tip. So gather every stamp from every candidate and let
+    # the ref decide. Under the canonical-root law the session's project dir IS the
+    # workspace root, so the real stamp is nearly always the parent's.
+    cands="$ROOT/.maude/plugin/care.json
+$(dirname "$ROOT")/.maude/plugin/care.json"
   fi
-  [ -n "$care" ] && [ -f "$care" ] || return 0
   command -v jq >/dev/null 2>&1 || return 0
   tip="$(git log -1 --format=%cI "$SRC" 2>/dev/null)"
   tip_s="$(iso_epoch "$tip")"
-  [ -n "$tip_s" ] || return 0
-  stamp="$(jq -r '(.last_redteam_iso // {}) | [.[]] | max // empty' "$care" 2>/dev/null)"
-  stamp_s=""
-  [ -n "$stamp" ] && stamp_s="$(iso_epoch "$stamp")"
-  # A stamp from the FUTURE is nonsense, not freshness — redteam-watch writes
-  # `date -u` at completion, so anything past now+60s (skew allowance) reads
-  # as planted/garbage and counts as no stamp at all.
+  tip_sha="$(git rev-parse "$SRC" 2>/dev/null)"
+  [ -n "$tip_s" ] && [ -n "$tip_sha" ] || return 0
   now_s="$(date +%s)"
-  if [ -n "$stamp_s" ] && [ "$stamp_s" -gt $((now_s + 60)) ]; then stamp_s=""; fi
-  if [ -z "$stamp_s" ] || [ "$stamp_s" -lt "$tip_s" ]; then
-    printf 'ship: SECOND LENS NOT PROVEN — care.json (%s) has no adversarial-pass stamp newer than the shipped tip (%s).\n' "$care" "$tip" >&2
-    printf 'ship: dispatch an adversarial review of the diff (the stamp writes itself on completion), then re-run open.\n' >&2
-    printf 'ship: a DRAFT open (no --review) stays available meanwhile.\n' >&2
-    return 1
+
+  local seen_file=0 newest_ts="" newest_refs="" newest_s="" newest_file="" rows ts refs r r_s
+  while IFS= read -r c; do
+    [ -n "$c" ] && [ -f "$c" ] || continue
+    seen_file=1
+    care="${care:-$c}"
+    # One row per stamp: "<iso>\t<ref,ref,...>". A pre-2026-09-04 stamp is a bare ISO
+    # string and reads as a stamp that names nothing, which is exactly what it is.
+    rows="$(jq -r '(.last_redteam_iso // {})
+                   | if type=="object" then . else {} end
+                   | to_entries[] | .value
+                   | (if type=="object" then {ts:(.ts // ""), refs:(.refs // [])}
+                      else {ts:., refs:[]} end)
+                   | "\(.ts)\t\(.refs | join(","))"' "$c" 2>/dev/null)"
+    while IFS="$(printf '\t')" read -r ts refs; do
+      [ -n "$ts" ] || continue
+      r_s="$(iso_epoch "$ts")"
+      [ -n "$r_s" ] || continue
+      # A stamp from the FUTURE is nonsense, not freshness — redteam-watch writes
+      # `date -u` at completion, so anything past now+60s (skew allowance) reads as
+      # planted/garbage and counts as no stamp at all.
+      [ "$r_s" -gt $((now_s + 60)) ] && continue
+      # Remember the newest REAL stamp for the refusal message, so the message describes
+      # what is actually on disk rather than a generic complaint.
+      if [ -z "$newest_s" ] || [ "$r_s" -gt "$newest_s" ]; then
+        # Remember the FILE too. Reporting `$care`, the first candidate that existed, blamed
+        # a file that had nothing to do with the stamp being described.
+        newest_s="$r_s"; newest_ts="$ts"; newest_refs="$refs"; newest_file="$c"
+      fi
+      [ "$r_s" -lt "$tip_s" ] && continue
+      # THE REF. A timestamp says a lens finished after the tip was written; only a named
+      # ref says a lens was pointed AT it. Seven characters is git's own shortest
+      # abbreviation, and a shorter prefix is a word rather than a sha.
+      local IFS_SAVE="$IFS"; IFS=,
+      for r in $refs; do
+        [ "${#r}" -ge 7 ] || continue
+        case "$tip_sha" in "$r"*) IFS="$IFS_SAVE"; return 0 ;; esac
+      done
+      IFS="$IFS_SAVE"
+    done <<ROWS_EOF
+$rows
+ROWS_EOF
+  done <<CANDS_EOF
+$cands
+CANDS_EOF
+
+  # No care.json anywhere is unknowable, not a failure — the rail degrades open rather
+  # than guessing, exactly as it did before refs existed.
+  [ "$seen_file" -eq 1 ] || return 0
+
+  printf 'ship: SECOND LENS NOT PROVEN — no adversarial-pass stamp NAMES the shipped tip %s (%s).\n' \
+    "$(printf '%s' "$tip_sha" | cut -c1-7)" "$tip" >&2
+  if [ -n "$newest_ts" ]; then
+    if [ -n "$newest_refs" ]; then
+      # The refs list can hold up to 128 shas; this line has to tell the person what to do
+      # next, so show the first few and count the rest (the 27th lens, MINOR-9c).
+      printf 'ship: newest stamp in %s is %s and names: %s\n' "$newest_file" "$newest_ts" \
+        "$(printf '%s' "$newest_refs" | awk -F, '{n=NF; out=""; for (i=1;i<=n && i<=6;i++) out=out (i>1?",":"") $i; if (n>6) out=out " (+" (n-6) " more)"; print out}')" >&2
+    else
+      printf 'ship: newest stamp in %s is %s and names NO ref (a pre-2026-09-04 stamp, or a brief that never said what it reviewed).\n' \
+        "$newest_file" "$newest_ts" >&2
+    fi
+  else
+    printf 'ship: %s carries no usable stamp at all.\n' "$care" >&2
   fi
-  return 0
+  printf 'ship: dispatch an adversarial review whose brief NAMES %s (the stamp writes itself on completion), then re-run open.\n' \
+    "$(printf '%s' "$tip_sha" | cut -c1-7)" >&2
+  printf 'ship: a DRAFT open (no --review) stays available meanwhile.\n' >&2
+  return 1
 }
 
 cmd_open() {

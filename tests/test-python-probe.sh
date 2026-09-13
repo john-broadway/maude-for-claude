@@ -64,5 +64,11 @@ test_start "no hook script tests python3 by presence any more"
 hits="$(grep -rn "command -v python3" "$HOOKS_DIR" 2>/dev/null | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#')"
 assert_eq "$hits" "" "no 'command -v python3' in hooks/scripts (found: $hits)"
 
+test_start "no shipped script under scripts/ tests python3 by presence either"
+# A rule that lives in one directory is a coincidence. scripts/ ships to the same
+# users, sources the same _maude-common.sh, and hits the same Store-alias stub.
+shits="$(grep -n "command -v python3" "$SCRIPTS_DIR"/*.sh 2>/dev/null | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#')"
+assert_eq "$shits" "" "no 'command -v python3' in scripts/*.sh (found: $shits)"
+
 teardown_test_env
 exit "$FAILED"

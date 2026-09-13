@@ -101,6 +101,30 @@ assert_contains "$pem" "[redacted-key]" "marker present"
 # Cleanup MEM
 rm -rf "$MEM"
 
+# ── The snapshot keeps the TAIL of an oldest-first buffer and names the cut; the handoff
+# is APPENDED, never truncated, and read back before it is claimed (the memory lens,
+# 2026-09-06: five snapshots on disk were byte-identical copies of the 35-day-old head of
+# a 2,554-line buffer, and the handoff write was a `>` over a 31-handoff file).
+test_start "the snapshot keeps the newest lines of an append-only buffer and names the cut"
+mkdir -p "$MEM"   # an earlier case removes the memory dir
+{ printf 'OLDMARK line 1\n'; for i in $(seq 2 299); do printf 'filler %d\n' "$i"; done; printf 'NEWMARK line 300\n'; } > "$MEM/now.md"
+run_pc
+SNAP="$(ls -t "$TEST_TMP/.maude/plugin/snapshots/"precompact-*.md 2>/dev/null | head -1)"
+assert_contains "$(cat "$SNAP")" "NEWMARK" "the newest line is in the snapshot"
+assert_not_contains "$(cat "$SNAP")" "OLDMARK" "the oldest line, 300 back, is not"
+assert_contains "$(head -4 "$SNAP" | tr '\n' ' ')" "last 200 of 300 lines" "the header names the cut"
+
+test_start "a stale handoff is APPENDED to, never truncated, and the write is read back"
+mkdir -p "$TEST_TMP/.remember"
+printf '# Handoff\n\n## Next\nKEEPME the prior handoff.\n' > "$TEST_TMP/.remember/remember.md"
+touch_ago 1200 "$TEST_TMP/.remember/remember.md"
+run_pc
+HAND="$(cat "$TEST_TMP/.remember/remember.md")"
+assert_contains "$HAND" "KEEPME" "the prior handoff survives"
+assert_contains "$HAND" "## Handoff (maude pre-compact " "the new handoff is a dated section"
+assert_eq "$(grep -c '^## Next' "$TEST_TMP/.remember/remember.md")" "2" "both ## Next blocks present"
+assert_contains "$(tail -1 "$(trace_path)")" "sourced=snapshot remember" "the trace claims the handoff after reading it back"
+
 print_summary
 teardown_test_env
 exit $FAILED

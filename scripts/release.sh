@@ -50,30 +50,79 @@ TODAY="$(date +%Y-%m-%d)"
 
 printf '== release.sh: setting version %s (Revised %s) ==\n' "$V" "$TODAY"
 
+STAMPLIB="$ROOT/scripts/lib-stamp.sh"
+# Fail CLOSED, and do it BEFORE the first mutation. Sourced unguarded, a missing
+# lib-stamp.sh left `.` failing, the script
+# running on with no `set -e`, every stamp_header a command-not-found, and a release
+# shipping an UNSTAMPED tree without a word. Silence read as success, which is the exact
+# defect this file was edited to fix one commit earlier. Placed after step 1 it was no
+# better: the refusal still left plugin.json and marketplace.json bumped, which is the
+# half-stamped tree it claims to prevent. A refusal that has already written is not one.
+if [ ! -r "$STAMPLIB" ]; then
+  printf 'release: cannot stamp — %s is missing or unreadable.\n' "$STAMPLIB" >&2
+  printf 'release: refusing to continue; a release that cannot stamp must not look like one that did.\n' >&2
+  exit 1
+fi
+# shellcheck source=scripts/lib-stamp.sh
+. "$STAMPLIB"
+
 # 1. canonical JSON versions
 t="$(mktemp)"; jq --arg v "$V" '.version=$v' .claude-plugin/plugin.json >"$t" && mv "$t" .claude-plugin/plugin.json
 t="$(mktemp)"; jq --arg v "$V" '.plugins[0].version=$v' .claude-plugin/marketplace.json >"$t" && mv "$t" .claude-plugin/marketplace.json
 
+# Every stamp below rewrites the FIRST match in a file and no other. That is not a
+# tidiness preference: maude-verify.sh reads these headers with `grep -m1`, so the first
+# match IS the header by the checker's own definition, and pointing the writer at the same
+# occurrence is what keeps the two from disagreeing. The old unanchored `sed s|...|...|`
+# rewrote every match, including version strings quoted inside a document's body, and
+# because verify only ever looked at the first one nothing reported the damage for 13
+# releases. See scripts/lib-stamp.sh and tests/test-release-stamp.sh.
+
+
+# A file that could not be stamped is collected, not shrugged at. These loops used to
+# discard stamp_header's return code entirely, so a file that failed to stamp simply was
+# not stamped and the release said nothing: the same silence-reads-as-success shape as the
+# unguarded source above it.
+# `worktrees` is excluded, and NOT `.claude`: a release run in this repo would otherwise
+# reach into every sibling agent checkout under .claude/worktrees/ and rewrite its headers
+# (114 markdown files, measured 2026-09-04), while .claude/CLAUDE.md is exactly the file
+# loop 2b exists to stamp. The hand-check that missed this used the interactive shell's
+# `grep`, which is ugrep and skips those directories; a script gets /usr/bin/grep, which
+# does not. Verify a selector with the grep the SCRIPT will run, not the one at the prompt.
+STAMP_FAILED=""
+
 # 2. propagate every markdown Version: header
 while IFS= read -r f; do
-  [ -n "$f" ] && sed -i.bak -E "s|<!-- Version: [0-9][0-9A-Za-z.-]* -->|<!-- Version: $V -->|" "$f" && rm -f "$f.bak"
+  [ -n "$f" ] || continue
+  stamp_header "$f" '<!-- Version: [0-9][0-9A-Za-z.-]* -->' "<!-- Version: $V -->" || STAMP_FAILED="$STAMP_FAILED $f"
 done < <(grep -rlE '<!-- Version: [0-9]' --include='*.md' . \
-  --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
+  --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache \
+  --exclude-dir=worktrees 2>/dev/null)
 
 # 2b. propagate the blockquote "> **Version:** X" form too — the project-local
 #     .claude/CLAUDE.md carries no HTML-comment header, so step 2 never touched it
 #     and it drifted (stranded at 0.8.0). This stamps it from the same source.
 while IFS= read -r f; do
-  [ -n "$f" ] && sed -i.bak -E "s|(> \*\*Version:\*\* )[0-9][0-9A-Za-z.-]*|\1$V|" "$f" && rm -f "$f.bak"
-done < <(grep -rlE '> \*\*Version:\*\* [0-9]' --include='*.md' . \
-  --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
+  [ -n "$f" ] || continue
+  stamp_header "$f" '> [*][*]Version:[*][*] [0-9][0-9A-Za-z.-]*' "> **Version:** $V" || STAMP_FAILED="$STAMP_FAILED $f"
+done < <(grep -rlE '> [*][*]Version:[*][*] [0-9]' --include='*.md' . \
+  --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache \
+  --exclude-dir=worktrees 2>/dev/null)
 
 # 3. stamp Revised dates to today (release-wide refresh; the convention is "current
 #    as of this release", which also keeps verify's <=14-day check green)
 while IFS= read -r f; do
-  [ -n "$f" ] && sed -i.bak -E "s|<!-- Revised: [0-9]{4}-[0-9]{2}-[0-9]{2}[^>]*-->|<!-- Revised: $TODAY -->|" "$f" && rm -f "$f.bak"
+  [ -n "$f" ] || continue
+  stamp_header "$f" '<!-- Revised: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][^>]*-->' "<!-- Revised: $TODAY -->" || STAMP_FAILED="$STAMP_FAILED $f"
 done < <(grep -rlE '<!-- Revised: [0-9]' --include='*.md' . \
-  --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache 2>/dev/null)
+  --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache \
+  --exclude-dir=worktrees 2>/dev/null)
+
+if [ -n "$STAMP_FAILED" ]; then
+  printf 'release: could not stamp:%s\n' "$STAMP_FAILED" >&2
+  printf 'release: refusing to continue with a partially stamped tree.\n' >&2
+  exit 1
+fi
 
 # 4. the gate — fail loudly if anything is incomplete/inconsistent
 RC=0

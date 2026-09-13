@@ -19,6 +19,16 @@ run_gate() {
   ERR="$(make_bash_tool_input "$cmd" | bash "$GATE" 2>&1 >/dev/null)"
   RC=$?
 }
+# A reservation's identity is the exact CALL: the session and the cksum of its tool_input
+# bytes, computed the way the gate computes it. Seeds a reservation by hand:
+#   seed_reserved <token-file> <key> <sid> <age-seconds> <command>
+# Exactly as maude_call_fp hashes: keys SORTED, and NO trailing newline (jq prints one;
+# the lib's command substitution drops it, so a seeded fp must drop it too).
+fp_of() { printf '%s' "$(make_bash_tool_input "$1" | jq -Sc '.tool_input // {}')" | cksum | awk '{print $1}'; }
+seed_reserved() {
+  printf '{"gate_cleared":{"%s":{"until":%d,"reserved":{"sid":"%s","at":%d,"fp":"%s","head":"%.60s","v":2}}}}\n' \
+    "$2" $(($(date +%s) + 600)) "$3" $(($(date +%s) - $4)) "$(fp_of "$5")" "$5" > "$1"
+}
 
 # ── Real positives — every pattern key ─────────────────────────────────
 
@@ -406,14 +416,191 @@ printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "
 run_gate "git push origin main"
 assert_exit "$RC" "0" "token allowed pass"
 
-test_start "token clears after one use (one-shot)"
-# After previous test, the token should have been removed.
-remaining="$(read_care '.gate_cleared["git-push"].until // "absent"')"
-assert_eq "$remaining" "absent" "token cleared"
+# A token is SPENT when the command RUNS, not when this gate lets it through. PreToolUse
+# hooks run in parallel and any sibling can refuse the same command (the version gate did
+# on 2026-09-06, the classifier on 09-05), and PostToolUse never fires for a refused
+# command. Consuming here spent a clear on a push that never happened and cost a second
+# clear every time. So the gate RESERVES the token for this session at PreToolUse and
+# CONSUMES it at PostToolUse of the command that actually ran (`consume` mode, called
+# from maude-trace.sh). The reservation belongs to the exact CALL, session + tool_input
+# bytes (the 24th lens, BLOCKING-2: a reservation of {sid, at} was a LEASE: one clear
+# opened a different command of the same session 4 s later, another session's after a
+# 120 s window, red keys included). Only the same call again rides it; nothing else
+# does until the clear expires or is made again.
+test_start "the pass RESERVES the token for this session and does not spend it"
+assert_ne "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "token still present after the pass"
+assert_eq "$(read_care '.gate_cleared["git-push"].reserved.sid')" "default" "reserved by this session"
 
-test_start "second matching command after token-use re-blocks"
+test_start "two commands of one session in the same instant: one token opens ONE (the second is in flight)"
+run_gate "git push origin main"
+assert_exit "$RC" "2" "the second, moments later, is blocked"
+assert_contains "$ERR" "already passing" "and told a command of its own holds the token"
+
+test_start "a command a sibling hook refused does not spend it: the same call passes again, seconds later"
+seed_reserved "$(care_path)" git-push default 5 "git push origin main"
+run_gate "git push origin main"
+assert_exit "$RC" "0" "a retry of the same call passes on its own reservation"
+
+test_start "the SAME session with DIFFERENT bytes 4 s later is refused, and told who holds it (BLOCKING-2 a)"
+seed_reserved "$(care_path)" git-push default 4 "git push origin main"
+run_gate "git push origin release"
+assert_exit "$RC" "2" "a different command does not ride the reservation"
+assert_contains "$ERR" "git push origin main" "names the call that holds it"
+assert_contains "$ERR" "left" "and how long the clear has left"
+
+test_start "a DIFFERENT session cannot ride a fresh reservation"
+ERR="$(make_bash_tool_input "git push origin main" | jq -c '. + {session_id:"other000-zzzz"}' | bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "2" "other session blocked while reserved"
+assert_contains "$ERR" "reserved" "and told why"
+
+test_start "PostToolUse consume SPENDS the token: the command ran"
+ERR="$(make_bash_tool_input "git push origin main" | jq -c '. + {hook_event_name:"PostToolUse", tool_response:{stdout:"",stderr:"",interrupted:false}}' | bash "$GATE" consume 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "0" "consume never blocks"
+assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "token cleared"
+assert_contains "$ERR" "is spent" "the spend is spoken"
+
+test_start "second matching command after the spend re-blocks"
 run_gate "git push origin main"
 assert_exit "$RC" "2" "second push blocked again"
+
+test_start "consume with NO token is silent and exits 0"
+ERR="$(make_bash_tool_input "git push origin main" | bash "$GATE" consume 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "0" "exit 0"
+assert_eq "$ERR" "" "nothing said"
+
+test_start "an ORPHANED reservation is not free to another session: it holds until the clear expires (BLOCKING-2 b)"
+seed_reserved "$(care_path)" git-push default 400 "git push origin main"
+ERR="$(make_bash_tool_input "git push origin main" | jq -c '. + {session_id:"other000-zzzz"}' | bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "2" "no takeover window"
+assert_contains "$ERR" "reserved" "and told it is reserved"
+assert_eq "$(read_care '.gate_cleared["git-push"].reserved.sid')" "default" "still the first call's"
+
+test_start "consume with DIFFERENT bytes leaves the token: it was reserved against another call (T8)"
+seed_reserved "$(care_path)" git-push default 0 "git push origin main"
+make_bash_tool_input "git push origin release" | bash "$GATE" consume >/dev/null 2>&1
+assert_ne "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "token kept for its reserver"
+
+test_start "consume with the SAME bytes and NO session_id spends it: that command ran (MINOR-1)"
+seed_reserved "$(care_path)" git-push f4ba50d9 0 "git push origin main"
+make_bash_tool_input "git push origin main" | bash "$GATE" consume >/dev/null 2>&1
+assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "spent on the bytes, not the session"
+rm -f "$(care_path)"
+
+# A corrupt care.json must not blind the OTHER token file: red keys live in one and yellow
+# in the other, so one bad store vetoing the good one turned a one-shot RED clear into an
+# N-shot (the 26th lens, IMPORTANT-2).
+test_start "a corrupt care.json does not stop a live RED token from being spent (26th lens, IMPORTANT-2)"
+printf '{"gate_cleared":{"force-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$(redclear_path)"
+run_gate "git push --force origin main"
+assert_exit "$RC" "0" "the red clear passes"
+printf 'not json at all {{{\n' > "$(care_path)"
+make_bash_tool_input "git push --force origin main" | jq -c '. + {hook_event_name:"PostToolUse"}' | bash "$GATE" consume >/dev/null 2>&1
+assert_eq "$(jq -r '.gate_cleared["force-push"].until // "absent"' "$(redclear_path)")" "absent" "and the run spends it even with care.json corrupt"
+rm -f "$(care_path)" "$(redclear_path)"
+
+# The head was cut at 60 BYTES, so a multibyte character straddling the cut left a lone
+# byte that jq rewrote to U+FFFD on the way in; the two ends then compared different bytes,
+# the retry was refused and the clear never spent (the 26th lens, IMPORTANT-3).
+test_start "on a box that cannot hash, a command cut mid-UTF-8-character still rides its own reservation (26th lens, IMPORTANT-3)"
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$(care_path)"
+NOCK2="$(make_no_binary_bin cksum shasum sum python3)"
+UTF8CMD="git push origin main # $(printf 'a%.0s' $(seq 1 36))é and more"
+ERR="$(make_bash_tool_input "$UTF8CMD" | PATH="$NOCK2" bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "0" "the first call passes"
+sleep 4
+ERR="$(make_bash_tool_input "$UTF8CMD" | PATH="$NOCK2" bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "0" "and the same call retried is not refused"
+make_bash_tool_input "$UTF8CMD" | jq -c '. + {hook_event_name:"PostToolUse"}' | PATH="$NOCK2" bash "$GATE" consume >/dev/null 2>&1
+assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "and the run spends it"
+rm -f "$(care_path)"
+
+# A reservation this build cannot identify — any older shape, including the one the
+# PREVIOUS build wrote with a different fingerprint formula — names no call it can match,
+# so it is re-reservable and spendable rather than a hard refusal of the person's own
+# command (the 26th lens, IMPORTANT-4).
+test_start "a reservation from the PREVIOUS build's formula is re-reservable, and the run spends it (26th lens, IMPORTANT-4)"
+printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d,"fp":"3753488038","head":"git push origin main"}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 60)) > "$(care_path)"
+run_gate "git push origin main"
+assert_exit "$RC" "0" "an unversioned reservation does not refuse the person's own command"
+make_bash_tool_input "git push origin main" | jq -c '. + {hook_event_name:"PostToolUse"}' | bash "$GATE" consume >/dev/null 2>&1
+assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "and the run spends it"
+
+test_start "a farm with shasum but no cksum still fingerprints (27th lens, IMPORTANT-3: the middle links are reachable)"
+SHAONLY="$(make_no_binary_bin cksum sum python3)"   # shasum is the ONLY link left: name the one under test
+FPSHA="$(PATH="$SHAONLY" bash -c '. '"$HOOKS_DIR"'/_maude-common.sh; maude_call_fp '"'"'{"tool_input":{"command":"git push origin main"}}'"'"'')"
+[ -n "$FPSHA" ]
+assert_exit "$?" "0" "a box with shasum and no cksum produces a fingerprint"
+
+test_start "an EXPIRED token is pruned when another is written, so the cheap exit stays cheap (26th lens, MINOR-4)"
+printf '{"gate_cleared":{"stale-one":{"until":1},"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$(care_path)"
+run_gate "git push origin main"
+assert_eq "$(read_care '.gate_cleared["stale-one"] // "gone"')" "gone" "the expired token is gone"
+assert_ne "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "the live one stays"
+rm -f "$(care_path)"
+
+test_start "a version written as a STRING is read the same by the fast path and the slow one (27th lens, MINOR-4)"
+printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d,"fp":"999999999","head":"git push origin other","v":"2"}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 60)) > "$(care_path)"
+SPENDABLE=0; . "$HOOKS_DIR/_maude-common.sh"
+maude_gate_spendable_here '{"tool_input":{"command":"git push origin main"}}' "git push origin main" "$(care_path)" && SPENDABLE=1
+assert_eq "$SPENDABLE" "0" "the fast path agrees with the slow one: a v2 reservation of another call is not spendable"
+rm -f "$(care_path)"
+
+test_start "a reservation written BEFORE the fingerprint existed names no call: re-reservable, and spent by the run (the upgrade path)"
+printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 5)) > "$(care_path)"
+run_gate "git push origin main"
+assert_exit "$RC" "0" "a legacy reservation does not block a new call"
+assert_eq "$(read_care '.gate_cleared["git-push"].reserved.fp // "absent"')" "$(fp_of "git push origin main")" "it is re-reserved with a real fingerprint"
+make_bash_tool_input "git push origin main" | jq -c '. + {hook_event_name:"PostToolUse"}' | bash "$GATE" consume >/dev/null 2>&1
+assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "and the run spends it"
+
+test_start "the fingerprint is CONTENT, not byte order: a Post whose tool_input keys are in another order still spends (25th lens, IMPORTANT-2)"
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$(care_path)"
+make_bash_tool_input "git push origin main" | jq -c '.tool_input = {command:"git push origin main", description:"push"}' | bash "$GATE" >/dev/null 2>&1
+make_bash_tool_input "git push origin main" | jq -c '. + {hook_event_name:"PostToolUse"} | .tool_input = {description:"push", command:"git push origin main"}' | bash "$GATE" consume >/dev/null 2>&1
+assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "the same call in another key order spends it"
+
+test_start "without cksum the retry after a sibling refusal still passes: the fix is not reversed (25th lens, IMPORTANT-3)"
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$(care_path)"
+# EVERY link of the fingerprint chain, excluded at construction, so this really is a box that
+# cannot hash (the farm links cksum, shasum, sum and python3 — excluding only two of them left
+# this test running on the shasum path, where the fingerprint does the telling and the head
+# identity below is never exercised: the 27th lens, IMPORTANT-3). Excluded, never written
+# over: the dir holds symlinks only.
+NOCK="$(make_no_binary_bin cksum shasum sum python3)"
+run_gate_nock() { ERR="$(make_bash_tool_input "$1" | PATH="$NOCK" bash "$GATE" 2>&1 >/dev/null)"; RC=$?; }
+run_gate_nock "git push origin main"
+assert_exit "$RC" "0" "the first call passes"
+sleep 4
+run_gate_nock "git push origin main"
+assert_exit "$RC" "0" "and the same call retried passes, not refused"
+
+test_start "…while a DIFFERENT command is still refused on a box that cannot hash"
+run_gate_nock "git push origin release"
+assert_exit "$RC" "2" "a different command does not ride it"
+rm -f "$(care_path)"
+
+test_start "a RED token is one shot too: a different force-push 4 s later is refused (BLOCKING-2 c)"
+seed_reserved "$(redclear_path)" force-push default 4 "git push --force origin main"
+run_gate "git push --force origin release"
+assert_exit "$RC" "2" "different bytes refused on a red reservation"
+assert_contains "$ERR" "reserved" "and told it is reserved"
+
+test_start "…and another session after 121 s is refused: the takeover is gone for red keys"
+seed_reserved "$(redclear_path)" force-push default 121 "git push --force origin main"
+ERR="$(make_bash_tool_input "git push --force origin main" | jq -c '. + {session_id:"other000-zzzz"}' | bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "2" "no takeover"
+
+test_start "…while the same force-push retried after a sibling refusal rides its own reservation"
+seed_reserved "$(redclear_path)" force-push default 4 "git push --force origin main"
+run_gate "git push --force origin main"
+assert_exit "$RC" "0" "same call: the retry passes"
+rm -f "$(redclear_path)"
+
+test_start "a token whose 'until' is not a number blocks without a bash error in her voice"
+printf '{"gate_cleared":{"git-push":{"until":"soon"}}}\n' > "$(care_path)"
+run_gate "git push origin main"
+assert_exit "$RC" "2" "blocked"
+assert_not_contains "$ERR" "integer expression" "no raw bash error on the person's channel"
 
 test_start "expired token does NOT pass"
 printf '{"gate_cleared":{"git-push":{"until":1}}}\n' > "$(care_path)"
@@ -617,6 +804,26 @@ test_start "gate BLOCKS red clear-script even with a quoted script path"
 run_gate 'bash "/x/hooks/scripts/maude-clear-gate.sh" force-push --john'
 assert_exit "$RC" "2" "quoted-path red self-clear blocked"
 
+# The two backstop refusals ABOUT red keys are red refusals too: they opened with the
+# yellow prefix and carried no red sentence, one of them saying "is a RED key" while
+# wearing `Maude:` (the 23rd lens, IMPORTANT-3, the D3 confusion the wave was written
+# to remove).
+test_start "the red self-clear backstop opens with the red tag and carries the red sentence"
+run_gate 'bash /x/hooks/scripts/maude-clear-gate.sh force-push --john'
+assert_contains "$ERR" "Maude [RED]:" "tagged red"
+assert_contains "$ERR" '"force-push" is a RED key' "the red sentence names the key"
+assert_contains "$ERR" "/maude:conscience force-push" "and the command that shows the line"
+
+test_start "the red-clear-file write backstop opens with the red tag and names whose hand it is"
+run_gate 'echo {} > /x/.maude/plugin/care-redclear.json'
+assert_contains "$ERR" "Maude [RED]:" "tagged red"
+assert_contains "$ERR" "hand" "whose hand"
+assert_not_contains "$ERR" "Run /maude:conscience" "no yellow self-clear instruction"
+
+test_start "the public-publish refusal keeps its checklist clause after the strip"
+run_gate "gh release create v1.0 dist/*"
+assert_contains "$ERR" "checklist" "the pre-public-push checklist is still named"
+
 test_start "gate PASSES Claude-Bash invoking the clear-script for a YELLOW key"
 run_gate 'bash /x/hooks/scripts/maude-clear-gate.sh git-push'
 assert_exit "$RC" "0" "yellow self-clear via Bash allowed"
@@ -775,6 +982,68 @@ test_start "gate passes bash -c 'ls' silently"
 run_gate "bash -c 'ls'"
 assert_exit "$RC" "0" "literal-safe allowed"
 assert_eq "$ERR" "" "no whisper on safe literal"
+
+# ── A RED refusal says its tier first and names whose hand it is; a yellow one names the
+# self-clear (the UX lens, 2026-09-06, D2 and D3: six of nine refusals told the person
+# to run the yellow self-clear for a red key, and nothing but a path in a parenthetical
+# told a red refusal from a yellow one). A pass on a live token says so (N4).
+test_start "a RED-key refusal opens with the tier and never tells the person to run the yellow self-clear"
+run_gate "git push --force origin main"
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "Maude [RED]:" "the tier is the first token"
+assert_not_contains "$ERR" "Run /maude:conscience" "no self-clear instruction for a red key"
+assert_contains "$ERR" "/maude:conscience force-push" "the command that shows the line to paste is still named"
+assert_contains "$ERR" "hand" "whose hand it is"
+
+test_start "a yellow refusal keeps its shape: no tier tag, the self-clear named"
+run_gate "git push origin main"
+assert_exit "$RC" "2" "blocked"
+assert_not_contains "$ERR" "[RED]" "yellow is not tagged red"
+assert_contains "$ERR" "Run /maude:conscience git-push" "the self-clear is named"
+
+test_start "every red row carries the tag from the one place that prints refusals"
+run_gate 'psql -c "DROP TABLE users"'
+assert_contains "$ERR" "Maude [RED]:" "drop-table tagged"
+run_gate 'rm -rf /'
+assert_contains "$ERR" "Maude [RED]:" "rm-rf-root tagged"
+run_gate 'gh release create v9.9.9'
+assert_contains "$ERR" "Maude [RED]:" "public-publish tagged"
+
+test_start "a pass on a live token says so, so a spent token leaves a trace on screen"
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$(care_path)"
+run_gate "git push origin main"
+assert_exit "$RC" "0" "passes on the token"
+assert_contains "$ERR" "git-push passed on its token" "the pass is spoken"
+
+# ── One token opens exactly one command, under concurrency (the memory lens, 2026-09-06,
+# DEFECT-4: the gate read the token on one open and consumed it on a second, so a
+# concurrent writer could resurrect a spent token). A jq shim that sleeps makes two gate
+# runs overlap deterministically: both read the token live unless read-and-consume is
+# one locked step.
+test_start "one token opens exactly one of two concurrent gated commands"
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$(care_path)"
+RACEJQ="$(make_no_binary_bin jq)"; REAL_JQ="$(command -v jq)"
+printf '#!/usr/bin/env bash\n%q 0.2\nexec %q "$@"\n' "$(command -v sleep)" "$REAL_JQ" > "$RACEJQ/jq"; chmod +x "$RACEJQ/jq"
+( make_bash_tool_input "git push origin main" | PATH="$RACEJQ:$PATH" bash "$GATE" >/dev/null 2>&1; echo $? > "$TEST_TMP/race-rc1" ) &
+( make_bash_tool_input "git push origin main" | PATH="$RACEJQ:$PATH" bash "$GATE" >/dev/null 2>&1; echo $? > "$TEST_TMP/race-rc2" ) &
+wait
+RACE_PASSES=0; [ "$(cat "$TEST_TMP/race-rc1")" = 0 ] && RACE_PASSES=$((RACE_PASSES + 1)); [ "$(cat "$TEST_TMP/race-rc2")" = 0 ] && RACE_PASSES=$((RACE_PASSES + 1))
+assert_eq "$RACE_PASSES" "1" "exactly one of two overlapping commands passed on one token"
+# The pass RESERVES; the spend is the run (PostToolUse consume, test above). Prove both halves:
+# the token is still there for the command that passed, and its consume takes it.
+assert_ne "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "and the token is reserved, not yet spent"
+make_bash_tool_input "git push origin main" | bash "$GATE" consume >/dev/null 2>&1
+assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "and the run spends it"
+
+test_start "a live token whose reservation cannot be written refuses and SAYS the write failed (not 'go get a token')"
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$(care_path)"
+BADJQ="$(make_no_binary_bin jq)"
+printf '#!/usr/bin/env bash\ncase "$*" in *reserved*) exit 4;; esac\nexec %q "$@"\n' "$(command -v jq)" > "$BADJQ/jq"; chmod +x "$BADJQ/jq"
+ERR="$(make_bash_tool_input "git push origin main" | PATH="$BADJQ:$PATH" bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "2" "fail closed"
+assert_contains "$ERR" "could not record" "says the write failed"
+assert_not_contains "$ERR" "Run /maude:conscience" "does not send him for a token he holds"
+rm -f "$(care_path)"
 
 print_summary
 teardown_test_env

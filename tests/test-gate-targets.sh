@@ -56,6 +56,23 @@ test_start "CONTROL: rm -rf of the protected root still blocks"
 run_gate "rm -rf $P"
 assert_exit "$RC" "2" "control rm -rf root"
 
+# The gate collapses a command's repeated slashes before matching; a root CONFIGURED with
+# "//" in it (built from a TMPDIR that ends in a slash, as macOS exports) matched nothing:
+# 22 of these pins went green-to-red on the GitHub macOS runner (PR #69). The root's
+# pattern is collapsed the same way now.
+test_start "a protected root configured with a double slash still blocks (macOS TMPDIR ends in a slash)"
+# Two segments below the project dir, so the project's own default (one segment deep)
+# cannot carry this pin: only the CONFIGURED root can block it.
+printf '{"sole_copy_paths":["%s//build"]}\n' "$P" > "$MAUDE_GATE_CONFIG"
+run_gate "rm -rf $P/build/x/y"
+assert_exit "$RC" "2" "a configured root with // still protects two levels down"
+printf '{"sole_copy_paths":["%s"]}\n' "$P" > "$MAUDE_GATE_CONFIG"
+test_start "…and a project dir that arrives with a double slash still protects its first level"
+_SAVED_PROJ="$CLAUDE_PROJECT_DIR"; _SLASHED_PROJ="$(dirname "$P")//$(basename "$P")"; export CLAUDE_PROJECT_DIR="$_SLASHED_PROJ"
+run_gate "rm -rf $P/proj"
+assert_exit "$RC" "2" "project dir with // still protects"
+export CLAUDE_PROJECT_DIR="$_SAVED_PROJ"
+
 # ── The 2026-07-23 disaster class: glob at the protected root ───────────
 
 test_start "blocks the exact 2026-07-23 command shape (glob at root)"

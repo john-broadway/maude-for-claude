@@ -197,6 +197,23 @@ write_trace "2026-01-03"                        # empty (today)
 set_care '{"last_verify_iso":"2026-01-01T10:00:00Z"}'
 assert_eq "$(run_commit 'git commit -m "x"')" "" "tail -2 window boundary"
 
+# ---- widened separator: SEP now treats '(' and a backtick as command-position
+# separators too (hoisted from redteam-watch's SEP, which already had this — see
+# _maude-common.sh maude_sep_re). A subshell- or command-substitution-wrapped
+# commit/runner still runs the thing; missing it would be a rail that silently
+# does not fire. ----
+test_start "commit whispers on a paren-wrapped commit ('(git commit -m x)')"
+set_care '{"last_verify_iso":"2026-01-01T10:00:00Z"}'; set_trace "$EDIT"
+assert_contains "$(run_commit '(git commit -m "x")')" "asserting it" "paren-wrapped whisper"
+
+test_start "stamp records a command-substitution 'pytest -q' ('\$(pytest -q)')"
+reset_care; do_stamp '$(pytest -q)' "5 passed in 0.10s"
+assert_ne "$(read_care '.last_verify_iso')" "null" "command-substitution stamped"
+
+test_start "stamp still ignores 'echo pytest' after the widening (control)"
+reset_care; do_stamp "echo pytest" "pytest"
+assert_eq "$(read_care '.last_verify_iso')" "null" "echo still not stamped"
+
 # ---- never blocks --------------------------------------------------------
 test_start "stamp exits 0 on empty stdin"
 printf '' | bash "$VW" stamp >/dev/null 2>&1

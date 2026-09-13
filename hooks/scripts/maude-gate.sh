@@ -20,16 +20,34 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
+# MODE: "" = the PreToolUse gate; "consume" = PostToolUse, spend the token this
+# session reserved (called from maude-trace.sh; never blocks). Stdin is read ONCE.
+MODE="${1:-}"
+INPUT="$(cat 2>/dev/null)"
 CMD=""
+SID=""
 if command -v jq >/dev/null 2>&1; then
-  CMD="$(jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
+  CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
+  SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null | cut -c1-8)"
 fi
+[ -n "$SID" ] || SID="default"
 # Fail-OPEN by design: without jq there's no trustworthy way to parse the command
 # out of the tool-input JSON (a hand-rolled parse reintroduces the v0.1.6
 # quote-stripping self-block risk), so the gate provides NO protection here. The
 # user is warned once at SessionStart ("the gate is OFF this session"). This is a
 # deliberate limitation of an intentionally-soft dependency, not an oversight.
 [ -z "$CMD" ] && exit 0
+
+# CONSUME: leave before the pattern table. A consume can only spend a live token that is
+# unreserved or reserved by THIS call, and both are answerable from the call alone — no
+# pattern walk, no wrapped-payload recursion. The caller's text guard could not do this:
+# an orphaned reservation (the residual 898dab7 names) or the word "reserved" anywhere in
+# a 34 KB shared file put 306 ms back on every Bash completion in every session, for the
+# whole life of a clear (the 25th lens, IMPORTANT-1).
+if [ "$MODE" = "consume" ]; then
+  command -v jq >/dev/null 2>&1 || exit 0
+  maude_gate_spendable_here "$INPUT" "$CMD" "$(maude_self_dir)/care.json" "$(maude_redclear_file)" || exit 0
+fi
 
 # Quote-content-kept normalisation — used by the backstop checks below
 # (red-self-clear, redclear-write, drop-table). PATH patterns are matched
@@ -296,7 +314,7 @@ CMD_PATTERNS=(
   "${CMD_START}${PREFIX}${GIT}filter-repo${FLAG_AFTER} ||| filter-repo ||| git filter-repo rewrites history. Run /maude:conscience filter-repo to override."
   "${CMD_START}${PREFIX}${GIT}filter-branch${FLAG_AFTER} ||| filter-branch ||| git filter-branch rewrites history. Run /maude:conscience filter-branch to override."
   "${CMD_START}${PREFIX}${GIT}commit[[:space:]].*--amend ||| commit-amend ||| git commit --amend rewrites the last commit. If pushed, this needs force-push. Run /maude:conscience commit-amend."
-  "${CMD_START}${PREFIX}$(maude_public_publish_re) ||| public-publish ||| public-facing publish (gh release / twine / uv publish / hf upload). Run /maude:conscience public-publish after the pre-public-push checklist + John's go."
+  "${CMD_START}${PREFIX}$(maude_public_publish_re) ||| public-publish ||| public-facing publish (gh release / twine / uv publish / hf upload), only after the pre-public-push checklist and John's go. Run /maude:conscience public-publish."
   # NOTE: DROP TABLE is NOT a CMD_PATTERN — matching the quote-ERASED skeleton
   # made it exactly backwards (missed quoted real SQL, fired on prose). It is
   # handled by the context-aware block below (content-kept view + SQL client).
@@ -343,6 +361,8 @@ maude_wrapped_match() {
 }
 
 MATCHED_KEY=""
+MATCHED_RED_KEY=""
+MATCHED_TIER=""
 MATCHED_MSG=""
 
 MATCHED="$(maude_gate_eval "$CMD")"
@@ -369,7 +389,8 @@ if [ -z "$MATCHED_KEY" ]; then
   for _rk in $(maude_red_keys); do
     if printf '%s' "$UNQUOTED" | grep -qE -- "maude-clear-(gate|red)\.sh([[:space:]]+[^[:space:]]+)*[[:space:]]+${_rk}([[:space:]]|$)"; then
       MATCHED_KEY="red-self-clear"
-      MATCHED_MSG="\"$_rk\" is a RED key — Claude cannot self-clear it. This is John's hand: he authorizes by pasting a ! line. See /maude:conscience $_rk for the exact line."
+      MATCHED_RED_KEY="$_rk"
+      MATCHED_MSG="self-clearing a red key from the tool gate is blocked; this is John's hand. "
       break
     fi
   done
@@ -400,7 +421,8 @@ if [ -z "$MATCHED_KEY" ]; then
   if printf '%s' "$UNQUOTED" | grep -qE -- '(>>?[[:space:]]*|tee[[:space:]]+)[^[:space:];&|]*care-redclear\.json' ||
      printf '%s' "$UNQUOTED" | grep -qE -- '(^|[[:space:];&|(`])(chattr|chmod|chown|mv|cp|dd|install|truncate|ln)[[:space:]][^;&|]*care-redclear\.json'; then
     MATCHED_KEY="redclear-write"
-    MATCHED_MSG="writes to the red-clear token file are blocked. Only John's ! line may authorize a red key (see /maude:conscience)."
+    MATCHED_TIER="red"
+    MATCHED_MSG="writes to the red-clear token file are blocked: the human's hand only, by a ! line pasted in their own shell (John's hand here). /maude:conscience shows the line to paste."
   fi
 fi
 
@@ -450,14 +472,61 @@ else
   CARE="$(maude_self_dir)/care.json"
 fi
 if [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
-  CLEARED_UNTIL="$(jq -r --arg k "$MATCHED_KEY" '.gate_cleared[$k].until // 0' "$CARE" 2>/dev/null)"
-  if [ -n "$CLEARED_UNTIL" ] && [ "$CLEARED_UNTIL" -gt 0 ] && [ "$CLEARED_UNTIL" -gt "$NOW" ] 2>/dev/null; then
-    # Token is live — allow this one through, then consume it (atomic, shared helper)
-    maude_care_set "$CARE" --arg k "$MATCHED_KEY" 'del(.gate_cleared[$k])'
-    maude_log_trace "gate" "passed=$MATCHED_KEY"
+  # Read and consume as ONE locked step (the memory lens, 2026-09-06: read on one open,
+  # consumed on a second, so a concurrent writer could resurrect a spent token). Say so:
+  # the spend of a one-shot token was the only moment in its life with no output, so
+  # "is my gate still open" was answerable only from memory.
+  # The reservation belongs to the exact call: this session and these tool_input bytes
+  # (the 24th lens, BLOCKING-2: {sid, at} alone was a lease). Same bytes at PreToolUse
+  # and PostToolUse, so the consume finds its own reservation.
+  FP="$(maude_call_fp "$INPUT")"
+  HEAD="$(maude_call_head "$CMD")"
+  if [ "$MODE" = "consume" ]; then
+    # PostToolUse: the command RAN. Spend the token this call reserved (or an
+    # unreserved one). Never blocks; silent when there is nothing to spend.
+    if [ "$(maude_care_consume_token "$CARE" "$MATCHED_KEY" "$FP" "$HEAD")" = "spent" ]; then
+      maude_log_trace "gate" "spent=$MATCHED_KEY"
+      printf 'Maude: %s is spent; the gate is closed again.\n' "$MATCHED_KEY" >&2
+    fi
     exit 0
   fi
+  # PreToolUse: RESERVE, do not spend. PreToolUse hooks run in parallel and a sibling
+  # may still refuse this command, and PostToolUse never fires for a refused command;
+  # the spend belongs to the command that ran (2026-09-06: a version gate's refusal
+  # spent a clear on a push that never happened). The same call passes again on its
+  # own reservation; any other call waits for it to run, or for the clear to expire
+  # or be made again.
+  RES="$(maude_care_reserve_token "$CARE" "$MATCHED_KEY" "$SID" "$NOW" "$FP" "$HEAD")"
+  case "${RES%%$'\037'*}" in
+    live)
+      maude_log_trace "gate" "passed=$MATCHED_KEY"
+      printf 'Maude: %s passed on its token; it is spent when the command runs.\n' "$MATCHED_KEY" >&2
+      exit 0 ;;
+    reserved)
+      IFS="$(printf '\037')" read -r _ RSID RLEFT RHEAD <<EOF
+$RES
+EOF
+      maude_log_trace "gate" "blocked=$MATCHED_KEY reserved"
+      printf 'Maude: %s has a live token, but it is reserved by another call (session %s: `%s`, %s s left). That exact command retried rides it; anything else waits for it to run, or clears again.\n' \
+        "$MATCHED_KEY" "${RSID:-?}" "$RHEAD" "${RLEFT:-?}" >&2
+      printf '       (looked in: %s)\n' "$CARE" >&2
+      exit 2 ;;
+    inflight)
+      maude_log_trace "gate" "blocked=$MATCHED_KEY inflight"
+      printf 'Maude: %s has a live token, but a command of yours is already passing on it; one token opens one command.\n' "$MATCHED_KEY" >&2
+      printf '       (looked in: %s)\n' "$CARE" >&2
+      exit 2 ;;
+    unwritable)
+      # The person holds a clear the gate cannot record (care.json unwritable, a full
+      # disk, a jq that fails on the write). The ordinary refusal would send him to get
+      # a token he already has (the 23rd lens, IMPORTANT-2): say what actually failed.
+      maude_log_trace "gate" "blocked=$MATCHED_KEY unwritable"
+      printf 'Maude: %s has a live token, but the gate could not record its use; nothing passes until %s is writable.\n' "$MATCHED_KEY" "$CARE" >&2
+      exit 2 ;;
+  esac
 fi
+# consume never blocks: nothing to spend is nothing to say.
+[ "$MODE" = "consume" ] && exit 0
 
 # No live token — block.
 # NAME THE FILE WE LOOKED IN. The clear-script names the file it WROTE; without
@@ -465,7 +534,21 @@ fi
 # followed by a refusal, with nothing on either side to compare. That is exactly
 # how the 2026-09-02 bug hid. One line closes the loop from the reader's side.
 maude_log_trace "gate" "blocked=$MATCHED_KEY"
-printf 'Maude: %s\n' "$MATCHED_MSG" >&2
+if maude_is_red_key "$MATCHED_KEY" || [ -n "${MATCHED_RED_KEY:-}" ] || [ "${MATCHED_TIER:-}" = "red" ]; then
+  # A red key is the human's hand, never Claude's. The table rows end in "Run
+  # /maude:conscience <key> …", the yellow self-clear, a dead end for a red key (the UX
+  # lens, 2026-09-06: six of nine refusals). One place: drop that sentence, say the tier
+  # first so a scanning eye lands on the class, then the one sentence every red refusal
+  # ends with. The two backstops ABOUT red keys (self-clear, red-file write) are red
+  # refusals too (the 23rd lens, IMPORTANT-3): the self-clear names the key it was
+  # about; the file write has no single key and carries its own hand sentence.
+  RED_SENT=""
+  if maude_is_red_key "$MATCHED_KEY"; then RED_SENT="$(maude_red_refusal_line "$MATCHED_KEY")"
+  elif [ -n "${MATCHED_RED_KEY:-}" ]; then RED_SENT="$(maude_red_refusal_line "$MATCHED_RED_KEY")"; fi
+  printf 'Maude [RED]: %s%s\n' "${MATCHED_MSG%%Run /maude:conscience*}" "$RED_SENT" >&2
+else
+  printf 'Maude: %s\n' "$MATCHED_MSG" >&2
+fi
 # Deliberately does NOT repeat the matched key. An earlier draft did, and that
 # put the key into stderr from a second source — which let nine assertions in
 # test-gate.sh ("...block names its conscience key") pass even with the primary

@@ -308,6 +308,228 @@ printf 'clobber\n' > "$TEST_TMP/reg.txt"
 MAUDE_PROJECT_DIR_OVERRIDE="$TEST_TMP/nowhere-at-all" bash "$UNDO" restore 1 >/dev/null 2>&1
 assert_eq "$(cat "$TEST_TMP/reg.txt")" "registered" "restored across the resolution gap"
 
+# ── The listing is newest-first and bounded; the entry a person needs is the first line
+# (the UX lens, 2026-09-06, D7: sixty lines oldest-first put the one he wanted last, off
+# the top of his scrollback, and he had to read all sixty to find its index). ──
+test_start "list prints the newest ten, newest at the top, and says how many more"
+reset_undo
+for i in $(seq 1 15); do printf 'v%d\n' "$i" > "$TEST_TMP/seq-$i.txt"; write_input "$TEST_TMP/seq-$i.txt" | bash "$UNDO" capture-write >/dev/null 2>&1; done
+LIST="$(bash "$UNDO" list 2>&1)"
+assert_eq "$(printf '%s\n' "$LIST" | grep -c '^  \[')" "10" "ten entries shown"
+assert_contains "$(printf '%s\n' "$LIST" | grep '^  \[' | head -1)" "[15]" "the newest is the first line"
+assert_not_contains "$LIST" "[1] " "the oldest is not in the default listing"
+assert_contains "$LIST" "+5 more" "the rest are counted"
+assert_contains "$LIST" "list --all" "and the way to see them is named"
+
+test_start "list --all shows every entry, still newest first"
+LISTALL="$(bash "$UNDO" list --all 2>&1)"
+assert_eq "$(printf '%s\n' "$LISTALL" | grep -c '^  \[')" "15" "all fifteen"
+assert_contains "$(printf '%s\n' "$LISTALL" | grep '^  \[' | tail -1)" "[1] " "the oldest is last"
+
+test_start "restore last puts back the newest recoverable entry without an index"
+printf 'changed\n' > "$TEST_TMP/seq-15.txt"
+bash "$UNDO" restore last >/dev/null 2>&1
+assert_eq "$(cat "$TEST_TMP/seq-15.txt")" "v15" "the newest capture is back"
+
+# ── the listing and the restore must agree on what "[N]" means, and a bad line must not
+# blind either (the 23rd lens, IMPORTANT-1/2: one unparseable line made `list` print the
+# header and nothing else at rc 0 and `restore last` say "nothing recoverable"; and
+# `list` numbered by jq position while `restore` read by physical line, so a blank line
+# made `restore 3` overwrite the file the listing had called [2]). The index IS the
+# physical line number, on both sides; an unreadable line is listed as such.
+seed_three() {  # three captured files, then an extra line ($1) after the first entry
+  reset_undo
+  for i in 1 2 3; do printf 'v%s\n' "$i" > "$TEST_TMP/u$i.txt"; write_input "$TEST_TMP/u$i.txt" | bash "$UNDO" capture-write >/dev/null 2>&1; done
+  python3 - "$(ledger)" "$1" <<'PY'
+import sys
+p, extra = sys.argv[1], sys.argv[2]
+lines = open(p, encoding="utf-8").read().splitlines()
+lines.insert(1, extra)
+open(p, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+PY
+}
+
+test_start "a MALFORMED ledger line: the other entries are still listed, and the bad one says so"
+seed_three "NOT JSON AT ALL"
+OUT="$(bash "$UNDO" list 2>&1)"; LRC=$?
+assert_exit "$LRC" "0" "list exits 0"
+assert_contains "$OUT" "[1] " "the first entry is listed"
+assert_contains "$OUT" "[4] " "the last entry is listed"
+assert_contains "$OUT" "[2] " "the bad physical line keeps its number"
+assert_contains "$OUT" "UNREADABLE" "and is named as unreadable"
+
+test_start "…and restore last puts back the newest READABLE entry"
+printf 'clobbered\n' > "$TEST_TMP/u3.txt"
+bash "$UNDO" restore last >/dev/null 2>&1; RRC=$?
+assert_exit "$RRC" "0" "restore last succeeds"
+assert_eq "$(cat "$TEST_TMP/u3.txt")" "v3" "the newest captured file is back"
+
+test_start "…and restore of the unreadable line says so instead of erroring"
+ERR="$(bash "$UNDO" restore 2 2>&1 >/dev/null)"; RRC=$?
+assert_exit "$RRC" "1" "refused"
+assert_contains "$ERR" "not readable" "and says why"
+
+# `try fromjson catch null` catches a PARSE failure, not a line that parses to a non-object:
+# `$v.ts` on a number aborted the whole jq stream at rc 0 and the listing lost its oldest
+# entries (the 24th lens, IMPORTANT-4: the 23rd's IMPORTANT-1 surviving under a narrower trigger).
+test_start "a ledger line that is JSON but NOT AN OBJECT (a bare number): listed as unreadable in place, the rest stand"
+seed_three "42"
+OUT="$(bash "$UNDO" list 2>&1)"; LRC=$?
+assert_exit "$LRC" "0" "list exits 0"
+assert_contains "$OUT" "[1] " "the first entry is listed"
+assert_contains "$OUT" "[4] " "the last entry is listed"
+assert_contains "$OUT" "UNREADABLE" "the number line is named as unreadable"
+
+test_start "…and restore last puts back the newest READABLE entry past the number line"
+printf 'clobbered\n' > "$TEST_TMP/u3.txt"
+bash "$UNDO" restore last >/dev/null 2>&1; RRC=$?
+assert_exit "$RRC" "0" "restore last succeeds"
+assert_eq "$(cat "$TEST_TMP/u3.txt")" "v3" "the newest captured file is back"
+
+test_start "…and restore of the number line says not readable"
+ERR="$(bash "$UNDO" restore 2 2>&1 >/dev/null)"; RRC=$?
+assert_exit "$RRC" "1" "refused"
+assert_contains "$ERR" "not readable" "and says why"
+
+# The row is built by string concatenation, so a FIELD of the wrong type raised inside the
+# jq program, aborted [inputs] at rc 0 with stderr silenced, and silently dropped the OLDEST
+# entries — the 23rd lens's IMPORTANT-1 and the 24th's IMPORTANT-4 for a third round, under
+# a narrower trigger each time (the 25th lens, IMPORTANT-4). Make the ROW total, not the
+# trigger narrower.
+test_start "a ledger object whose path is a NUMBER: listed in place, the entries around it stand"
+seed_three '{"ts":"2026-09-06T02:00:00Z","tool":"Write","path":42,"existed":true,"bytes":9}'
+OUT="$(bash "$UNDO" list 2>&1)"; LRC=$?
+assert_exit "$LRC" "0" "list exits 0"
+assert_contains "$OUT" "[1] " "the OLDEST entry survives"
+assert_contains "$OUT" "[4] " "the newest entry is listed"
+assert_contains "$OUT" "[2] " "the malformed line keeps its number"
+
+test_start "…and restore last still puts back the newest recoverable entry"
+printf 'clobbered\n' > "$TEST_TMP/u3.txt"
+bash "$UNDO" restore last >/dev/null 2>&1; RRC=$?
+assert_exit "$RRC" "0" "restore last succeeds"
+assert_eq "$(cat "$TEST_TMP/u3.txt")" "v3" "the newest captured file is back"
+
+test_start "…and restore of the malformed line refuses instead of blaming a pruned blob"
+ERR="$(bash "$UNDO" restore 2 2>&1 >/dev/null)"; RRC=$?
+assert_exit "$RRC" "1" "refused"
+assert_contains "$ERR" "not readable" "and says the entry is not readable"
+assert_not_contains "$ERR" "pruned" "never points at a pruned blob"
+
+test_start "a ledger object whose ts is a NUMBER: same, the listing is total"
+seed_three '{"ts":1234,"tool":"Write","path":"/tmp/x","existed":true,"bytes":9}'
+OUT="$(bash "$UNDO" list 2>&1)"
+assert_contains "$OUT" "[1] " "the oldest entry survives a numeric ts"
+assert_contains "$OUT" "[4] " "and the newest"
+
+test_start "an EMPTY object at the tail does not capture restore last"
+reset_undo
+for i in 1 2 3; do printf 'v%s\n' "$i" > "$TEST_TMP/u$i.txt"; write_input "$TEST_TMP/u$i.txt" | bash "$UNDO" capture-write >/dev/null 2>&1; done
+printf '{}\n' >> "$(ledger)"
+printf 'clobbered\n' > "$TEST_TMP/u3.txt"
+bash "$UNDO" restore last >/dev/null 2>&1; RRC=$?
+assert_exit "$RRC" "0" "restore last succeeds past the junk line"
+assert_eq "$(cat "$TEST_TMP/u3.txt")" "v3" "it put back the real entry, not the {}"
+
+# "" is a string, so the type guard let an empty path through and `restore last` captured
+# it and then blamed a pruned blob — the reader who was just clobbered is told the content
+# is gone while the row above holds their file (the 26th lens, MINOR-1).
+test_start "a row whose path is an EMPTY STRING does not capture restore last (26th lens, MINOR-1)"
+reset_undo
+for i in 1 2 3; do printf 'v%s\n' "$i" > "$TEST_TMP/u$i.txt"; write_input "$TEST_TMP/u$i.txt" | bash "$UNDO" capture-write >/dev/null 2>&1; done
+printf '{"ts":"2026-09-06T05:00:00Z","tool":"Write","path":"","existed":true,"bytes":3}\n' >> "$(ledger)"
+printf 'clobbered\n' > "$TEST_TMP/u3.txt"
+bash "$UNDO" restore last >/dev/null 2>&1; RRC=$?
+assert_exit "$RRC" "0" "restore last succeeds past the empty-path row"
+assert_eq "$(cat "$TEST_TMP/u3.txt")" "v3" "it put back the real entry"
+
+test_start "…and the empty-path row is listed as unreadable, not as an entry"
+OUT="$(bash "$UNDO" list 2>&1)"
+assert_contains "$OUT" "UNREADABLE" "named unreadable"
+assert_contains "$OUT" "[1] " "and the entries around it stand"
+
+test_start "a row whose skip is NOT a string still reads as not recoverable (26th lens, MINOR-2)"
+reset_undo
+printf 'v1\n' > "$TEST_TMP/u1.txt"; write_input "$TEST_TMP/u1.txt" | bash "$UNDO" capture-write >/dev/null 2>&1
+printf '{"ts":"2026-09-06T04:00:00Z","tool":"Write","path":"/x/q","skip":{"why":"too big"},"existed":true,"bytes":3}\n' >> "$(ledger)"
+OUT="$(bash "$UNDO" list 2>&1)"
+assert_contains "$OUT" "NOT RECOVERABLE" "the listing says so"
+assert_not_contains "$OUT" "(created" "it does not invite a delete"
+
+test_start "…and one whose skip is an array, on a row that claims it was created"
+reset_undo
+printf 'v1\n' > "$TEST_TMP/u1.txt"; write_input "$TEST_TMP/u1.txt" | bash "$UNDO" capture-write >/dev/null 2>&1
+printf '{"ts":"2026-09-06T04:00:00Z","tool":"Write","path":"/x/q","skip":["too big"],"existed":false,"bytes":3}\n' >> "$(ledger)"
+OUT="$(bash "$UNDO" list 2>&1)"
+assert_contains "$OUT" "NOT RECOVERABLE" "still not recoverable"
+
+# jq's `//` treats `false` as absent, so the listing said NOT RECOVERABLE while the reader
+# that ACTS saw no skip and deleted the file (the 27th lens, IMPORTANT-5).
+test_start "a row whose skip is FALSE is refused by restore, not acted on (27th lens, IMPORTANT-5)"
+reset_undo
+printf 'v1\n' > "$TEST_TMP/u1.txt"; write_input "$TEST_TMP/u1.txt" | bash "$UNDO" capture-write >/dev/null 2>&1
+printf 'REAL\n' > "$TEST_TMP/uskip.txt"
+printf '{"ts":"2026-09-06T04:00:00Z","tool":"Write","path":"%s","skip":false,"existed":false,"bytes":5}\n' "$TEST_TMP/uskip.txt" >> "$(ledger)"
+ERR="$(bash "$UNDO" restore 2 2>&1 >/dev/null)"; RRC=$?
+assert_exit "$RRC" "1" "refused"
+assert_contains "$ERR" "never captured" "and says it was never captured"
+assert_file_exists "$TEST_TMP/uskip.txt" "the file is NOT deleted"
+
+# A path that is only whitespace names no file. The 25th lens found `{}`, the 26th found "",
+# this is the third round on the same three lines (the 27th lens, IMPORTANT-8).
+test_start "a path that is ONLY WHITESPACE does not capture restore last (27th lens, IMPORTANT-8)"
+reset_undo
+for i in 1 2 3; do printf 'v%s\n' "$i" > "$TEST_TMP/u$i.txt"; write_input "$TEST_TMP/u$i.txt" | bash "$UNDO" capture-write >/dev/null 2>&1; done
+printf '{"ts":"2026-09-06T05:00:00Z","tool":"Write","path":"   ","existed":true,"bytes":3}\n' >> "$(ledger)"
+printf 'clobbered\n' > "$TEST_TMP/u3.txt"
+bash "$UNDO" restore last >/dev/null 2>&1; RRC=$?
+assert_exit "$RRC" "0" "restore last succeeds past the whitespace row"
+assert_eq "$(cat "$TEST_TMP/u3.txt")" "v3" "it put back the real entry"
+
+test_start "…and the whitespace row is listed as unreadable"
+OUT="$(bash "$UNDO" list 2>&1)"
+assert_contains "$OUT" "UNREADABLE" "named unreadable"
+
+# THREE readers of `.skip` used three tests and agreed on every value but one: `""` is
+# `!= null` so the listing calls it a skip, and `tostring` of it is empty so the actor proceeds
+# and overwrites (or deletes) the file (the 28th lens, IMPORTANT-5). The class-correct test is
+# presence, which two of the three already used.
+test_start "a row whose skip is an EMPTY STRING is refused by restore, not acted on (28th lens, IMPORTANT-5)"
+reset_undo
+printf 'v1\n' > "$TEST_TMP/u1.txt"; write_input "$TEST_TMP/u1.txt" | bash "$UNDO" capture-write >/dev/null 2>&1
+printf 'REAL\n' > "$TEST_TMP/uskip2.txt"
+printf '{"ts":"2026-09-06T04:00:00Z","tool":"Write","path":"%s","skip":"","existed":true,"bytes":5}\n' "$TEST_TMP/uskip2.txt" >> "$(ledger)"
+ERR="$(bash "$UNDO" restore 2 2>&1 >/dev/null)"; RRC=$?
+assert_exit "$RRC" "1" "refused"
+assert_eq "$(cat "$TEST_TMP/uskip2.txt")" "REAL" "the file is untouched"
+
+test_start "…and one that was recorded as created is not deleted either"
+reset_undo
+printf 'v1\n' > "$TEST_TMP/u1.txt"; write_input "$TEST_TMP/u1.txt" | bash "$UNDO" capture-write >/dev/null 2>&1
+printf 'REAL\n' > "$TEST_TMP/ucre.txt"
+printf '{"ts":"2026-09-06T04:00:00Z","tool":"Write","path":"%s","skip":"","existed":false,"bytes":5}\n' "$TEST_TMP/ucre.txt" >> "$(ledger)"
+bash "$UNDO" restore 2 >/dev/null 2>&1
+assert_file_exists "$TEST_TMP/ucre.txt" "the file is NOT deleted"
+
+test_start "a path named with a non-breaking space is a real path, not whitespace (28th lens, MINOR-10)"
+reset_undo
+NBSP="$TEST_TMP/$(printf 'nb\xc2\xa0sp').txt"
+printf 'REAL\n' > "$NBSP"
+printf 'v1\n' > "$TEST_TMP/u1.txt"; write_input "$TEST_TMP/u1.txt" | bash "$UNDO" capture-write >/dev/null 2>&1
+jq -nc --arg p "$NBSP" '{ts:"2026-09-06T06:00:00Z",tool:"Write",path:$p,existed:true,bytes:5}' >> "$(ledger)"
+OUT="$(bash "$UNDO" list 2>&1)"
+assert_not_contains "$OUT" "UNREADABLE" "a non-breaking space in a filename is not an unreadable row"
+
+test_start "a BLANK ledger line: list and restore number the same physical lines"
+seed_three ""
+OUT="$(bash "$UNDO" list 2>&1)"
+assert_contains "$OUT" "[3] " "the second entry is physical line 3"
+assert_not_contains "$OUT" "[2] " "the blank line is not an entry"
+printf 'clobbered\n' > "$TEST_TMP/u2.txt"; printf 'v3\n' > "$TEST_TMP/u3.txt"
+bash "$UNDO" restore 3 >/dev/null 2>&1
+assert_eq "$(cat "$TEST_TMP/u2.txt")" "v2" "restore 3 put back the file the listing called [3]"
+assert_eq "$(cat "$TEST_TMP/u3.txt")" "v3" "and touched nothing else"
+
 print_summary
 teardown_test_env
 exit $FAILED

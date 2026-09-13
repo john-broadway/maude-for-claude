@@ -1,6 +1,6 @@
-<!-- Version: 0.30.1 -->
+<!-- Version: 0.31.0 -->
 <!-- Created: 2026-07-17 -->
-<!-- Revised: 2026-09-02 -->
+<!-- Revised: 2026-09-03 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Privacy Policy — Maude for Claude
@@ -39,6 +39,8 @@ All of it on your machine, all of it yours:
   `DELETE FROM voice; DELETE FROM voice_profile;` (or delete tape.db) — and
   recomputing the profile over an emptied corpus clears the stored profile
   itself, so the derived words never outlive their source.
+- The three rulebooks under `rules/` are static JSON read from the plugin
+  directory; nothing about them touches the network.
 
 Deleting `<project>/.maude/` and `~/.claude/maude/` removes everything Maude
 has ever recorded. There is no copy anywhere else. (One opt-in exception,

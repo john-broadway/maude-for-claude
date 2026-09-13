@@ -175,6 +175,17 @@ def test_only_the_two_byo_sockets_import_network_machinery():
     assert "judge.py" in hits and "embedder.py" in hits
 
 
+def test_maude_rules_imports_no_network_machinery():
+    # maude_rules has no BYO socket at all: the linter is re, dataclasses, sys.
+    # Assert the scanner had something to scan FIRST: an empty {} is the same answer
+    # whether the package is clean or the directory moved out from under the walk.
+    pkg = ROOT / "maude_rules"
+    sources = sorted(p.name for p in pkg.glob("*.py"))
+    assert sources, f"maude_rules holds no .py files to scan (looked in {pkg})"
+    hits = find_network_imports(pkg)
+    assert hits == {}, f"unexpected network-machinery import in maude_rules: {hits}"
+
+
 def test_judge_refuses_to_build_without_an_endpoint(monkeypatch):
     monkeypatch.delenv(JUDGE_ENV_URL, raising=False)
     with pytest.raises(ValueError):

@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 import sqlite3
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS notes (
@@ -22,6 +22,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     name,
     description,
     body,
+    content='notes',
     tokenize='porter unicode61'
 );
 """
