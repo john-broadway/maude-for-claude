@@ -639,6 +639,133 @@ maude_log_spend "page" "abc"
 [ ! -s "$(trace_path)" ]
 assert_exit "$?" "0" "no entry for non-numeric"
 
+test_start "maude_commit_re matches git commit at command position and after -C"
+printf '%s' 'git commit -m x' | grep -qE -- "$(maude_commit_re)"; assert_exit "$?" "0" "plain commit"
+printf '%s' 'git -C /r commit' | grep -qE -- "$(maude_commit_re)"; assert_exit "$?" "0" "-C commit"
+printf '%s' 'echo git commit' | grep -qE -- "$(maude_commit_re)"; assert_exit "$?" "1" "not at command position"
+test_start "maude_doc_re matches docs and config, not code"
+printf '%s' 'README.md' | grep -qE -- "$(maude_doc_re)"; assert_exit "$?" "0" "md is doc"
+printf '%s' 'a/CHANGELOG.md' | grep -qE -- "$(maude_doc_re)"; assert_exit "$?" "0" "changelog is doc"
+printf '%s' 'src/x.py' | grep -qE -- "$(maude_doc_re)"; assert_exit "$?" "1" "py is code"
+
+# ── maude_retention_sweep: one pass over the undo ledger, never one fork per line ──
+# The wake hook runs the sweep under the harness's 10-second SessionStart budget. On the
+# dev box the ledger held 8,158 lines and the sweep forked jq once per line: 33.5 s,
+# measured 2026-09-06, so the brief was killed at every session start for weeks and her
+# spend ledger recorded the wake once in 31 days (the memory lens's N-2, unexplained
+# until the sweep was timed alone). Half the planted lines point at a blob that is gone.
+test_start "retention sweep over a 3000-line undo ledger finishes inside the wake budget"
+SWEEP_SELF="$(maude_self_dir)"; mkdir -p "$SWEEP_SELF/undo/blobs"
+: > "$SWEEP_SELF/undo/ledger.jsonl"
+for i in $(seq 1 3000); do
+  if [ $((i % 2)) -eq 0 ]; then
+    printf '{"ts":"2026-09-01T00:00:00Z","tool":"Edit","path":"/x/%d","blob":"b%d","bytes":1}\n' "$i" "$i"
+  else
+    printf '{"ts":"2026-09-01T00:00:00Z","tool":"Edit","path":"/x/%d","blob":"gone%d","bytes":1}\n' "$i" "$i"
+  fi
+done >> "$SWEEP_SELF/undo/ledger.jsonl"
+for i in $(seq 2 2 3000); do : > "$SWEEP_SELF/undo/blobs/b$i"; done
+SWEEP_S=$(date +%s%N); maude_retention_sweep; SWEEP_E=$(date +%s%N); SWEEP_MS=$(( (SWEEP_E - SWEEP_S) / 1000000 ))
+[ "$SWEEP_MS" -lt 5000 ]
+assert_exit "$?" "0" "sweep took ${SWEEP_MS} ms over 3000 lines; the whole wake hook has 10 s"
+
+test_start "and a line whose blob is gone is rewritten as a skip, the rest byte-identical, none lost"
+assert_eq "$(jq -r 'select(.path=="/x/1") | .skip' "$SWEEP_SELF/undo/ledger.jsonl")" "pruned" "missing blob -> skip=pruned"
+assert_eq "$(jq -r 'select(.path=="/x/1") | .blob // "absent"' "$SWEEP_SELF/undo/ledger.jsonl")" "absent" "the dead blob pointer is dropped"
+assert_eq "$(jq -c 'select(.path=="/x/2")' "$SWEEP_SELF/undo/ledger.jsonl")" '{"ts":"2026-09-01T00:00:00Z","tool":"Edit","path":"/x/2","blob":"b2","bytes":1}' "a live line is untouched"
+assert_eq "$(grep -c . "$SWEEP_SELF/undo/ledger.jsonl")" "3000" "no line lost"
+
+# ── The shared state file is written under a lock and read back before it is trusted ──
+# (the memory lens, 2026-09-06, DEFECT-4: maude_care_set was an unlocked read-modify-write
+# with twenty-five callers, one on every prompt, under four concurrent sessions; the
+# chores ledger one file away had the flock with "reproduced 8/15 trials" beside it.) A
+# jq shim that sleeps makes the overlap deterministic: two writers read the same
+# snapshot and the second rename erases the first write, every time, unless locked.
+test_start "two concurrent care_set writers both land (the state file is locked)"
+LOCK_CARE="$(maude_self_dir)/care.json"; printf '{}\n' > "$LOCK_CARE"
+SLOWJQ="$(make_no_binary_bin jq)"; REAL_JQ="$(command -v jq)"
+printf '#!/usr/bin/env bash\n%q 0.3\nexec %q "$@"\n' "$(command -v sleep)" "$REAL_JQ" > "$SLOWJQ/jq"; chmod +x "$SLOWJQ/jq"
+( PATH="$SLOWJQ:$PATH" maude_care_set "$LOCK_CARE" '.a = 1' ) &
+( PATH="$SLOWJQ:$PATH" maude_care_set "$LOCK_CARE" '.b = 1' ) &
+wait
+assert_eq "$(jq -c '[.a, .b]' "$LOCK_CARE")" "[1,1]" "both writes present after two overlapping writers"
+
+# ── The same three claims WITHOUT flock: the mkdir fallback, the macOS path ──────────
+# (the 23rd lens, 2026-09-06, IMPORTANT-1: every race test above appends the real PATH,
+# so flock is always found and only the flock branch was ever exercised.) Here PATH is
+# the farm alone, built without flock, plus a SEPARATE shim dir first: nothing is ever
+# written into the farm, so no write can follow a symlink to a real binary.
+NOFLOCK_FARM="$(make_no_binary_bin jq flock)"
+NOFLOCK_SHIM="$(mktemp -d)"
+printf '#!/usr/bin/env bash\n%q 0.3\nexec %q "$@"\n' "$(command -v sleep)" "$REAL_JQ" > "$NOFLOCK_SHIM/jq"; chmod +x "$NOFLOCK_SHIM/jq"
+NOFLOCK_PATH="$NOFLOCK_SHIM:$NOFLOCK_FARM"
+test_start "the no-flock PATH really has no flock (the branch under test is the fallback)"
+PATH="$NOFLOCK_PATH" command -v flock >/dev/null 2>&1; NF_RC=$?
+assert_eq "$NF_RC" "1" "flock is not on the probe PATH"
+
+test_start "two concurrent care_set writers both land WITHOUT flock (the mkdir fallback locks)"
+printf '{}\n' > "$LOCK_CARE"
+( PATH="$NOFLOCK_PATH" maude_care_set "$LOCK_CARE" '.a = 1' ) &
+( PATH="$NOFLOCK_PATH" maude_care_set "$LOCK_CARE" '.b = 1' ) &
+wait
+assert_eq "$(jq -c '[.a, .b]' "$LOCK_CARE")" "[1,1]" "both writes present under the fallback"
+assert_file_absent "$LOCK_CARE.lock.d" "the fallback's lock dir is released"
+
+test_start "a FRESH lock dir (a live holder) is not stolen by the fallback: the waiter waits"
+printf '{"keep":true}\n' > "$LOCK_CARE"
+mkdir -p "$LOCK_CARE.lock.d"
+( PATH="$NOFLOCK_PATH" maude_timeout 3 bash -c ". \"$HOOKS_DIR/_maude-common.sh\"; maude_care_set \"$LOCK_CARE\" '.x = 1'" ) >/dev/null 2>&1; NF_RC=$?
+assert_eq "$NF_RC" "124" "still waiting after three seconds"
+assert_eq "$(jq -c '.' "$LOCK_CARE")" '{"keep":true}' "and the file is untouched"
+rmdir "$LOCK_CARE.lock.d" 2>/dev/null
+
+test_start "a STALE lock dir (a dead holder, older than 30 s) is reclaimed by the fallback"
+printf '{"keep":true}\n' > "$LOCK_CARE"
+mkdir -p "$LOCK_CARE.lock.d"; touch_ago 40 "$LOCK_CARE.lock.d"
+( PATH="$NOFLOCK_PATH" maude_timeout 10 bash -c ". \"$HOOKS_DIR/_maude-common.sh\"; maude_care_set \"$LOCK_CARE\" '.x = 1'" ) >/dev/null 2>&1; NF_RC=$?
+assert_eq "$NF_RC" "0" "reclaimed and wrote"
+assert_eq "$(jq -c '[.keep, .x]' "$LOCK_CARE")" "[true,1]" "the write landed on the kept bytes"
+assert_file_absent "$LOCK_CARE.lock.d" "and the reclaimed lock is released"
+rm -rf "$NOFLOCK_SHIM"
+
+test_start "care_set reports failure when what landed is not what it wrote (read-back)"
+printf '{"keep":true}\n' > "$LOCK_CARE"
+CLOBMV="$(make_no_binary_bin mv)"
+printf '#!/usr/bin/env bash\nprintf "{\\"clobbered\\":1}\\n" > "$2"; rm -f "$1"\n' > "$CLOBMV/mv"; chmod +x "$CLOBMV/mv"
+( PATH="$CLOBMV:$PATH" maude_care_set "$LOCK_CARE" '.x = 1' ); RB_RC=$?
+assert_eq "$RB_RC" "1" "a rename that did not deliver the bytes is not reported as a write"
+
+# The read-back compared `$(cat tmp)` to `$(cat care)`, and command substitution strips
+# every trailing newline from both sides, so "the bytes this call wrote" was really "the
+# bytes modulo trailing newlines" (the 23rd lens, MINOR-4). Compare checksums of the files.
+test_start "care_set's read-back sees a trailing-newline difference: bytes, not stripped text"
+printf '{"keep":true}\n' > "$LOCK_CARE"
+NLMV="$(make_no_binary_bin mv)"
+printf '#!/usr/bin/env bash\n{ cat "$1"; printf "\\n\\n"; } > "$2"; rm -f "$1"\n' > "$NLMV/mv"; chmod +x "$NLMV/mv"
+( PATH="$NLMV:$PATH" maude_care_set "$LOCK_CARE" '.x = 1' ); NL_RC=$?
+assert_eq "$NL_RC" "1" "two extra newlines are other bytes"
+
+# A token whose `until` is not a number made `[` print "integer expression expected" on
+# the channel the person reads (the 23rd lens, MINOR-5; the same leak sat in the gate
+# before the helper existed). Every arithmetic test on a value read from a file is quiet.
+test_start "take_token on a non-numeric 'until' says nothing on stderr and reports none"
+printf '{"gate_cleared":{"git-push":{"until":"soon"}}}\n' > "$LOCK_CARE"
+TT_ERR="$(maude_care_take_token "$LOCK_CARE" git-push "$(date +%s)" 2>&1 >/dev/null)"
+TT_OUT="$(maude_care_take_token "$LOCK_CARE" git-push "$(date +%s)" 2>/dev/null)"
+assert_eq "$TT_OUT" "none" "not live"
+assert_not_contains "$TT_ERR" "integer expression" "no raw bash error"
+
+test_start "two concurrent identity appends both land (the profile is locked)"
+ID_HOME="$(mktemp -d)"
+SLOWAWK="$(make_no_binary_bin awk)"; REAL_AWK="$(command -v awk)"
+printf '#!/usr/bin/env bash\n%q 0.3\nexec %q "$@"\n' "$(command -v sleep)" "$REAL_AWK" > "$SLOWAWK/awk"; chmod +x "$SLOWAWK/awk"
+( HOME="$ID_HOME" maude_identity_append "seed fact" "2026-09-01" ) >/dev/null 2>&1
+( HOME="$ID_HOME" PATH="$SLOWAWK:$PATH" maude_identity_append "first fact" "2026-09-02" ) &
+( HOME="$ID_HOME" PATH="$SLOWAWK:$PATH" maude_identity_append "second fact" "2026-09-03" ) &
+wait
+assert_eq "$(grep -c 'fact' "$ID_HOME/.claude/maude/identity.md")" "3" "seed, first and second all present"
+rm -rf "$ID_HOME"
+
 print_summary
 teardown_test_env
 exit $FAILED

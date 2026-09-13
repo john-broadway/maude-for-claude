@@ -569,15 +569,274 @@ maude_care_ensure() {
 # failure. Returns 0 only if the new content was persisted, 1 otherwise — so callers
 # can avoid claiming a write that didn't land (see clear-gate / verify-watch).
 # Usage: maude_care_set "<care.json path>" <jq args…> '<filter>'
+#
+# LOCKED and READ BACK (2026-09-06, the memory lens): twenty-five callers, one on every
+# prompt, four sessions at once, and the read-modify-write had no lock, so a second
+# writer's rename erased the first's write; and it returned 0 on a successful mv, never
+# on the bytes that landed. The chores ledger one file away had the flock all along.
 maude_care_set() {
   local care="$1"; shift
-  local tmp
+  maude_locked "$care.lock" _maude_care_set_unlocked "$care" "$@"
+}
+_maude_care_set_unlocked() {
+  local care="$1"; shift
+  local tmp want got
   tmp="$(mktemp "$(dirname "$care")/.care.XXXXXX" 2>/dev/null)" || return 1
-  if jq "$@" "$care" > "$tmp" 2>/dev/null && mv "$tmp" "$care" 2>/dev/null; then
-    return 0
+  if jq "$@" "$care" > "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    want="$(od -An -v -tx1 < "$tmp" 2>/dev/null)"
+    if mv "$tmp" "$care" 2>/dev/null; then
+      # The file that now sits at $care must be the bytes this call wrote, byte for
+      # byte; a rename that "succeeded" delivering other bytes is not a write. `$(cat)`
+      # on both sides compared text with every trailing newline stripped (the 23rd
+      # lens, MINOR-4), so the compare is each file's hex dump: a trailing newline is
+      # a token there, and od is on every box this lib already relies on (cksum is in the
+      # test farm since the gate's fingerprint needed it, but od reads a byte at a time
+      # in the test farm, and need not be).
+      got="$(od -An -v -tx1 < "$care" 2>/dev/null)"
+      [ -n "$want" ] && [ "$want" = "$got" ] && return 0
+      return 1
+    fi
   fi
   rm -f "$tmp" 2>/dev/null
   return 1
+}
+
+# Read-and-consume a one-shot gate token as ONE locked step. The gate read the token on
+# one open and consumed it on a second, so a concurrent writer's rename could resurrect
+# a spent token and a clear granted once passed twice (the memory lens, 2026-09-06).
+# Prints "live" and consumes the token when it is live at NOW; "none" otherwise, and
+# "none" when the consume did not land (fail closed).
+maude_care_take_token() {  # <care.json> <key> <now-epoch>
+  maude_locked "$1.lock" _maude_care_take_token_unlocked "$@"
+}
+_maude_care_take_token_unlocked() {
+  local care="$1" key="$2" now="$3" until
+  until="$(jq -r --arg k "$key" '.gate_cleared[$k].until // 0' "$care" 2>/dev/null)"
+  # The whole group is quiet: a non-numeric `until` made `[` print "integer expression
+  # expected" on the person's channel when only the last test was silenced (MINOR-5).
+  if { [ -n "$until" ] && [ "$until" -gt 0 ] && [ "$until" -gt "$now" ]; } 2>/dev/null; then
+    if _maude_care_set_unlocked "$care" --arg k "$key" 'del(.gate_cleared[$k])'; then
+      printf 'live'; return 0
+    fi
+  fi
+  printf 'none'
+}
+
+# Reserve, then consume, a one-shot gate token as two locked steps (2026-09-06). The gate
+# read AND consumed at PreToolUse, but PreToolUse hooks run in parallel and any sibling
+# can refuse the same command (the version gate did on 09-06, the classifier on 09-05);
+# PostToolUse never fires for a refused command, so a clear was spent on a push that
+# never ran and cost a second clear every time. Now the gate RESERVES for its session at
+# PreToolUse and CONSUMES at PostToolUse of the command that actually ran.
+# THE IDENTITY OF A TOOL CALL — two helpers: its head (below) and its fingerprint (after).
+#
+# The fingerprint of a tool call: a hash of its tool_input, keys SORTED (`jq -S`), so the
+# same call fingerprints the same at PreToolUse and PostToolUse whatever order the harness
+# emits (the 25th lens, IMPORTANT-2: `jq -c` preserves input order, and a Post in another
+# order left the token un-spendable and silent). cksum is POSIX and on macOS; the chain
+# below keeps a stripped box from losing the identity entirely. Prints "" when nothing can
+# hash — the caller then falls back to the command's first 60 chars, which still tells two
+# commands apart (IMPORTANT-3: an empty fp used to refuse the sibling-refusal retry that
+# the whole reserve/consume split exists to allow). Collisions do not matter: Claude is not
+# attacking its own gate (the honest seam).
+# The first 60 CHARACTERS of a command, through jq so both ends sanitise identically.
+# `printf %.60s` cuts at 60 BYTES, so a multibyte character straddling the cut left a lone
+# byte that jq rewrote to U+FFFD when it stored it — the two ends then compared different
+# bytes, the retry was refused and the one-shot never spent (the 26th lens, IMPORTANT-3).
+maude_call_head() {  # <command>
+  command -v jq >/dev/null 2>&1 || { printf '%.60s' "$1" | tr '\n' ' '; return 0; }
+  printf '%s' "$1" | tr '\n' ' ' | jq -Rrs '.[0:60]' 2>/dev/null
+}
+
+maude_call_fp() {  # <hook-input-json>
+  local canon
+  command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
+  canon="$(printf '%s' "$1" | jq -Sc '.tool_input // {}' 2>/dev/null)"
+  [ -n "$canon" ] || { printf ''; return 0; }
+  if command -v cksum >/dev/null 2>&1; then printf '%s' "$canon" | cksum 2>/dev/null | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then printf '%s' "$canon" | shasum 2>/dev/null | awk '{print $1}'
+  elif command -v sum >/dev/null 2>&1; then printf '%s' "$canon" | sum 2>/dev/null | awk '{print $1}'
+  elif maude_python3_ok; then printf '%s' "$canon" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:16])' 2>/dev/null
+  else printf ''
+  fi
+}
+
+# Can THIS call spend anything? A consume can only take a live token that is unreserved,
+# reserved by this call, or reserved by a shape that names no call at all. All three are
+# answerable from the call alone -- no pattern table, no wrapped-payload recursion -- so
+# the PostToolUse path asks this before it spawns the gate (the 25th lens, IMPORTANT-1: a
+# text grep for `"reserved"` was defeated for the whole life of an orphaned reservation
+# and by the word appearing anywhere in a 34 KB shared file, putting 306 ms back on every
+# Bash completion in every session). rc 0 = something might be spendable.
+maude_gate_spendable_here() {  # <hook-input-json> <command> <token-file>...
+  local input="$1" cmd="$2" now f fp head live=0
+  command -v jq >/dev/null 2>&1 || return 1
+  now=$(date +%s); shift 2
+  # PER FILE. One jq over both aborts on the first unparseable one, and red keys live in
+  # one file while yellow live in the other, so a corrupt care.json silently made a live
+  # RED clear unspendable — an N-shot force-push (the 26th lens, IMPORTANT-2).
+  # `until` must be a NUMBER and `gate_cleared` an object, or the fast path green-lights
+  # what the slow path refuses (MINOR-9).
+  for f in "$@"; do
+    [ -s "$f" ] || continue
+    jq -e --argjson now "$now" \
+      '(.gate_cleared // {}) | if type == "object" then to_entries else [] end
+       | any((.value.until? // 0 | if type == "number" then . else 0 end) > $now)' \
+      "$f" >/dev/null 2>&1 && { live=1; break; }
+  done
+  [ "$live" = 1 ] || return 1
+  head="$(maude_call_head "$cmd")"
+  fp="$(maude_call_fp "$input")"
+  for f in "$@"; do
+    [ -s "$f" ] || continue
+    jq -e --arg f "$fp" --arg h "$head" --argjson now "$now" \
+      '(.gate_cleared // {}) | if type == "object" then to_entries else [] end
+       | any(((.value.until? // 0 | if type == "number" then . else 0 end) > $now)
+             and (((.value.reserved | type) != "object")
+                  or (((.value.reserved.v? // 0) | tostring) != "2")
+                  or ((.value.reserved.fp // "") == $f and $f != "")
+                  or (((.value.reserved.fp // "") == "") and ((.value.reserved.head // "") == $h))))' \
+      "$f" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
+# The reservation belongs to the exact CALL: the session and <fp>, the fingerprint of the
+# call's tool_input (the 24th lens, BLOCKING-2: a reservation of {sid, at} was a
+# LEASE, so one clear opened a different command of the same session 4 s later, another
+# session's after a 120 s window, red keys included). Where nothing can hash, <head> —
+# the command's first 60 chars — is the identity instead.
+#   maude_care_reserve_token <care> <key> <sid> <now> <fp> <head>
+#     "live"       the token is live and now reserved by this call;
+#     "inflight"   this same call reserved it less than MAUDE_TOKEN_RETRY_MIN seconds
+#                  ago: a duplicate in the same instant (two tool calls in one batch);
+#     "reserved" + <sid> + <seconds-left> + <head>, joined by \037 (a
+#                  non-blank separator: `read` collapses empty tab fields): another call holds it, until the clear
+#                  expires or is made again. There is no takeover window: an orphaned
+#                  reservation is the clear's problem, never another lane's opening;
+#     "unwritable" the token is live but the reservation did not land (fail closed, and
+#                  say so: the person holds a clear the gate cannot record);
+#     "none"       absent or expired.
+#              The same call again after RETRY_MIN is a pass: its earlier run was refused
+#              by a sibling hook and never ran. A reservation carrying neither <fp> nor
+#              <head> (one written before this shape existed) names no call: it is
+#              re-reserved here and spent by any matching command at Post, because a clear
+#              left open is the wrong direction for a one-shot.
+#   maude_care_consume_token <care> <key> <fp> <head>
+#     "spent"    the token is gone: the call that reserved it ran (or nothing had);
+#     "none"     otherwise; a different call's reservation is left alone.
+# Residual, named: a reserved command that RAN but whose consume never landed (the trace
+# hook killed by its budget, care.json unwritable) leaves its reservation, and the same
+# bytes from the same session ride it again until the clear expires.
+# Each is ONE locked read-modify-write, like the take_token above it.
+MAUDE_TOKEN_RETRY_MIN="${MAUDE_TOKEN_RETRY_MIN:-3}"
+maude_care_reserve_token() {  # <care.json> <key> <sid> <now-epoch> <fp> <head>
+  maude_locked "$1.lock" _maude_care_reserve_token_unlocked "$@"
+}
+_maude_care_reserve_token_unlocked() {
+  local care="$1" key="$2" sid="$3" now="$4" fp="$5" head="$6" until rsid rat rfp rhead rv _same
+  until="$(jq -r --arg k "$key" '.gate_cleared[$k].until // 0' "$care" 2>/dev/null)"
+  if ! { [ -n "$until" ] && [ "$until" -gt 0 ] && [ "$until" -gt "$now" ]; } 2>/dev/null; then
+    printf 'none'; return 0
+  fi
+  IFS="$(printf '\037')" read -r rsid rat rfp rhead rv <<EOF
+$(jq -r --arg k "$key" '.gate_cleared[$k].reserved // {} | [(.sid // ""), ((.at // 0) | tostring), (.fp // ""), (.head // ""), ((.v // 0) | tostring)] | join("\u001f")' "$care" 2>/dev/null)
+EOF
+  # Only a reservation THIS build wrote can be matched: the fingerprint formula has already
+  # changed once between releases, and comparing across a change refused the person their
+  # own command on a clear they held (the 26th lens, IMPORTANT-4). Anything else names no
+  # call: re-reserve here, spend at Post.
+  if [ "$rv" = 2 ] && { [ -n "$rfp" ] || [ -n "$rhead" ]; }; then
+    _same=0
+    if [ -n "$fp" ] && [ "$rfp" = "$fp" ] && [ "$rsid" = "$sid" ]; then _same=1
+    elif [ -z "$fp" ] && [ -z "$rfp" ] && [ -n "$head" ] && [ "$rhead" = "$head" ] && [ "$rsid" = "$sid" ]; then _same=1
+    fi
+    if [ "$_same" = 1 ]; then
+      if [ $(( now - rat )) -lt "$MAUDE_TOKEN_RETRY_MIN" ] 2>/dev/null; then printf 'inflight'; return 0; fi
+    else
+      printf 'reserved\037%s\037%s\037%s' "$rsid" "$(( until - now ))" "$rhead"; return 0
+    fi
+  fi
+  # Expired tokens are pruned at every reservation: nothing else ever removed them, so
+  # `gate_cleared` was permanently non-empty and the PostToolUse cheap exit could never
+  # exit cheaply on a box that had ever been given a clear (the 26th lens, MINOR-4).
+  if _maude_care_set_unlocked "$care" --arg k "$key" --arg s "$sid" --argjson t "$now" --arg f "$fp" --arg h "$head" \
+       '.gate_cleared = ((.gate_cleared // {}) | if type == "object" then . else {} end
+          | with_entries(select((.key == $k) or ((.value.until? // 0 | if type == "number" then . else 0 end) > $t))))
+        | .gate_cleared[$k].reserved = {sid: $s, at: $t, fp: $f, head: $h, v: 2}'; then
+    printf 'live'; return 0
+  fi
+  printf 'unwritable'
+}
+maude_care_consume_token() {  # <care.json> <key> <fp> <head>
+  maude_locked "$1.lock" _maude_care_consume_token_unlocked "$@"
+}
+_maude_care_consume_token_unlocked() {
+  local care="$1" key="$2" fp="$3" head="${4:-}" until rfp rhead rv
+  until="$(jq -r --arg k "$key" '.gate_cleared[$k].until // 0' "$care" 2>/dev/null)"
+  { [ -n "$until" ] && [ "$until" -gt 0 ]; } 2>/dev/null || { printf 'none'; return 0; }
+  rfp="$(jq -r --arg k "$key" '.gate_cleared[$k].reserved.fp // ""' "$care" 2>/dev/null)"
+  rhead="$(jq -r --arg k "$key" '.gate_cleared[$k].reserved.head // ""' "$care" 2>/dev/null)"
+  rv="$(jq -r --arg k "$key" '.gate_cleared[$k].reserved.v // 0' "$care" 2>/dev/null)"
+  # A reservation this build did not write names no call it can match; the command ran, so
+  # spend it. A clear left open is the wrong direction for a one-shot (IMPORTANT-4).
+  if [ "$rv" != 2 ]; then rfp=""; rhead=""; fi
+  if [ -n "$rfp" ] && [ "$rfp" != "$fp" ]; then printf 'none'; return 0; fi
+  # Nothing on either side could hash: the head is the identity (IMPORTANT-3).
+  if [ -z "$rfp" ] && [ -z "$fp" ] && [ -n "$rhead" ] && [ "$rhead" != "$head" ]; then printf 'none'; return 0; fi
+  if _maude_care_set_unlocked "$care" --arg k "$key" 'del(.gate_cleared[$k])'; then
+    printf 'spent'; return 0
+  fi
+  printf 'none'
+}
+
+# ONE identifier guard, for every side that judges one. A bracket range like
+# [!A-Za-z0-9_-] is COLLATION, not bytes: under en_US.UTF-8 it admits the fullwidth ａ
+# (U+FF41), the ligature ﬀ (U+FB00) and the Arabic-Indic ١ (U+0661), all of which C
+# rejects — so what such a guard MEANT moved with the box's locale, and this repo pins
+# no locale anywhere (not tests/run.sh, not lib.sh, not either CI workflow).
+#
+# It lives here because two copies of it lived in maude-redteam-watch.sh and drifted the
+# instant one was fixed (the 30th lens): the side that MINTS a pending key admitted an id
+# the side that CLEARS it refused, so an entry could be created and never cleared — the
+# exact failure the kill branch exists to end, reintroduced by fixing the shape instead of
+# the class. Two guards answering one question must be one guard.
+#
+# tr tests BYTE membership and says the same thing on every box; the LC_ALL=C is belt for
+# a locale-aware tr, which this box's GNU tr is not, so no test here can see that prefix.
+# Returns 0 for a non-empty ASCII token of [A-Za-z0-9_-] only.
+maude_is_ascii_token() {
+  [ -n "${1:-}" ] || return 1
+  [ "$1" = "$(printf '%s' "$1" | LC_ALL=C tr -cd 'A-Za-z0-9_-')" ]
+}
+
+# Run "$@" while holding LOCK, for every read-modify-write of a shared file. flock(1)
+# where it exists, blocking: a writer must never lose its write. Without it (macOS), a
+# mkdir spin-lock reclaimed off the DIR'S OWN age, the one signal every waiter agrees
+# on (a waiter-side counter had every waiter reclaiming on its own clock). The age key
+# does not stop theft: a holder still alive past 30 s loses the lock to the next waiter
+# and its later write clobbers the thief's. No live caller holds it that long (a jq
+# and a mv), so the 30 s is a dead-holder floor, not a guarantee (the 23rd lens).
+# Returns the command's exit status.
+maude_locked() {  # <lockfile> <command> [args…]
+  local lock="$1"; shift
+  if command -v flock >/dev/null 2>&1; then  # portability-shim (util-linux)
+    (
+      flock 9 || exit 1  # portability-shim
+      "$@"
+    ) 9>"$lock"
+    return $?
+  fi
+  local d="$lock.d" rc
+  while ! mkdir "$d" 2>/dev/null; do
+    if [ $(( $(date +%s) - $(maude_mtime "$d" "$(date +%s)") )) -gt 30 ]; then
+      rmdir "$d" 2>/dev/null
+    fi
+    sleep 0.05
+  done
+  "$@"; rc=$?
+  rmdir "$d" 2>/dev/null
+  return "$rc"
 }
 
 # The session-start catch-digest — Maude's one JOHN-FACING line. Everything else she
@@ -754,6 +1013,28 @@ maude_date_epoch() {
   printf '%s' "$e"
 }
 
+# Whole calendar days between two YYYY-MM-DD dates in the ambient zone.
+#
+# Both ends are resolved to LOCAL MIDNIGHT and the division rounds to nearest, which is
+# what makes this exact across a daylight-saving transition. A raw seconds count against
+# "now" is not: a spring-forward leaves a 23-hour day, so the true interval is 3600s short
+# of N*86400, and floor division reports N-1 until enough of today has elapsed to absorb
+# the deficit. Measured on this box: a file exactly 14 days old read as 13 days from local
+# midnight until 01:05, in the two weeks after the 2026-03-08 transition — a staleness
+# warning that stays silent for the hour it is most likely to be read.
+#
+# A FUTURE date reads negative, not zero: bash truncates toward zero, so the +43200 rounds
+# a negative numerator the wrong way and only a date one day ahead lands on 0 (two days
+# ahead is -1, a year ahead is -364, one short of the true count). Callers compare upward
+# against a positive limit, so every one of those answers is inert; the rounding is exact
+# in the past direction, which is the only one that decides anything.
+maude_days_between() {  # $1 = older date, $2 = newer date
+  local a b
+  a="$(maude_date_epoch "$1")" || return 1
+  b="$(maude_date_epoch "$2")" || return 1
+  printf '%s' $(( (b - a + 43200) / 86400 ))
+}
+
 # Print EPOCH as UTC ISO (YYYY-MM-DDTHH:MM:SSZ); empty output + rc 1 on
 # garbage. GNU spells epoch input `-d @E`; BSD spells it `-r E`.
 maude_epoch_iso() {
@@ -890,7 +1171,13 @@ maude_continuity_guard() {
 # observed and the no-fabrication rule holds. Never touches the persona preamble
 # or existing observed blocks. Returns non-zero (no write) on an empty fact.
 # Usage: maude_identity_append "<fact>" ["<YYYY-MM-DD>"]
+# Locked like the state file: the awk-rewrite-then-rename had the same lost-update race
+# (the memory lens, 2026-09-06, N-4), at a lower frequency.
 maude_identity_append() {
+  maude_ensure_user_dir
+  maude_locked "$(maude_user_dir)/.identity.lock" _maude_identity_append_unlocked "$@"
+}
+_maude_identity_append_unlocked() {
   local fact="$1" date_str entry id tmp
   # Collapse newlines/whitespace runs to single spaces (one fact = one line, so a
   # multi-line fact can't inject a second '## Told by the user' header or split the
@@ -1028,19 +1315,24 @@ maude_retention_sweep() {
   if [ -d "$self/undo/blobs" ]; then
     find "$self/undo/blobs" -maxdepth 1 -type f -mtime +"$days" -delete 2>/dev/null
     if [ -f "$self/undo/ledger.jsonl" ] && command -v jq >/dev/null 2>&1; then
-      while IFS= read -r f; do
-        printf '%s\n' "$f"
-      done < "$self/undo/ledger.jsonl" \
-      | while IFS= read -r line; do
-          b="$(printf '%s' "$line" | jq -r '.blob // ""' 2>/dev/null)"
-          if [ -n "$b" ] && [ ! -f "$self/undo/blobs/$b" ]; then
-            printf '%s' "$line" | jq -c 'del(.blob) | .skip = "pruned"' 2>/dev/null
-          else
-            printf '%s\n' "$line"
-          fi
-        done > "$self/undo/ledger.jsonl.tmp" 2>/dev/null
-      [ -s "$self/undo/ledger.jsonl.tmp" ] && mv "$self/undo/ledger.jsonl.tmp" "$self/undo/ledger.jsonl" 2>/dev/null
-      rm -f "$self/undo/ledger.jsonl.tmp" 2>/dev/null
+      # ONE jq pass with the blob directory's listing read once, never one fork per
+      # line: on the dev box an 8,158-line ledger took 33.5 s through a per-line jq,
+      # and the wake hook, budgeted at 10 s by the harness, was killed before its brief
+      # at every session start for weeks (found 2026-09-06 under the memory lens's
+      # unexplained "the wake was billed once in 31 days"). A line whose blob is not in
+      # the listing is rewritten as a skip; every other line passes through untouched;
+      # a jq failure leaves the ledger as it was rather than half-written.
+      ls -1A "$self/undo/blobs" 2>/dev/null > "$self/undo/.blobs.list"
+      if jq -cn --rawfile have "$self/undo/.blobs.list" \
+          '($have | split("\n") | map(select(length > 0)) | map({key: ., value: true}) | from_entries) as $h
+           | inputs
+           | if (.blob | type) == "string" and .blob != "" and ($h[.blob] | not)
+             then del(.blob) | .skip = "pruned" else . end' \
+          "$self/undo/ledger.jsonl" > "$self/undo/ledger.jsonl.tmp" 2>/dev/null \
+         && [ -s "$self/undo/ledger.jsonl.tmp" ]; then
+        mv "$self/undo/ledger.jsonl.tmp" "$self/undo/ledger.jsonl" 2>/dev/null
+      fi
+      rm -f "$self/undo/ledger.jsonl.tmp" "$self/undo/.blobs.list" 2>/dev/null
     fi
   fi
 }
@@ -1207,6 +1499,16 @@ maude_gate_config() { printf '%s' "${MAUDE_GATE_CONFIG:-$(maude_user_dir)/gate-c
 
 # Escape ERE metacharacters in a literal path so it can sit inside a gate pattern.
 maude_ere_escape() { printf '%s' "$1" | sed -E 's/[][\*^$()+?{|]/\\&/g'; }
+
+# The three rails that read commits (verify-watch, redteam-watch, rules-watch) must agree on
+# what a commit is and what counts as a doc. One definition; copies drift.
+# The separator is deliberately the WIDER pattern — `(` and a backtick are real command
+# positions too (`(git commit)`, `` `git commit` ``, `$(pytest -q)` all run the thing), so a
+# narrower copy misses real commits/runs. That widening is a designed choice, not a
+# coincidence — see tests/test-verify-watch.sh's paren/backtick rows.
+maude_sep_re()    { printf '%s' '(^|[;&|(`])[[:space:]]*'; }
+maude_commit_re() { printf '%s' "$(maude_sep_re)git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)"; }
+maude_doc_re()    { printf '%s' '\.(md|markdown|txt|rst|adoc|json|ya?ml|toml|cfg|conf|ini|lock|csv|tsv|svg|png|jpe?g|gif|pdf)$|(^|/)(LICENSE|COPYING|NOTICE|CHANGELOG[^/]*|AUTHORS|\.gitignore|\.gitattributes|\.editorconfig)$'; }
 
 # Sole-copy ERE target fragments — generic defaults (NO deployment literals) +
 # any paths from config. One per line. Belt reads these into its pattern table.
@@ -1446,6 +1748,13 @@ maude_yellow_keys() {
 }
 maude_red_keys() {
   printf '%s' 'rm-rf-root rm-rf-glob sudo-rm-rf rm-rf-sole-copy sole-copy-target public-publish force-push filter-repo filter-branch infra-destructive drop-table'
+}
+# The sentence every RED refusal ends with, in ONE place (the UX lens, 2026-09-06: six
+# of nine refusals told the person to run the yellow self-clear for a red key, and only
+# a file path in a parenthetical told a red refusal from a yellow one). A red key is the
+# human's hand, never Claude's; /maude:conscience <key> shows the line to paste.
+maude_red_refusal_line() {  # <key>
+  printf '"%s" is a RED key: the human'"'"'s hand only, by a ! line pasted in their own shell. Claude cannot clear it; /maude:conscience %s shows the line to paste.' "$1" "$1"
 }
 # 0 (true) if $1 is a red key.
 maude_is_red_key() {

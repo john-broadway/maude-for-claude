@@ -43,8 +43,13 @@ if [ -n "$NOW_FILE" ]; then
   # Snapshot the buffer through best-effort redaction (maude_redact masks obvious
   # secret shapes). Best-effort, not a guarantee — the snapshots dir is gitignored
   # (.maude/plugin/* is self-ignored); wipe at session-end as routine hygiene.
-  printf '# Pre-compact snapshot — %s\n\nSource: %s\n\n---\n\n%s\n' \
-    "$STAMP" "$NOW_FILE" "$(head -200 "$NOW_FILE" 2>/dev/null | maude_redact)" \
+  # The buffer is append-only and oldest-first, so the session being compacted is at the
+  # TAIL. `head -200` saved the same 35-day-old 5% five times over (2026-09-06); take the
+  # tail, and write the cut into the header so the reader knows what this is not.
+  TOTAL_LINES="$(wc -l < "$NOW_FILE" 2>/dev/null | tr -d ' ')"; [ -n "$TOTAL_LINES" ] || TOTAL_LINES=0
+  KEEP_LINES=200; [ "$TOTAL_LINES" -lt "$KEEP_LINES" ] && KEEP_LINES="$TOTAL_LINES"
+  printf '# Pre-compact snapshot — %s\n\nSource: %s (last %s of %s lines)\n\n---\n\n%s\n' \
+    "$STAMP" "$NOW_FILE" "$KEEP_LINES" "$TOTAL_LINES" "$(tail -n 200 "$NOW_FILE" 2>/dev/null | maude_redact)" \
     > "$SNAPSHOT_PATH" 2>/dev/null
   SOURCED="${SOURCED}snapshot "
 fi
@@ -59,19 +64,28 @@ if [ -d "$REMEMBER" ] && [ ! -f "$REMEMBER/tmp/save.lock" ] && [ -n "$NOW_FILE" 
   fi
 
   if [ "$WRITE_HANDOFF" -eq 1 ]; then
-    BUFFER_HEAD="$(head -20 "$NOW_FILE" 2>/dev/null | maude_redact | sed 's/^/  /')"
+    # APPEND a dated section and read it back; never `>` (that replaced a 31-handoff
+    # file with an eight-line stub, one 600-second timer away from firing, 2026-09-06;
+    # the house law for this file is append, never overwrite, read back). The buffer's
+    # newest lines are its tail. The trace claims "remember" only after the read-back.
+    BUFFER_TAIL="$(tail -n 20 "$NOW_FILE" 2>/dev/null | maude_redact | sed 's/^/  /')"
     {
-      printf '# Handoff\n\n'
-      printf '## State\n'
-      printf 'Pre-compact snapshot at %s. Live buffer (top 20 lines):\n' "$TIME"
-      printf '%s\n' "$BUFFER_HEAD"
+      [ -s "$HANDOFF" ] && printf '\n' || printf '# Handoff\n\n'
+      printf '## Handoff (maude pre-compact %s)\n\n' "$STAMP"
+      printf '### State\n'
+      printf 'Pre-compact snapshot at %s. Live buffer (last 20 lines):\n' "$TIME"
+      printf '%s\n' "$BUFFER_TAIL"
       printf '\n## Next\n'
       printf -- '- Resume from where compaction interrupted.\n'
       [ -n "$SNAPSHOT_PATH" ] && printf -- '- Full snapshot: %s\n' "$SNAPSHOT_PATH"
-      printf '\n## Context\n'
+      printf '\n### Context\n'
       printf 'Snapshot taken automatically by Maude before Claude Code compaction.\n'
-    } > "$HANDOFF" 2>/dev/null
-    SOURCED="${SOURCED}remember "
+    } >> "$HANDOFF" 2>/dev/null
+    if grep -q "maude pre-compact $STAMP" "$HANDOFF" 2>/dev/null; then
+      SOURCED="${SOURCED}remember "
+    else
+      SOURCED="${SOURCED}remember-unverified "
+    fi
   fi
 fi
 

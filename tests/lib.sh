@@ -42,12 +42,30 @@ HOOKS_DIR="$MAUDE_ROOT/hooks/scripts"
 # shellcheck disable=SC2034  # used by sourcing test files (e.g. test-verify.sh)
 SCRIPTS_DIR="$MAUDE_ROOT/scripts"
 
+# Every temp dir this file makes lands under one root, swept when the file exits. Earned
+# 2026-09-05: 7,471 leaked /tmp/tmp.* dirs on the dev box, from six fixtures one file never
+# removed and the shim bins below, taken by fourteen files and swept by three; /tmp is a 4G
+# tmpfs there and hit 100% twice, faking a scatter of unrelated failures. GNU mktemp
+# honours TMPDIR with no template; macOS mktemp does not (it uses the per-user Darwin temp
+# dir, so the leak sweep and the root refusal below never fired on the GitHub macOS runner,
+# 2026-09-13), so every mktemp in the suite names a template under "${TMPDIR:-/tmp}". The variable is readonly, so nothing a test later unsets
+# can take the path from the trap; a first version expanded the path into the trap string
+# instead, and one apostrophe in TMPDIR broke that string at exit. A file that sets its own
+# EXIT trap replaces this one and leaks the root, so no test file does; tests/run.sh refuses
+# green for any file that leaves something behind, which is what keeps this fixed. A mktemp
+# that fails (a stale ambient TMPDIR) used to leave TMPDIR empty and every fixture back in
+# /tmp with nothing said; a file without an isolated root does not run.
+TEST_TMPROOT="$(mktemp -d "${TMPDIR:-/tmp}/maude-tests.XXXXXX")" || { printf 'tests/lib.sh: mktemp -d failed under TMPDIR=%s; a file without an isolated root does not run\n' "${TMPDIR:-<unset>}" >&2; exit 2; }
+readonly TEST_TMPROOT
+export TMPDIR="$TEST_TMPROOT"
+trap 'rm -rf "$TEST_TMPROOT"' EXIT
+
 PASSED=0
 FAILED=0
 TEST_NAME=""
 
 setup_test_env() {
-  TEST_TMP="$(mktemp -d)"
+  TEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/maude-test.XXXXXX")"
   # Hermetic: drop any ambient MAUDE_* runtime toggle inherited from the dev
   # shell (e.g. MAUDE_RUN_GOVERNOR=off, MAUDE_RETENTION_DAYS=1) so it can't leak
   # in and flip a default-behavior test. Tests that exercise a toggle set it
@@ -252,6 +270,11 @@ PY
 # doesn't exist on macOS (BSD ships `md5`), so hash via python3 stdlib. A
 # missing/unreadable file prints nothing and returns 1 — never a hash both
 # sides could vacuously agree on.
+# Inode and mode, GNU stat first and BSD stat second; the tests that pin an atomic rename
+# and a carried mode compared empty strings on macOS and read "rewritten in place".
+file_inode() { stat -c %i "$1" 2>/dev/null || stat -f %i "$1" 2>/dev/null; }
+file_mode()  { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null; }
+
 file_digest() {
   python3 -c 'import hashlib, sys
 try:
@@ -283,7 +306,7 @@ PY
 # (jq is deliberately omitted so `command -v jq` fails under this PATH.)
 make_nojq_bin() {
   local d b src
-  d="$(mktemp -d)"
+  d="$(mktemp -d "${TMPDIR:-/tmp}/maude-bin.XXXXXX")"
   for b in bash sh env cat date grep sed awk tr head tail wc find \
            mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
            sort uniq readlink stat sleep chmod printf; do
@@ -298,11 +321,11 @@ make_nojq_bin() {
 # Usage: D="$(make_no_binary_bin flock)"; PATH="$D" bash "$SCRIPT"
 make_no_binary_bin() {
   local d b src
-  d="$(mktemp -d)"
+  d="$(mktemp -d "${TMPDIR:-/tmp}/maude-bin.XXXXXX")"
   for b in bash sh env cat date grep sed awk tr head tail wc find xargs \
            mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
            sort uniq readlink stat sleep chmod printf jq python3 nohup \
-           tee od uname flock timeout; do
+           tee od uname flock timeout pgrep cksum shasum sum; do
     case " $* " in (*" $b "*) continue ;; esac
     src="$(command -v "$b" 2>/dev/null)" && ln -s "$src" "$d/$b" 2>/dev/null
   done
@@ -313,7 +336,7 @@ make_no_binary_bin() {
 # where the infra-gate cannot identify the tool name at all. Prints the dir.
 make_nojq_nogrep_bin() {
   local d b src
-  d="$(mktemp -d)"
+  d="$(mktemp -d "${TMPDIR:-/tmp}/maude-bin.XXXXXX")"
   for b in bash sh env cat date sed awk tr head tail wc find \
            mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
            sort uniq readlink stat sleep chmod printf; do

@@ -146,8 +146,8 @@ if maude_is_comanage_target "$NODE" "$VMID"; then
 fi
 
 maude_log_trace "infra-gate" "blocked=infra-destructive tool=$BARE node=$NODE vmid=$VMID"
-printf 'Maude: destructive infrastructure tool "%s" against a non-sandbox target (node="%s" vmid="%s"). Irreversible. Configured sandbox targets are allowed automatically; for anything else run /maude:conscience infra-destructive only intentionally.\n' \
-  "$BARE" "${NODE:-?}" "${VMID:-?}" >&2
+printf 'Maude [RED]: destructive infrastructure tool "%s" against a non-sandbox target (node="%s" vmid="%s"). Irreversible; configured sandbox targets are allowed automatically. %s\n' \
+  "$BARE" "${NODE:-?}" "${VMID:-?}" "$(maude_red_refusal_line infra-destructive)" >&2
 # NAME THE FILE WE LOOKED IN — the red-tier reader's twin of the line in
 # maude-gate.sh. The writer (maude-clear-red.sh) names where it wrote; without
 # this line a split between the two would show only as "cleared" then a refusal.

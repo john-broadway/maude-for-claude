@@ -18,8 +18,13 @@ PASSED=0
 FAILED=0
 FAILED_NAMES=()
 
-OUT_TMP="$(mktemp)"
-trap 'rm -f "$OUT_TMP"' EXIT
+OUT_TMP="$(mktemp "${TMPDIR:-/tmp}/maude-run.XXXXXX")"
+# Every file's temp lands under here: tests/lib.sh puts its own root beneath TMPDIR and
+# sweeps that root at exit, so after a file returns this dir must be empty. Anything left
+# is a leak, and a leak is a failure. The sweep in lib.sh is the fix; this keeps it fixed.
+SUITE_TMP="$(mktemp -d "${TMPDIR:-/tmp}/maude-suite.XXXXXX")"   # a template: macOS mktemp ignores TMPDIR without one
+export TMPDIR="$SUITE_TMP"
+trap 'rm -f "$OUT_TMP"; rm -rf "$SUITE_TMP"' EXIT
 
 for t in test-*.sh; do
   TOTAL=$((TOTAL + 1))
@@ -32,14 +37,31 @@ for t in test-*.sh; do
   nfail=0
   summary="$(grep -E '^[0-9]+ passed, [0-9]+ failed$' "$OUT_TMP" | tail -1)"
   if [ -n "$summary" ]; then nfail="${summary#* passed, }"; nfail="${nfail%% failed}"; fi
-  if [ "$rc" -eq 0 ] && [ "${nfail:-0}" -eq 0 ]; then
+  left="$(find "$SUITE_TMP" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')"
+  if [ "$rc" -eq 0 ] && [ "${nfail:-0}" -eq 0 ] && [ "$left" -eq 0 ]; then
     PASSED=$((PASSED + 1))
-    printf 'PASS  %s\n' "$t"
+    # The file's own count rides on the PASS line, and its NOTE lines — what it could not
+    # assert here (a locale not installed, a binary not present) — come through. Swallowed
+    # with the rest of a passing file's output, a suite whose pins had silently stopped
+    # running reported nothing but "61/61" (the 31st lens, IMPORTANT-2).
+    if [ -n "$summary" ]; then _sum="$summary"
+    elif grep -qE '[0-9]+ passed, [0-9]+ failed' "$OUT_TMP"; then _sum="summary unreadable; enforced by exit status"
+    else _sum="no summary line; enforced by exit status"; fi
+    printf 'PASS  %s  (%s)\n' "$t" "$_sum"
+    grep -E '^[[:space:]]*NOTE ' "$OUT_TMP"
   else
     FAILED=$((FAILED + 1))
     FAILED_NAMES+=("$t")
-    printf 'FAIL  %s  (exit %s, %s failed by its own count)\n' "$t" "$rc" "${nfail:-0}"
+    printf 'FAIL  %s  (exit %s, %s failed by its own count, %s left in TMPDIR)\n' "$t" "$rc" "${nfail:-0}" "$left"
     sed 's/^/  /' "$OUT_TMP"
+    if [ "$left" -gt 0 ]; then
+      # Name what was left, a few levels deep: a count says a file leaked, the tree
+      # says which fixture or worker made it. Then start the next file clean, so a
+      # leak is charged to the file that made it.
+      printf '  left behind:\n'
+      find "$SUITE_TMP" -mindepth 1 -maxdepth 4 | head -40 | while IFS= read -r _p; do printf '    TMPDIR%s\n' "${_p#"$SUITE_TMP"}"; done
+      find "$SUITE_TMP" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    fi
   fi
 done
 

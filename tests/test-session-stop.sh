@@ -7,6 +7,13 @@ setup_test_env
 
 STOP="$HOOKS_DIR/maude-session-stop.sh"
 
+# The Stop hook dispatches chore doers in the background, and a real doer (a model call,
+# minutes long) finishes after this file's temp root is swept and rewrites its ledger
+# under it: the suite's leak check charged that to whichever file ran next (test-ship.sh,
+# 2026-09-06), and the suite was placing model calls from a test. This file's subject is
+# the hook's own writes; the dispatch has its own test with a stubbed doer.
+export MAUDE_CHORES=off
+
 test_start "session-stop exits 0"
 RC="$(printf '{}' | bash "$STOP" >/dev/null 2>&1; echo $?)"
 assert_exit "$RC" "0" "exit"

@@ -1,6 +1,6 @@
-<!-- Version: 0.30.1 -->
+<!-- Version: 0.31.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-09-02 -->
+<!-- Revised: 2026-09-07 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,674 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.31.0 - the law arrives at the moment the work touches its class
+
+Commit shas cited in this entry are on the internal tree; the public repository carries a
+squashed history and does not resolve them.
+
+John, 2026-09-03: "maude needs to make sure claude follows rules. especially the 30 ux
+ones. the codd rule for db desing including 1nf 2nf and 3nf. at a minium" and, minutes
+later, "there is also the laws of memory human and machine", "its also for everything we
+develop", "and for the users."
+
+The laws lived on a website and in textbooks. Nothing consulted either at the moment a
+`CREATE TABLE`, a button, or a cache was written, so whether a build held to them depended
+on someone remembering to say so. Knowledge in a file is a diary; a hook is a rail.
+
+Three rulebooks ship as static data: the thirty Laws of UX, read live from lawsofux.com on
+2026-09-03 (names, links and our own one-line asks; the site's descriptions are its author's
+and do not ship); Codd's thirteen rules with the normal forms and third normal form as the
+floor; and the laws of memory, human and machine, which has no canonical list anywhere, so
+it ships as a draft composed from the published lists on each side (Kahana's five laws,
+Surprenant and Neath's seven principles, Schacter's seven sins, Jost and Ribot; Denning's
+locality, Gray's five-minute rule and rules of thumb, Little, Bélády, the memory wall,
+write-ahead logging, Kreps' log; and the 2023 to 2026 agent-memory literature) until John
+cuts it. A `family` key joins the three: third normal form and provenance are one law seen
+from two seats, and `/maude:rules` says so.
+
+The rail is called from hooks that already fire. On the first write of a class in a session
+she says the law once. A schema is linted on the spot for the shapes a schema's own text can
+break: no key (Codd 2), a repeating group (1NF), a fact hung on the wrong key (3NF), an id
+with no REFERENCES (Codd 10), with multi-valued columns, composite keys and sentinel
+defaults raised as questions rather than findings. At the commit she asks once per class if
+no design named its laws, re-armed only by a new touch. The stamp is strict on purpose: a
+heading that names the rulebook and at least one canonical name, in a prose document that is
+not a fixture, inside the section the heading opens, with fenced code ignored, never a commit
+message, because a false stamp is a false all-clear. The linter reads the plugin's own
+package with the interpreter's safe-path mode, so a project cannot shadow it. Fixtures under `tests/` are never
+surfaces, or the rail would have sprung on its own test schemas. Whisper only; verify counts
+the unnamed so conscience says wait; refusing at the ship is a flag John has not flipped.
+
+The linter's first run over Maude's own tables read zero, and the zero was the linter's, not
+the tables': a document column named `json` sat outside its name list, and a self-reference
+that does not end in `_id` was invisible to the Codd 10 check. John asked, three days
+apart, whether the laws had been applied to her or only added. Both blind spots are closed
+here: `json`, `embedding` and `links` are on the name list whole, and an integer column
+named `<x>_by` with no REFERENCES is a Codd 10 ask. Her live tape and vault now raise four
+asks, each answered by name in the design, and her own two schema files are a test
+control, so a linter that goes blind to her again goes red.
+
+The honest seam, stated in the code: for a schema the rail catches objective shapes; for UI
+and memory it catches absence, the law never named, and hands presence to the adversarial
+lens with the named list as its brief. It knows a law was named. Only the lens can say it
+was honoured. Two repairs rode along: the post-tool hook read stdin twice and had logged
+`tool=write` for every watched-path edit since May, and the three rails that read commits
+now share one definition of a commit and a doc instead of three copies.
+
+The ship rail's own second-lens gate was found holding the same shape of defect the rail
+was written to catch, and it is fixed here. The gate required an adversarial-pass stamp
+newer than the commit being shipped. On this repo that was satisfied by a stamp written
+forty-eight seconds after the release commit by a dispatch that had started before the
+commit existed, so it could not have read a line of it and the gate still called it
+proven. A timestamp answers whether a lens finished after something; the question the gate
+asks is whether a lens looked at it. So the stamp now records the refs the brief names
+alongside its timestamp, and the gate is satisfied only by a stamp that names the tip. The
+writer records the refs without checking them, because a hook runs from the workspace root
+and cannot know which repository a brief means; the ship rail runs inside the repository it
+is shipping and does the checking. Stamps written before this change name nothing and no
+longer satisfy the gate, which costs a re-run rather than a release nothing reviewed. The
+commit whisper is deliberately not tightened: it wants only the timestamp, and it keeps
+firing on a stamp that names nothing.
+
+The release stamper was rewriting prose, and this fixes that too. release.sh propagated the
+version and date headers with an unanchored substitution, so it rewrote every matching line
+in a document rather than that document's header, while maude-verify.sh read only the first
+match. The two errors cancelled exactly: a version quoted inside a plan's body was kept
+current by the stamper, and the checker then read that same body line and was satisfied.
+Thirteen releases of it left the 2026-06-30 gate-hardening plan contradicting itself, a step
+headed "Bump version 0.13.1 to 0.13.2" whose own checklist had been rewritten to say 0.31.0.
+Both sides now look only at the header block, which is defined once and shared between them
+rather than restated, so a document that merely quotes a version in its prose has no header
+and is neither stamped nor checked. The two damaged lines are restored from the commit that
+first wrote them.
+
+An adversarial pass over both fixes above found no way to make the gate accept an
+unreviewed tip, and five things worth repairing, all of which are repaired here. The ref
+scraper sorted before truncating, so a brief carrying a crowd of hex-looking words could
+sort the real sha out of the list and lose a review that genuinely happened; it now dedupes
+in order of appearance and caps generously. The gate's refusal named whichever candidate
+file it found first rather than the one the newest stamp came from, so it could blame a file
+that had nothing to do with the stamp it was describing. release.sh sourced the stamper
+unguarded, so with that file missing the source failed, the script ran on, every stamp was a
+command-not-found, and the release shipped an unstamped tree in silence; it now refuses
+before it reaches its own gate. The stamper wrote a temporary file and moved it over the
+target, which handed every stamped file the temporary's private mode and replaced a symlink
+with a regular file; it now writes the finished bytes back into the original.
+
+The fifth was a false sentence in the previous commit rather than a fault in the code. It
+said the header window was defined once and sourced, while maude-verify.sh restated the
+number as a fallback. Two copies drift, which is the reason the definition was centralised
+at all, so the fallback is gone: with the stamper missing the checker now reports it and
+skips the header checks rather than auditing against a guess. The stamp records literal
+shas only, so a brief naming its subject as a tag or a branch earns no credit; that limit is
+written down now rather than discovered.
+
+One disclosure about this release's own stamp commit. docs/specs/2026-09-03-rules-rail-design.md
+carried a prose addition about session pruning that release.sh has no mechanism to produce, so
+that commit's message does not describe every file in it. The addition is accurate against the
+code; what was missing was saying so.
+
+---
+
+The twenty-third adversarial pass, re-dispatched after the first one died with its session,
+found two blocking defects in the eleven commits above, six important and eight minor, and
+the walk that re-dispatched it found four more. Every one that is code is here, each with a
+control that was red against the committed file first. The two that mattered most: the
+tape's `ts` migration had landed its column and lost its backfill on the live store (python's
+sqlite3 autocommits DDL, the backfill waited 56 seconds behind a voice lookup that rescanned
+every voice row per canon row, and the hook budget killed it in between; the guard on the
+column's absence never retried), so canon carried no dates at all on the only tape that
+matters. The migration is one transaction keyed on the header's version now, retried until
+it lands, and the voice lookup is one scan; the migration backfills history on the first open (a row
+that loses its date later is not re-dated; nothing live writes one).
+And the undo tool listed by jq position while restoring by physical line, so a blank ledger
+line made it put back a different file than the one it named; both sides number physical
+lines now, and one unreadable line no longer empties the listing. A lens launched in the background now leaves a PENDING
+stamp at launch, promoted to a real one by the subagent-stop hook when the agent actually
+stops (the harness's SubagentStop carries the agent id); a dead lens never promotes, the
+commit whisper says a lens is pending, and the next wake names one that never reported,
+because the launch stamp on the tip is exactly what the dead first dispatch left behind. The
+launch envelope the hook reads is the harness's object (`isAsync`, `status: async_launched`,
+`agentId`), captured from a real launch; the first live launch on this branch was stamped as a
+pass because the detection had been written from the launch text the model sees, and the tests
+now feed the captured object. A
+Bash gate token, yellow or red, is now RESERVED at PreToolUse and SPENT at PostToolUse of the command
+that ran (an MCP tool's `infra-destructive` clear still spends at PreToolUse, in its own hook): PreToolUse hooks run in parallel, a sibling can refuse the same command, and PostToolUse
+never fires for a refused command, so a clear was being spent on a push that never happened
+and cost a second clear every time; another session cannot ride a fresh reservation, two
+commands of one session in the same instant open one, and a live token the gate cannot
+record is refused in those words rather than sent to fetch a token it already holds. A
+MEMORY.md written past Claude Code's load limit is told its size in the units the loader
+counts (UTF-16), the limit, and the action, at the write; this box's index had loaded partly
+for two sessions with nothing saying so. The vault gives its free pages back when a rebuild
+leaves more than a quarter of the file empty: the live file sat at 35.8 MB with two thirds
+of its pages free after the rebuild whose message said 12.2 MB, a number true only of a fresh
+file. The mkdir lock fallback, the path with no flock, is now exercised by tests that assert
+flock is absent from the PATH they run under; the earlier race tests appended the real PATH
+and had only ever proved the flock branch, and the comment over the reclaim now says what
+the age key does and does not stop. Three numbers in the wake commit's message were cited
+to logs that do not hold them; re-measured on a copy of the live store, the wake hook returns
+in 0.46 s with a seven-line brief where the installed copy takes 34 s. Four smaller things
+from the same pass, each with a red control: the state file's read-back compared text with
+its trailing newlines stripped and now compares hex dumps (`od`, which reads a byte at a time and is on every box this lib already needs); a token expiry that was not a
+number printed a bash error on the person's channel; a vault hit whose file had been
+deleted said "changed"; and a "## Format" heading quoted inside a code fence, or at depth
+three, made a document a UI surface. Three attributions in earlier messages point at the
+wrong artefact and are corrected here rather than rewritten there: 9d267a0's sizes are true
+of the files (12,206,080 bytes fresh against 35,835,904 live) and not of the log it names;
+36beeee's planted control lives in tests/test-rules-cli.sh, not in the log it names; and the
+design stamp said every shared file's lock lived in one function while scripts/maude-chores.sh
+keeps two of its own, which it now says.
+
+The 24th lens (2026-09-06, report `code-lens-24.md`) read the twelve commits above and the
+envelope fix and found the reservation was a lease: `reserved = {sid, at}` carried no command,
+so one clear opened a command every three seconds, a different command of the same session four
+seconds later, another session's after a 120 s window, red keys included. A reservation now
+belongs to the exact call, the session and the cksum of its tool_input bytes; only that call
+retried rides it, anything else is refused and told who holds it and how long the clear has
+left, the takeover window is gone (an orphan holds until the clear expires or is made again),
+and the spend matches the bytes, so a completion without a session id still spends. Named
+residual: a command that ran whose spend never landed keeps its reservation for the same bytes
+until the clear expires. The same pass: the spend check left the gate's hot path (a Bash
+completion cost 314 ms and costs 57), a stop shells out to promote only an id care.json holds,
+any launch object carrying an agentId is a launch and a malformed id records nothing, a
+session's stamp keeps both lenses' subjects, an undo ledger line that parses but is not an
+object is unreadable rather than a stream abort, a tape whose header claims the version while a
+column is missing gets that column's backfill, the wake names every pending lens on a box that
+cannot tell their age, and the index whisper fires for the auto-loaded index only.
+
+The 25th lens read that range in turn and found the launch rule had gone too far: a real
+synchronous Agent completion carries an `agentId` as well, so a finished adversarial pass was
+being filed as a launch still in flight, and nothing but a promote ever clears one. Completion
+evidence now wins over the launch signal, and the suite's completion fixture is a captured
+envelope rather than an invented one. The spend check asks whether this call can spend anything
+at all instead of grepping a shared file for a word: the old guard was defeated for the whole
+life of an orphaned reservation and by that word appearing in free text, both of which put the
+pattern walk back on every Bash completion. The fingerprint is content-addressed, hashed
+through a chain that survives a box with no `cksum`, and where nothing can hash the command's
+own first sixty characters are the identity. The undo listing is total per row rather than
+guarded per shape, the wake's pending line survives a malformed entry and names every lens it
+found, and a tape whose header is ahead of this build is never written backwards.
+
+The 26th lens found no blocking defect, the first round on this branch that did not, and six
+that matter. The launch/completion split had been ordered so that a dispatch attribute
+outranked an explicit launch marker, which would have stamped every background lens as a
+finished pass the day the harness added that field to a launch. The spend prefilter read both
+token files in one pass, so a corrupt store made a live red clear unspendable and the one-shot
+became an N-shot. The command's identity was cut at sixty bytes rather than sixty characters,
+which broke it on a multibyte boundary and refused the retry it was built to allow. A
+reservation now records the version that wrote it, because the fingerprint formula has already
+changed once between releases and comparing across that change refused people their own
+commands. The stamp unions what it used to assign, so a later refless pass no longer erases the
+subject an earlier one recorded. Pending dispatches and expired tokens are both pruned, the
+wake's line survives any shape of subject and never ends mid-reference, and the undo listing
+tells the truth about a row that was never captured.
+
+The 27th lens found no blocking defect either, and eight that matter. A dispatch that FAILED
+was stamping a pass: the launch/completion split asked whether a run had finished and never
+whether it had finished well, so an errored, cancelled or timed-out lens recorded a review of
+the tip its brief named. The reference cap was discarding by sort order rather than by age,
+which can throw away the very tip a session reviewed and make the ship rail refuse work that
+was reviewed; a set truncation keeps the members you can still name. An eviction from the
+pending map, which can drop a lens that is still running, now says so. With no usable cutoff
+the prune kept values it could not sort and the launch went unrecorded while the hook blamed a
+writable file. In the undo store the listing and the reader that acts disagreed about a false
+skip, and a path of pure whitespace still captured the restore. The wake's line bounds each
+subject as well as the number of them, and expired gate tokens are pruned once per session
+rather than only when a fresh clear is used, which is what had kept the fast path on the
+command hook dead.
+
+The 28th lens found the round before it had broken a live path: the new cap on how many
+sessions a stamp file keeps sorted on a field that older stamps do not have, and this
+workspace's own store holds seventy-five of those, so every synchronous adversarial pass
+silently recorded nothing while the hook blamed a file that was perfectly writable. It also
+found the status belt guarding only the synchronous path, which is a tenth of the dispatches
+here, while the asynchronous path promoted a full pass for a lens that had errored, failed or
+been cancelled. And the reference cap written to stop the reviewed tip being discarded made
+discarding it certain, because it kept the oldest references rather than the newest, and the
+one that decides the gate is always the newest. All three are fixed and proved against the
+shape that broke them. Refusing an unrecognised status now blocks only a stamp rather than the
+whole record, so a renamed launch status can no longer make a dispatch invisible; the eviction
+notice fires only for a real eviction; the three readers of a skipped undo entry ask one
+question instead of three; and the wake's pending line is bounded in bytes and always closes
+its sentence.
+
+The 29th lens came from a live one. A lens dispatched at 19:35 on 2026-09-06 was killed five
+minutes later with TaskStop, which is the correct move for a worker you have outrun, and the
+kill is the one ending that sends no stop of its own: no branch cleared the entry, no branch
+promoted it, and eight hours of wakes named a lens that had not been running since dinner.
+The promote path had covered cancelled, aborted and interrupted, but only for a stop that
+ARRIVES. A kill now clears the entry and records that nothing was reviewed, reading the task
+id from the response rather than the request, because a TaskStop the classifier refuses
+returns an error string and has stopped nothing, and clearing on the id that was merely asked
+for would be the false all-clear this hook exists to refuse. The same wake also read "its
+stamp on  is pending" out loud, having joined an empty reference list into the empty string
+and lost the only noun in the sentence; a subject that names nothing now says so, in one
+spelling rather than two.
+
+Then the lens turned on the fix. The new branch discarded what the shared writer returns and
+announced the clear regardless, so a store that could not be written was reported as cleared
+while the entry sat there untouched — the cheap half of the failure, since nothing was falsely
+passed, but a diagnostic that tells a reader the opposite of what the store holds is the one
+thing this code does not get to do. The sibling hook one file away had honoured that contract
+all along. And an identifier guard was a bracket range, which is collation rather than bytes,
+so under this box's UTF-8 it admitted characters that C rejects and the guard's meaning moved
+with the locale. Three guards that no test could see the absence of now have tests that go red
+without them.
+
+The 30th lens then found that fixing that guard had been fixing a shape. There were TWO
+identifier guards in the same file — the one that decides which agent id becomes a pending
+key, and the one that decides which id may clear it — and only the second was converted, so
+under a UTF-8 locale the writer minted a key the killer then refused and the entry could never
+be cleared. That is the failure the kill branch exists to end, put back by the repair. Both
+sides now ask one shared guard, which is the only arrangement in which they cannot drift
+apart again. The regression pin had the same shape of problem: it went red only under
+en_US.UTF-8, and nothing in this repo pins a locale, so on a runner that happened to be C the
+check could not have seen its own failure. Both sides are now asserted under every locale the
+box actually has, and a box with no UTF-8 locale installed says so rather than passing quietly.
+One difference the round before had made and not named: the clear write no longer swallows
+its own stderr, matching the sibling hook. In the running system the two callers that reach
+that write discard that stream anyway, so the trace line is what carries the diagnostic.
+
+Still open, and named rather than swept: about a dozen numeric bracket guards elsewhere in the
+hooks admit the Arabic-Indic digits under a UTF-8 locale, and those values reach arithmetic
+that then errors. Same class, different blast radius, not this round's work.
+
+The 31st lens read that commit and found its two guard lines right and three of its five
+sentences wrong. "The only arrangement in which they cannot drift again" left a third guard
+standing: the text fallback that scrapes an agent id out of a launch notice was still a
+bracket range, so under a UTF-8 locale it minted the fullwidth id the killer refuses, and
+under C it truncated at the first non-ASCII byte and minted a key that matched nothing. It
+scrapes the whole token now and asks the one guard, and a refused id is logged as refused,
+not as missing. "Reverting the clear side alone goes red" described a mutation that cannot
+exist: that commit's clear-side change was a pure refactor, and the red the message
+remembered belonged to the round before. And "a box with no UTF-8 locale prints that rather
+than passing quietly" was true of the test file and false of the suite: the runner captured
+every passing file's output and printed it only on failure, so the note and the count both
+went to nobody. The runner now puts each file's own count on its PASS line, says so when
+a file prints no count, and lets NOTE lines through, so a suite whose pins stopped running
+shows a number that moved.
+
+The blocking find was older than that round and in the same file. Both intent regexes were
+bare stems: `port the` matched inside "report the", `attack` inside "attackers", `audit`
+inside "auditor", `refactor` inside "refactored". Measured over this box's own transcripts,
+31 of 391 real lens dispatches were read as builders and never recorded, about one in
+twelve (the lens counted 34; re-running its instrument gave 35, four of them implementers
+its own boundary check had mis-flagged), and "report the findings" is what every brief in
+this house says. The 08-17
+repair had deleted one over-broad alternative and left the class. Both lists are whole
+words now. The same corpus re-run, with the instrument that round had, recorded 29 of
+those 31; the two that still read as builders quote a build phrase inside the brief,
+"implement the spec", which is the side to err on: builder first, so nothing is stamped
+that did not review (the 33rd's version-to-version table, below, is the count as it stands;
+it does not restate this sentence). Two more doors
+in the same file: promote's
+bad-ending branch discarded the store write's return and logged "pending entry cleared"
+against a store it could not write, the 29th lens's finding alive in the sibling branch; and
+a bare-string tool response, the shape an auto-mode classifier denial returns, passed both
+object-only failure belts and stamped a full pass with real shas in its refs. A stamp now
+needs completion evidence, an object carrying content, an agent type, a duration or a
+completed status; anything else records nothing and says so. The ref scrape judges bytes
+too, so a hex run with a non-ASCII tail no longer takes a slot in the cap.
+
+The 32nd lens read those two commits and found the fix had opened a door beside the one it
+closed, in the direction the file forbids. Making the builder words whole words had dropped
+every one of their inflections, so "refactoring the parser, then audit your own work" was
+no longer a build order and wrote a review stamp on a real commit; the round before had
+refused it. The inflections are back, chosen by the corpus rather than by symmetry: the
+refactor and scaffold forms appear in no brief and cost nothing, implementing and
+implemented read as build orders in this house, and the migrate and implementer inflections
+stay out because here they live in lens briefs. Three real lens briefs lost their credit for
+that at the time; builder first is the side that never stamps what did not review, and
+that is the trade (the 33rd re-priced it, below). The same replay held the find itself
+alive: one build brief, "builder B3 … b1 is
+implementing it in parallel", had been read as a lens by the tip and by the commit before
+it, because its prompt names a file called judge.py and a boundary stops at the dot; it is
+refused now. Three build tasks that had recorded nothing under either list now read as
+builders outright. The same round found the boundary
+itself was a bracket range read under the ambient locale, so a fullwidth letter glued to a
+listed word hid it from both lists under this box's default locale; the two intent checks
+read bytes now, like the ref scrape and the two id guards before them. Completion evidence
+had tested presence, not evidence: an empty content, an empty agent type or a zero duration
+each stamped a full pass, and that round made four of the five arms non-empty (the fifth is
+the 33rd's first find, below). A bad ending for an id nothing had launched no longer claims
+a clear. The runner names a file that prints no count instead of leaving a bare line, and
+the collation test prints, on every run, which locales it asserted under and which of them
+admit the fullwidth letter, so a CI log says whether the collation pins could see a failure
+there. On this box that is en_US.utf8 alone; on the gitea runner it is none, which is the
+33rd's second find.
+
+The 33rd lens read those two commits and found the evidence gate inert and the collation
+pins blind where CI runs. The gate had kept a completed status as evidence on its own, and
+every real completion on this box carries one, so it refused only shapes that never occur
+and admitted every shape that does; the five fixtures that vouched for it were green only
+because they omitted a field the harness has never omitted. Evidence is a non-blank text
+the agent returned, and nothing else: a status, an agent type or a duration is not evidence,
+because an agent that returned nothing has all three. The gitea runner has C and C.utf8 and
+no locale that admits the fullwidth letter, so five byte-locale guards in the stamp hook
+(both id guards, both intent checks, the ref scrape) could each be put back to a bracket
+range or an ambient grep and the file would print 189 passed, 0 failed there, byte for
+byte the healthy line. A source pin now asserts each of those guards, and the lowercasing
+before them, is in the hook's code body, red on its own mutant on a C-only box, and it does
+not fail an adopter whose locale table is smaller than this one. The boundary's end anchor
+had no pin, so a brief ending on a listed word could hide from both lists with the suite
+green; it has two. A promote that could not read the store had said "nothing was pending";
+a failed read falls through to the write now, whose refusal names the broken store. The
+runner tells a summary it could not parse apart from a file that printed none. An error
+flag is refused in either spelling. The camera sense of "lens 2" is recorded, by design,
+and the test says so; three rows on this box are credited through that alternative alone
+(405 dispatches measured 09-09, and the same three at 405 on 09-10: the corpus is a rolling
+30-day window and a count is a measurement with a time, never a fact), and no raw firing
+count is shipped for it: that number varies with the instrument that prints it. Two words
+left the builder list by the round's own ledger,
+the marginal one: a word
+that refuses no builder the list does not already refuse and costs review briefs their
+credit does not go in. "implemented" refused none and cost two; "implementer", measured by
+the author after the report, refused none and cost fourteen: sixteen review briefs carry the
+noun they use for the party they review, and two of those were held builder by another
+word. The door that removal opened was pinned by name for one round and is closed by the
+34th, below. On the 401 dispatches this box holds as of 09-08, against the tip before this
+round: 16 review dispatches credited that were refused (12 task-scoped reviews, 4
+whole-branch or fix-review rounds), 7 review briefs that carried the noun and no review word
+now record nothing either way, no build task became a lens. Against the tip the 31st read:
+46 review dispatches recovered, 9 briefs that record
+nothing either way, 2 credited that nothing had seen, 3 build tasks that changed label
+only, 2 lost to builder first (one review brief that says "implementing", and the B3 build
+brief the 32nd's second commit pinned). The verbs stay (implement, refactor, migrate, port
+the, write the code, build the), and eleven review briefs on this box are still refused
+for using one as a noun, two more for "implementing"; that is the measured price of builder
+first, and it is a policy, not a measurement, so it is named here rather than changed. The
+count sentences the 32nd had left, 34 minus 4 for 31 and "like every other guard in the
+file", say what the logs say now.
+
+The 34th lens read those two commits and found three doors, two of them in the fixes. The
+source pin the 33rd had written for the five byte-locale guards counted a guard's text in
+the hook's comment-stripped body, so a guard deleted from its line and left in a trailing
+comment satisfied it, and a C-only runner printed the healthy line with the guard gone. The
+pin asserts what runs now: the stamp path and the clear path are traced once each, and
+each guard's command must appear exactly once with its byte locale on the line before it;
+a comment, a string or a no-op does not run and does not count. Removing "implementer" had
+reopened the hook's own cited negative, "you are a careful TDD implementer", which the
+header still said that word caught; the class is closed rather than the noun: an agent
+titled an implementer or a builder, with up to two modifiers, and an agent told to review its own
+work, are build orders. Neither phrase fires on a build brief this box had not already
+refused, and their only corpus cost is this rail's own lens briefs, which quote them to
+describe the trap and are spelled around it. On the review side, a review word glued to an
+identifier by a hyphen, a dot or a slash had credited three captured dispatches that
+reviewed nothing, "redteam" inside this hook's own file name and "audit" inside the pre-push
+guard's "leak-audit" marker among them; that boundary refuses those three characters now
+when a letter, a digit or an underscore sits on their far side. The first cut of it refused
+them outright, which refused every review word that ended a sentence ("then attack." went
+uncredited, and a lens uncredited is a tip the release check refuses); the round's own
+review caught that before the push, and the class was drawn where the identifier is:
+punctuation still bounds. Measured cost of the boundary: two reviews that had been credited
+by nothing but such a token and one non-review record nothing, and one inventory brief
+whose "audit" ends
+a sentence stays credited, the standing price of a noun on a word list. Two residuals stay
+and are named, one captured and one constructed: a bare "audit" as a command-line
+subcommand is a whole word the vocabulary cannot tell from prose (one captured row), and a
+slash between two review words ("critique/attack") has the shape of a path segment and
+reads as one (no captured row; the 35th corrected "two captured"); and the self-title
+phrase's two-word modifier slot fills on "a lens on builder B3", a review it refuses, corpus
+zero, named in a pin. The launch fallback had
+minted a pending entry for an object whose content the gate had just refused; an object
+that carries content is not a launch. A torn store is named as one that could not be read
+or written, not as unwritable. The count for "implementer" reads fourteen, not sixteen,
+the marginal figure a paragraph about marginal pricing owes. Named and not changed: an
+all-digit run is still scraped as a ref, because fifteen of this repository's own short
+commit ids are all digits and one was a pushed tip; the reader's side resolves them. On the
+404 dispatches this box holds as of 09-08, against the tip before this round: three of the
+four identifier-credited rows record nothing and the fourth, the inventory, is credited by
+its sentence-final "audit" again; this rail's own two briefs read as builders for quoting
+the phrases, and one build brief that had recorded nothing now reads as a builder outright.
+
+The 35th lens read those two commits and found the branch's shape twice more, both times in
+the class of fix the 34th had chosen. The review-side boundary the 34th redrew had bounded a
+hyphen, a dot or a slash whenever a non-word character preceded it, which is the shape of a
+command-line flag: a brief that asks for a "--audit" flag to be built wrote a full review
+stamp naming the tip, and the same boundary still refused an English prefix, so "Re-audit
+the ledger" recorded nothing; the alternative that did both moved no corpus row and no
+assertion. On the left a hyphen glues now unless what precedes it is one of a closed set of
+English prefixes (re-, self-, pre-, post-, counter-): identifiers are an open vocabulary,
+prefixes are not; flags, dotfiles and a negating prefix are refused. Every one of those
+shapes is constructed; the rows that carry one are this rail's own lens briefs, which quote
+them to describe the trap (the 35th's second commit retracted "none captured" in the hook
+and the test and left it here for one round: the 36th lens, IMPORTANT-3); each but "pre-"
+was pinned in both directions (the 36th, IMPORTANT-4), the flag at the stamp path beside a
+control that must fire. The runtime pin the 34th wrote asserted a
+mechanism, an "LC_ALL=C" token on the xtrace line before each guard. A bare assignment
+prints the same line and exports nothing, so an ordinary tidy-up, the locale hoisted to
+its own line and the pipe swapped for a here-string, left the suite green on every locale
+set while the builder grep ran under whatever the caller had exported; on a box that
+exports no LC_ALL, a build brief with a fullwidth-tailed build word wrote a stamp again,
+and no pin could see it because every pin set its locale with an env prefix, which exports
+it. The hook exports the locale once at its top now, the per-line prefixes are gone, and
+the pin asserts that the export runs before the first guard, that no traced line in a named
+list of spellings reassigns, unsets, un-exports or strips a locale variable (a list on the
+trace, not the property: the 36th lens, IMPORTANT-1), and that each guard runs once;
+none of that depends on how a bash version prints an assignment prefix, which the 34th's
+form did and which was never run on bash 3.2. Two collation pins run once more with LC_ALL
+absent from the caller's environment, the shape that exposed it; on the runner they are
+vacuous like the rest and the NOTE says so. The seven mutants that deleted or hid a
+per-line prefix became equivalent implementations and are replaced by seven that remove,
+move, override, unset or strip the export. The self-title phrase was not a title test:
+"you are not the builder" and "reviewing the builder's work", the plainest ways this house
+addresses a lens, read as builders, and "do not audit your own work" as an order. A title
+is neither negated nor possessive now and a negated self-review is not an order; the closed
+set stops at "not" and "don't", and "never" and "no" still refuse, named. One fixture in
+the identifier pin had been green at every commit and under every mutant, an
+underscore-joined script name the old boundary already refused, and the comment beside it
+claimed a credit that never happened; the fixture is gone and the sentence says what
+credited. "Two captured residuals" was one captured and one constructed. Smaller: no raw
+firing count is shipped for the lens-on alternative, three rows are credited through it
+alone; four log names and a house name a plugin reader cannot resolve left the header;
+three corpus counts carry their date; the dangling half of the evidence comment is
+rewritten; over-long comment lines are wrapped; the ledger script measured a three-word
+slot and ships two. Named for a later round, John's word: every other hook that reads text
+through the shared helper has the same locale class and no export of its own.
+
+The 36th lens read those two commits and found the branch's shape a tenth time, in each
+of the 35th's fixes. The boundary that refused a "--audit" flag admitted every other way
+code marks a token: "--mode=audit", a backticked audit, "audit()", "[audit]", a quoted
+"audit" and "MODE:audit" each wrote a full stamp naming the tip, and refusing them moved
+no assertion and no corpus row. The title class stopped at the singular: "you are
+builders B1 and B2" wrote a full stamp. The runtime pin was a list of spellings: "declare
++x LC_ALL" un-exports the locale and every assertion stayed green while the commit, the
+test and this file said the pin refuses an un-export. The corpus is a rolling window: the
+dependabot row the 34th's evidence rested on had left the box the day its count was
+committed, so "405 on 09-09" named a different 405 the next morning and the hook's cost
+sentence could no longer be reproduced. The second commit had corrected its retracted
+"none captured" in the hook and the test and not here. "pre-" sat in the closed prefix
+set with no pin. Smaller: the driver held 34 mutants, not 33; the word list the modifier
+slot was "proved against" was not on disk; "byte-locked in fact" was shown by green alone;
+two refusals were unnamed ("not to audit your own work"; "do not, under any
+circumstances, audit your own work"); the export made this hook the only one of 33 under
+C, so the shared commit pattern's space class no longer collates the same in its two
+sibling rails; the second commit was narrated only in its own message; the export's place
+above the source line was true and unasserted.
+The class is a review word that is a TOKEN in code: on the left a quotation mark, a
+bracket, a brace, an assignment or a call glues; on the right an opening mark, an
+assignment or an apostrophe glues and a closing mark or a colon still bounds ("(then
+attack)" is an order in parentheses, "Lens 3:" is a numbered pass, "the audit's finding"
+is a mention). Eight build briefs are pinned at the stamp path beside a control that
+fires; the three English shapes the class decides are named. The title noun takes a
+plural, on the asymmetry law and against the marginal ledger, and the cost is named by
+row: this rail's own 35th brief. The PROPERTY the runtime pin claimed is asserted now by
+a pin that reads the environment instead of the trace: a shim on grep and tr, in a dir the
+test creates empty and checks for write-through, records the LC_ALL each guard was handed
+under every locale variable a caller can export, and under LANG alone; it is provable on
+a C-only runner because the caller's value is a string the export must override whether
+or not the locale is installed. Its limit is named in the file: an override knob read from
+a variable the test does not set passes every environment the test constructs, and no
+finite pin enumerates the environment (the knob is run as a mutant, green everywhere, and
+replayed writing a stamp under its own variable). The trace list is widened by nine
+spellings and its sentence says it is a list. The export is asserted before the source
+line; "pre-" is pinned; the two refusals are named; the modifier slot is proved in the
+file against a word list and, off-tree, against 63,875 dictionary words and 6,770 of this
+repo's own. Every corpus sentence in the hook, the tests and this file carries its time,
+its window, its instrument and its row keys, and the author's row list is dumped beside
+the logs so a later reader can tell gone from never there; the 35th's sentence in this
+file is corrected; the rails comment says the pattern is shared and the collation is not.
+Red first, with the final tests, against the 35th's hook (red36a-93e0d13-redteam-watch.txt:
+330 passed, 13 failed, every red a new class pin for its named reason;
+green36a-redteam-watch.txt and green36b-redteam-watch.txt: 343 passed, 0 failed; 343
+assertion lines both sides). Mutants (mut36a-summary.txt): 49 named, each red on its own
+pin, the eight locale spellings red on the environment pin in both modes, and two edits
+expected green (the 35th's tidy-up, replayed refusing a fullwidth build brief with LC_ALL
+absent, mut36a-replays.txt; and the knob); baselines 328/0 under the C-only shim and
+343/0 ambient. Corpus (scan36a-work.txt, scan36a-keys.txt: 405 dispatches measured
+2026-09-10 05:2xZ, window 2026-08-11..2026-09-10): the 35th's tree to this one moves two
+rows, this rail's own 35th brief to builder and one read-only scoping pass, credited by
+"the audit's" alone, to neither. Fleet quiet (fleet36a.txt): 61/61, test-redteam-watch
+343/0, test-suite-runner 57/0; pytest 362; lint clean; verify 0 findings; gitleaks no
+leaks on the tree. Named for a later round, John's word: the locale class sweep of the
+other hooks; bash 3.2 still unrun; the override-knob limit stays a limit.
+The 37th lens read cff8d7a and found the branch's shape an eleventh time. The 36th listed
+what GLUES a review word to a code mark, and a glue list always has a next character: a
+SIGIL is how code marks a token too, and "@audit", "$audit", "<audit>", "#audit",
+"%audit%", "*audit", "&audit" and "~audit" each wrote a full stamp naming the tip, with
+zero of 343 assertions moving when the sigils were added. The universal sentence about
+corpus counts was false in the two files it named (the 37th's heading said ten, its table
+listed eleven, and a twelfth it never named was undated too), two with no date at all.
+The one piece of the class that cost a corpus row, the apostrophe, was the one piece with
+no pin. "--mode=audit" was closed and "--mode audit", the same brief wearing a space, was
+open and named nowhere. The two locale pins fall together to one wrapper (a grep function,
+an absolute path) because the environment pin counted any call. Smaller: the modifier
+slot unpinned in the widening direction; a dead "local" in the trace list; the environment
+pin running en_US.utf8 twice; one 138-character line in this file; a row key resolves for
+one reader on one box for as long as the window holds, and one had expired in 26 hours; a
+quoted ORDER refused and unnamed; three older mutants red on the trace pin's accounting
+only.
+The boundary states what BOUNDS now and everything else glues: on the left the start of
+the text, whitespace, a comma or semicolon, a closing mark, a double asterisk or a
+non-ASCII byte (the 32nd's law, kept: a curly quotation mark and an em dash bound as any
+non-ASCII byte does), plus the closed prefix rule; on the right the end, whitespace,
+sentence punctuation, a closing mark, a double asterisk, a non-ASCII byte, or a dot,
+hyphen or slash before a non-word. The line carries its high bytes raw, so the corpus
+instrument reads it as bytes. Ten sigil build briefs are pinned at the stamp path beside a
+control that fires, five prose shapes that must still credit (bold, an em dash, sentence
+punctuation, a second lens) and three the class decides, named: a lone asterisk glues, a
+quoted ORDER is a quotation, a curly quotation mark is a non-ASCII bound. The possessive
+is pinned with its control. The bare-word residual is named as a class ("--mode audit",
+"mode audit", "audit/ ") and each shape pinned as recorded. The environment shim records
+each guard's arguments, and the pin matches the builder grep, the adversarial grep and the
+tr once each by a fragment of its pattern: a guard that bypasses PATH writes no line and is
+red. The slot is pinned at two with its cost named (this rail's own 34th brief). The dead
+word is gone; the locale list is de-duplicated. All twelve sentences carry a date and name
+the window they were measured over, and the hook says what a row key buys and for whom;
+the 36th's keyed cost sentence is re-measured and the possessive row is named as gone.
+Red first, with the final tests, against the 36th's hook (red37a-cff8d7a-redteam-watch.txt:
+363 passed, 11 failed, the ten sigil briefs and the lone-star shape;
+green37a-redteam-watch.txt: 374 passed, 0 failed; 374 assertion lines both sides). Of the
+31 assertions this range adds, 11 were red on the old tree; the rest (the possessive, the
+bare-word class, the slot, the prose controls, the per-guard record) are green on both
+by construction, pins for stated limits and for a record the old shim did not keep.
+Mutants (mut37a-summary.txt): 57 named, every one red; the 36th's glue list put back
+(p9) is red on exactly the 11 pins the red run named; the apostrophe bound, the lone star
+bound, the double-star bound removed, the high bytes removed and the three-modifier slot
+are each red on their own new pin; a grep FUNCTION and an absolute-path guard, green on
+the 36th's floor-of-one shim, are red on the per-guard record (8 and 5); three older
+mutants (the two bracket guards, the trailing comment) are red on the trace pin's
+accounting only, as the 37th recorded; two edits expected green are green (the tidy-up,
+and the knob); baselines 361/0 under the C-only shim and 374/0 ambient. The knob's
+replay changed shape (mut37a-replays.txt line 4 carries the 36th's expectation;
+replay37a-knob.txt holds the measurement): the boundary's raw high bytes are not a UTF-8
+pattern, so a knob set to en_US.utf8 makes grep refuse the pattern and the hook records
+nothing for any brief, a missed stamp where the 36th replayed a false one; that is the
+loud half. Under C.utf8 grep accepts the pattern and decodes UTF-8, so the byte range
+stops matching a lead byte and every non-ASCII bound silently stops bounding, five
+collation pins red and nothing traced (the 38th lens, IMPORTANT-1); the loud failure is
+the safe one, the guards read grep's exit 2 as no match, and the export keeps every real
+run under C.
+Corpus (scan37b-cff8d7a-to-work.txt, scan37a-keys.txt: 366 dispatches measured
+2026-09-11 19:05Z, window 2026-08-12..2026-09-11, the instrument reading the boundary as
+bytes): not one row changes class between cff8d7a and this tree; 9 rows carry a review
+word glued to a sigil on its left, 3 on its right, one a non-ASCII byte on its right (an em
+dash, this rail's own brief) and none on its left, none credited only through the shape;
+the possessive row the 36th cited had left the window. The first pass (scan37a) said 62
+and 4 for the non-ASCII shapes: the instrument's byte range was a raw literal, so the
+bracket held the escape's characters; caught by tallying the bytes it claimed
+(scan37b-hi-bytes.txt) before the push, and the instrument is corrected.
+Fleet quiet (fleet37a.txt): 61/61, test-redteam-watch 374/0, test-suite-runner 57/0; pytest
+362 (pytest37a.txt); lint clean (lint37a.txt); verify 0 findings (verify37a.txt); gitleaks
+no leaks on the tree (gitleaks37a.txt).
+Named for a later round, John's word: the locale class sweep; bash 3.2 still unrun; the
+bare-word class stays open until a discriminator exists.
+The 38th lens read the four commits above and the public branch built from them, the
+first lens to read what leaves the house as a whole, and found no BLOCKING: nothing in the
+false-all-clear direction, nothing that leaks, the internal set stripped to the file, and
+every regression the bound list introduces is a missed credit costing zero rows on its own
+367-dispatch count. It re-ran the 59 mutants in its own clone in eight foreground batches
+and matched all 73 blocks by count and by red name; the mutant that puts the 36th's
+boundary line back (p9) was red on the red run's eleven pins by name at that tree. One
+IMPORTANT: the locale limit was named for its loud half only.
+Under en_US.utf8 grep refuses the raw-byte pattern; under C.utf8 it accepts it and decodes
+UTF-8, so the em dash, the curly quotation mark and a glued fullwidth letter silently stop
+bounding, five collation pins red and nothing traced, and the sentence called that locale
+"valid". Smaller: the correction commit's message overstated what it corrected (the
+CHANGELOG and the message had said 62 only, never 4); the mutant driver on disk no longer
+parsed, an f-string broken by the label edit after its run; the per-guard pin proves a
+call bearing the pattern, not the guard, and a decoy call buys the line; `~~`, an unpadded
+table cell and a spaceless blockquote moved from bound to glue with the sigils, unnamed;
+"ten places" was the 37th's heading over eleven rows and the range dated twelve; seven
+internal shas ship in public prose and resolve nowhere for the reader; the README's
+ship-day convention named no clock and dated a push that had not happened; `make verify`
+prints 0 findings after skipping most of its checks when CLAUDE_PROJECT_DIR points
+elsewhere, not reachable through the ship rail as this box runs it.
+Fixed here, prose and pins: the limit's sentence carries both halves and names the safe
+one, and names the guards' reading of exit 2 as no match as open; the three markdown
+shapes are named in the hook and pinned as decided beside the lone asterisk; the
+per-guard messages and comment say a call bearing the pattern; the count reads twelve;
+this entry says its shas are internal-tree shas and the hook says the same; the README's
+dates carry their clock (the UTC day the version reached the public repository) and the
+lead entry carries the day of this ship; the driver parses again. Not fixed, named for the
+39th: a trace line when a guard's grep exits 2, with a pin that plants an invalid pattern;
+verify naming its skip count. Suite on this tree 377 passed, 0 failed
+(green38a-redteam-watch.txt; the three new pins are decided residuals, green on this tree
+by construction and red under the 36th's boundary: the 39th ran p9 against b0bf01e and
+it reds fourteen by name, the eleven plus these three); verify 0 findings; lint clean;
+gitleaks no leaks. The ship branch was rebuilt from this tip; the fleet runs inside the
+build.
+The 39th lens, a confirming pass over that one commit and the rebuilt branch, said
+v0.31.0 may go public and found no BLOCKING. One IMPORTANT: the README's new clock
+sentence said "the UTC day the version reached the public repository", and under that
+clock the v0.30.0 entry (08-22) was wrong, its public moments all being 08-23 UTC; the
+convention the entries actually follow, checked against every release commit, is the UTC
+day of the version's release commit on canon, so the sentence now says that and the lead
+entry carries 2026-09-03 again, the day it was stamped, a date that predicts nothing.
+Smaller, fixed here: the universal per-guard message says "recorded here"; three prose
+sha citations say they are internal-tree shas; "carry a date and the words" now says
+"and name the window", which is what was measured; the three new pins carry the 39th's
+red (p9, fourteen by name); a missing "is" and an opaque clause in the 38th's paragraph;
+the 37th's heading named as the antecedent of "its". The hook, the tests' assertions and
+every regex are byte-identical to b0bf01e; this commit is prose and one assertion
+message. Suite 377 passed, 0 failed; verify 0 findings; lint clean; gitleaks no leaks.
+The 40th lens, a confirming pass over that commit, said no: the sentence the 39th's
+MINOR-3 fixed had been appended beside, not in place of, the false one, because the edit's
+anchor stopped at a line break the sentence ran past, so the entry shipped "name the window
+they were measured over, and the words" together, and a second sentence said the old words
+were gone. No gate can see that class; a reader can. Fixed by one deletion; two floating
+referents in the 38th's and 39th's paragraphs ("this tree", "the 38th's tip") now name
+b0bf01e. Named for a later round, after the ship: seven bare prose sha citations in five
+shipped files still say nothing about the tree they resolve on. The hook and every regex
+are unchanged from 179650e; the tests changed in the three fixtures the next sentence
+names and in the comment above the first of them.
+On 2026-09-13 at 01:02Z the ship rail's build and CI #283 went red on a commit that changed
+one word of this file: three pending-map fixtures in test-redteam-watch.sh carried a fixed
+date (2026-09-06) and the launch path prunes entries older than a week, so twelve of sixty
+aged out, the cap never filled, and the eviction pin failed. The fixtures carry timestamps
+relative to now. A fixture that must be young for an age prune is a bomb with a fixed date.
+The first public CI run of this version (PR #68, 2026-09-13) was red on GitHub's ubuntu and
+macOS runners while gitea and the dev box were green: the release stamper passed its
+blockquote regex to awk through a -v value, whose escape handling differs by awk (the
+regex now travels through ENVIRON, and the pattern carries no backslash); macOS mktemp
+ignores TMPDIR without a template, so the suite's leak sweep and root refusal never fired
+there (every mktemp in the suite names a template); tests read inode and mode with GNU
+stat, counted with unpadded wc, guarded the DST pins with GNU date -d, called timeout(1),
+compared a symlinked temp path, and made a store unwritable with a lock shape that only
+the flock branch honours; each now has its BSD form or the library's own shim. No hook
+changed.
 
 ## v0.30.1 - the gate token was landing in the wrong closet
 

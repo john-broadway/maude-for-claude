@@ -67,7 +67,11 @@ fi
 # Command position: line start, after a shell separator, optionally after a run-
 # wrapper (e.g. env/sudo/time/nice/xvfb-run, a VAR= assignment, a `<tool> run`
 # form, npx/pnpm/bunx). The WRAP regex below is the authoritative list.
-SEP='(^|[;&|]|&&|\|\|)[[:space:]]*'
+# SEP, COMMIT_RE and DOC_RE are shared through _maude-common.sh so every rail that
+# reads commits agrees; SEP is deliberately the WIDER pattern (also a command
+# position after `(` or a backtick) since those still run a commit/runner. Kept as a
+# local var (not just inlined into COMMIT_RE) because VERIFY_RE below needs it too.
+SEP="$(maude_sep_re)"
 WRAP='((env|sudo|time|nice|xvfb-run)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|(uv|poetry|pipenv|pdm)[[:space:]]+run[[:space:]]+|bundle[[:space:]]+exec[[:space:]]+|npx[[:space:]]+|pnpm[[:space:]]+(exec|dlx)[[:space:]]+|bunx[[:space:]]+)*'
 # Recognized test/lint/typecheck runners (each at command position via SEP+WRAP).
 RUNNER='(pytest|py\.test|tox|nox|bats|phpunit|rspec|jest|vitest|mocha|ctest|mypy|pyright|tsc|flake8|pylint|eslint|cargo[[:space:]]+(test|check|clippy)|go[[:space:]]+test|gradlew?[[:space:]]+(test|check)|mvn[[:space:]]+(test|verify)|dotnet[[:space:]]+test|bazel[[:space:]]+test|rake[[:space:]]+(spec|test)|mix[[:space:]]+test|ruff[[:space:]]+check|black[[:space:]]+--check|pre-commit[[:space:]]+run|python[0-9.]*[[:space:]]+(-m[[:space:]]+(pytest|unittest)|manage\.py[[:space:]]+test)|(npm|yarn|pnpm|bun)[[:space:]]+(run[[:space:]]+)?(test|lint|typecheck|check)|make[[:space:]]+(test|check|lint|verify))'
@@ -77,12 +81,8 @@ RUNNER='(pytest|py\.test|tox|nox|bats|phpunit|rspec|jest|vitest|mocha|ctest|mypy
 SCRIPT='(bash[[:space:]]+|sh[[:space:]]+|\./)([^[:space:]]*(smoke|verify)[[:alnum:]_.-]*|[^[:space:]]*run[_-]?tests?)\.(sh|bash)'
 VERIFY_RE="${SEP}${WRAP}(${RUNNER}|${SCRIPT})"
 
-# `git commit` at command position (post quote-strip).
-COMMIT_RE="${SEP}git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)"
-
-# A target path that is docs/config (not code) — used to suppress noise on
-# docs-only commits. Anything NOT matching this is treated as code (safe default).
-DOC_RE='\.(md|markdown|txt|rst|adoc|json|ya?ml|toml|cfg|conf|ini|lock|csv|tsv|svg|png|jpe?g|gif|pdf)$|(^|/)(LICENSE|COPYING|NOTICE|CHANGELOG[^/]*|AUTHORS|\.gitignore|\.gitattributes|\.editorconfig)$'
+COMMIT_RE="$(maude_commit_re)"
+DOC_RE="$(maude_doc_re)"
 
 # High-confidence FAILURE signatures in a verify's OUTPUT (the "suspenders" — see
 # the stamp case). Deliberately conservative: match only an unambiguous failure so a

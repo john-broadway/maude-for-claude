@@ -247,6 +247,14 @@ assert_exit "$RC" "2" "1st array prefix honoured"
 
 printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing","wipe_store"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"]}\n' > "$MAUDE_GATE_CONFIG"
 
+# ── The infra refusal is a RED refusal and says so first (the UX lens, 2026-09-06). ──
+test_start "the infra-destructive refusal opens with the tier and names whose hand it is"
+run_infra "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":777}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "Maude [RED]:" "the tier is the first token"
+assert_not_contains "$ERR" "only intentionally" "no self-clear instruction"
+assert_contains "$ERR" "hand" "whose hand it is"
+
 print_summary
 teardown_test_env
 exit $FAILED

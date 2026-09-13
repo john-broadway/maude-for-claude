@@ -1,0 +1,277 @@
+{
+  "class": "schema",
+  "name": "Codd's rules and the normal forms",
+  "source": "E. F. Codd, \"Is Your DBMS Really Relational?\" / \"Does Your DBMS Run By the Rules,\" Computerworld, 14 and 21 October 1985",
+  "read_on": "2026-09-03",
+  "heading": "normal forms?|codd",
+  "floor": 3,
+  "laws": [
+    {
+      "id": "codd-0",
+      "name": "Foundation rule",
+      "aliases": [
+        "foundation rule",
+        "codd 0",
+        "codd's rule 0",
+        "rule 0",
+        "foundation"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Is every part of the data managed through relations, or is something managed on the side?",
+      "schema_touching": false
+    },
+    {
+      "id": "codd-1",
+      "name": "Information rule",
+      "aliases": [
+        "information rule",
+        "codd 1",
+        "codd's rule 1",
+        "rule 1",
+        "information"
+      ],
+      "family": "one-place",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Is every fact a value in a table, in exactly one place?",
+      "schema_touching": true
+    },
+    {
+      "id": "codd-2",
+      "name": "Guaranteed access rule",
+      "aliases": [
+        "guaranteed access rule",
+        "codd 2",
+        "codd's rule 2",
+        "rule 2",
+        "guaranteed access"
+      ],
+      "family": "cue",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Can every value be reached by table, key and column?",
+      "schema_touching": true
+    },
+    {
+      "id": "codd-3",
+      "name": "Systematic treatment of nulls",
+      "aliases": [
+        "systematic treatment of nulls",
+        "codd 3",
+        "codd's rule 3",
+        "rule 3",
+        "nulls"
+      ],
+      "family": "expectation",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Is missing information NULL, never a sentinel?",
+      "schema_touching": true
+    },
+    {
+      "id": "codd-4",
+      "name": "Dynamic online catalog",
+      "aliases": [
+        "dynamic online catalog",
+        "codd 4",
+        "codd's rule 4",
+        "rule 4",
+        "catalog"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Is the schema itself readable as data?",
+      "schema_touching": false
+    },
+    {
+      "id": "codd-5",
+      "name": "Comprehensive data sublanguage",
+      "aliases": [
+        "comprehensive data sublanguage",
+        "codd 5",
+        "codd's rule 5",
+        "rule 5",
+        "sublanguage"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Can definition, views, manipulation, constraints, authorization and transactions all be expressed in one language?",
+      "schema_touching": false
+    },
+    {
+      "id": "codd-6",
+      "name": "View updating rule",
+      "aliases": [
+        "view updating rule",
+        "codd 6",
+        "codd's rule 6",
+        "rule 6",
+        "view updating"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Can a view that could be updated be updated?",
+      "schema_touching": false
+    },
+    {
+      "id": "codd-7",
+      "name": "Set-level insert, update and delete",
+      "aliases": [
+        "set-level insert, update and delete",
+        "codd 7",
+        "codd's rule 7",
+        "rule 7",
+        "set-level"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Do insert, update and delete work on sets, not one row at a time?",
+      "schema_touching": false
+    },
+    {
+      "id": "codd-8",
+      "name": "Physical data independence",
+      "aliases": [
+        "physical data independence",
+        "codd 8",
+        "codd's rule 8",
+        "rule 8",
+        "physical independence"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Does a storage change leave the application untouched?",
+      "schema_touching": false
+    },
+    {
+      "id": "codd-9",
+      "name": "Logical data independence",
+      "aliases": [
+        "logical data independence",
+        "codd 9",
+        "codd's rule 9",
+        "rule 9",
+        "logical independence"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Does a preserving change to the base tables leave the application untouched?",
+      "schema_touching": false
+    },
+    {
+      "id": "codd-10",
+      "name": "Integrity independence",
+      "aliases": [
+        "integrity independence",
+        "codd 10",
+        "codd's rule 10",
+        "rule 10",
+        "integrity"
+      ],
+      "family": "one-place",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Do the constraints live in the catalog, not in the application?",
+      "schema_touching": true
+    },
+    {
+      "id": "codd-11",
+      "name": "Distribution independence",
+      "aliases": [
+        "distribution independence",
+        "codd 11",
+        "codd's rule 11",
+        "rule 11",
+        "distribution"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Does the user see one database wherever the data sits?",
+      "schema_touching": false
+    },
+    {
+      "id": "codd-12",
+      "name": "Nonsubversion rule",
+      "aliases": [
+        "nonsubversion rule",
+        "codd 12",
+        "codd's rule 12",
+        "rule 12",
+        "nonsubversion"
+      ],
+      "family": "system",
+      "url": "https://en.wikipedia.org/wiki/Codd%27s_12_rules",
+      "ask": "Can the low-level path bypass the constraints the high-level one declares?",
+      "schema_touching": false
+    },
+    {
+      "id": "1nf",
+      "name": "First normal form",
+      "aliases": [
+        "first normal form",
+        "1nf"
+      ],
+      "family": "chunk",
+      "url": "https://en.wikipedia.org/wiki/Database_normalization",
+      "ask": "Is every cell one atomic value, with no repeating groups?",
+      "floor": true
+    },
+    {
+      "id": "2nf",
+      "name": "Second normal form",
+      "aliases": [
+        "second normal form",
+        "2nf"
+      ],
+      "family": "overload",
+      "url": "https://en.wikipedia.org/wiki/Database_normalization",
+      "ask": "Does every non-key column depend on the whole key?",
+      "floor": true
+    },
+    {
+      "id": "3nf",
+      "name": "Third normal form",
+      "aliases": [
+        "third normal form",
+        "3nf"
+      ],
+      "family": "provenance",
+      "url": "https://en.wikipedia.org/wiki/Database_normalization",
+      "ask": "Does every non-key column depend on the key, the whole key, and nothing but the key?",
+      "floor": true
+    },
+    {
+      "id": "bcnf",
+      "name": "Boyce-Codd normal form",
+      "aliases": [
+        "boyce-codd normal form",
+        "bcnf"
+      ],
+      "family": "provenance",
+      "url": "https://en.wikipedia.org/wiki/Database_normalization",
+      "ask": "Is every determinant a candidate key?",
+      "floor": false
+    },
+    {
+      "id": "4nf",
+      "name": "Fourth normal form",
+      "aliases": [
+        "fourth normal form",
+        "4nf"
+      ],
+      "family": "chunk",
+      "url": "https://en.wikipedia.org/wiki/Database_normalization",
+      "ask": "Are independent multi-valued facts kept in separate tables?",
+      "floor": false
+    },
+    {
+      "id": "5nf",
+      "name": "Fifth normal form",
+      "aliases": [
+        "fifth normal form",
+        "5nf"
+      ],
+      "family": "one-place",
+      "url": "https://en.wikipedia.org/wiki/Database_normalization",
+      "ask": "Can the table be rebuilt from its projections without loss?",
+      "floor": false
+    }
+  ]
+}

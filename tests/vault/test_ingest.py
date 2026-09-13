@@ -35,7 +35,9 @@ def test_build_counts_and_indexes(tmp_path):
     assert n >= 3
     conn = db.connect(dbp)
     assert conn.execute("SELECT count(*) FROM notes").fetchone()[0] == n
-    assert conn.execute("SELECT count(*) FROM notes_fts").fetchone()[0] == n
+    # External-content index (schema 3): the docsize shadow table holds one row per indexed
+    # note, and the content itself lives once, in notes.
+    assert conn.execute("SELECT count(*) FROM notes_fts_docsize").fetchone()[0] == n
 
 
 def test_build_is_idempotent(tmp_path):
@@ -78,7 +80,9 @@ def test_superseded_by_marks_note(tmp_path):
     rows = dict(conn.execute("SELECT name, superseded FROM notes").fetchall())
     assert rows["dead-note"] == "the-new-rule"
     assert rows["live-note"] == ""
-    fts = [r[0] for r in conn.execute("SELECT name FROM notes_fts").fetchall()]
+    # The index is external-content (schema 3): a plain SELECT reads the content table, so
+    # "never enters FTS" is asserted the way it matters, by a MATCH both notes would answer.
+    fts = [r[0] for r in conn.execute("SELECT name FROM notes_fts WHERE notes_fts MATCH 'rule'").fetchall()]
     assert "live-note" in fts and "dead-note" not in fts
     conn.close()
 
@@ -94,7 +98,7 @@ def test_status_superseded_also_marks(tmp_path):
     import sqlite3
     conn = sqlite3.connect(dbp)
     assert conn.execute("SELECT superseded FROM notes").fetchone()[0] == "superseded"
-    assert conn.execute("SELECT count(*) FROM notes_fts").fetchone()[0] == 0
+    assert conn.execute("SELECT count(*) FROM notes_fts WHERE notes_fts MATCH 'dead'").fetchone()[0] == 0
     conn.close()
 
 

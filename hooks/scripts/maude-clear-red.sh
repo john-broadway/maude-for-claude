@@ -164,7 +164,7 @@ compute from what is on this disk.
 
 John, paste your next unspent link (the leading ! runs it as your hand):
 
-  ! bash "$DIR/maude-clear-gate.sh" "$KEY" --marker <link>
+  ! bash "$DIR/maude-clear-red.sh" "$KEY" --marker <link>
 
 Chain status:  bash "$DIR/maude-marker.sh" status
 EOF
@@ -212,7 +212,7 @@ Maude: "$KEY" is a RED key — John's hand only. Claude must NOT self-clear it.
 John, to authorize ONE matching command, paste this line (the leading ! runs it
 as your hand, outside Claude's tool-gate):
 
-  ! bash "$DIR/maude-clear-gate.sh" "$KEY" --john
+  ! bash "$DIR/maude-clear-red.sh" "$KEY" --john
 
 (SOFT rail: removes the reflex, not a determined bypass. Real enforcement is the
 harness deny-rules — see .scratch/maude-spine-deny.json.)

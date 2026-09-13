@@ -1,6 +1,6 @@
-<!-- Version: 0.30.1 -->
+<!-- Version: 0.31.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-09-02 -->
+<!-- Revised: 2026-09-03 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Code of Conduct

@@ -209,8 +209,19 @@ fi
 
 CARE="$TEST_TMP/care.json"
 
+# The tip lens_check measures against: ship.sh reads SRC (main), not HEAD.
+TIP="$(git rev-parse main)"
+
+# The stamp shape redteam-watch writes since 2026-09-04 — a timestamp AND the refs the
+# lens brief named. $3 is a jq array literal so a test can say "no refs" and "a ref that
+# is not the tip" as easily as it says "the tip".
+stamp_file() {  # $1 file, $2 ts, $3 refs-as-json-array
+  jq -nc --arg ts "$2" --argjson refs "$3" \
+    '{last_redteam_iso:{aaaa1111:{ts:$ts, refs:$refs}}}' > "$1"
+}
+
 test_start "ship open --review REFUSES on a stale lens stamp"
-printf '{"last_redteam_iso":{"aaaa1111":"2001-01-01T00:00:00Z"}}\n' > "$CARE"
+stamp_file "$CARE" "2001-01-01T00:00:00Z" "[\"$TIP\"]"
 git checkout -q t3 2>/dev/null
 OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "prose only" 2>&1)"
 RC=$?
@@ -222,7 +233,7 @@ else
 fi
 
 test_start "ship open --review proceeds on a FRESH lens stamp"
-printf '{"last_redteam_iso":{"aaaa1111":"%s"}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$CARE"
+stamp_file "$CARE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "[\"$TIP\"]"
 git checkout -q t3 2>/dev/null
 OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "sonnet adversarial pass" 2>&1)"
 RC=$?
@@ -233,8 +244,91 @@ else
   _fail "expected proceed on fresh stamp (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
 fi
 
+# ── open: the stamp must be OF the tip, not merely NEWER than it ─────────
+# THE SEAM, measured on the real repo 2026-09-04. main's tip was committed at 16:09:57Z
+# and care.json carried a stamp at 16:10:45Z — 48 seconds newer, so the gate said proven.
+# The dispatch that wrote it had STARTED before the commit existed and could not have read
+# a line of it. A timestamp answers "did a lens finish after this?"; the question the gate
+# is actually asking is "did a lens look at THIS?". Only a named ref answers that.
+
+test_start "ship open --review REFUSES a fresh stamp that names a DIFFERENT ref"
+stamp_file "$CARE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '["deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"]'
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "a lens ran, on something else" 2>&1)"
+RC=$?
+git checkout -q main
+# The reason matters: it must refuse because the ref is WRONG (so it read the stamp and
+# echoes what it names), not because it could not read the file at all.
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'SECOND LENS NOT PROVEN' \
+   && printf '%s' "$OUT" | grep -q 'names: deadbeef'; then
+  _pass
+else
+  _fail "a stamp naming another ref must not satisfy the gate (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+test_start "the refusal NAMES the tip it wanted, so the remedy is obvious"
+if printf '%s' "$OUT" | grep -q "$(printf '%s' "$TIP" | cut -c1-7)"; then
+  _pass
+else
+  _fail "refusal did not name the wanted tip: $(printf '%s' "$OUT" | head -c 300)"
+fi
+
+test_start "ship open --review REFUSES a stamp that names NO ref at all"
+stamp_file "$CARE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '[]'
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "a lens ran, subject unrecorded" 2>&1)"
+RC=$?
+git checkout -q main
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'names NO ref'; then
+  _pass
+else
+  _fail "a refless stamp must not satisfy the gate (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+# Every stamp written before 2026-09-04 is a bare ISO string naming nothing. They are not
+# grandfathered: a missed stamp costs one spurious refusal and a re-run, a false stamp
+# costs a release that nothing reviewed. The rail leans the same way its writer does.
+test_start "ship open --review REFUSES a LEGACY timestamp-only stamp, however fresh"
+printf '{"last_redteam_iso":{"aaaa1111":"%s"}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$CARE"
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "an old-shape stamp" 2>&1)"
+RC=$?
+git checkout -q main
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'names NO ref'; then
+  _pass
+else
+  _fail "a legacy string stamp must not satisfy the gate (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+# A brief names `7e36d82`, git resolves 40. Prefix matching is what makes the rail usable
+# by a human-written brief at all.
+test_start "an ABBREVIATED ref that prefixes the tip satisfies the gate"
+stamp_file "$CARE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "[\"$(printf '%s' "$TIP" | cut -c1-7)\"]"
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "sonnet adversarial pass on 7 chars" 2>&1)"
+RC=$?
+git checkout -q main
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'pr merge'; then
+  _pass
+else
+  _fail "an abbreviated ref must match the tip (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+# A ref SHORTER than git's own floor is a word, not an abbreviation, and must not match.
+test_start "a ref shorter than seven characters does NOT match the tip"
+stamp_file "$CARE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "[\"$(printf '%s' "$TIP" | cut -c1-4)\"]"
+git checkout -q t3 2>/dev/null
+OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "four characters is not a sha" 2>&1)"
+RC=$?
+git checkout -q main
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q "names: $(printf '%s' "$TIP" | cut -c1-4)"; then
+  _pass
+else
+  _fail "a 4-char prefix must not satisfy the gate (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
 test_start "ship open --review REJECTS a future stamp (planted, not fresh)"
-printf '{"last_redteam_iso":{"aaaa1111":"%s"}}\n' "$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)" > "$CARE"
+stamp_file "$CARE" "$(date -u -d '+1 hour' +%Y-%m-%dT%H:%M:%SZ)" "[\"$TIP\"]"
 git checkout -q t3 2>/dev/null
 OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run --review "prose" 2>&1)"
 RC=$?
@@ -246,7 +340,7 @@ else
 fi
 
 test_start "ship open DRAFT stays available even with a stale stamp"
-printf '{"last_redteam_iso":{"aaaa1111":"2001-01-01T00:00:00Z"}}\n' > "$CARE"
+stamp_file "$CARE" "2001-01-01T00:00:00Z" "[\"$TIP\"]"
 git checkout -q t3 2>/dev/null
 OUT="$(SHIP_CARE_FILE="$CARE" bash "$SHIP" open --dry-run 2>&1)"
 RC=$?
@@ -266,8 +360,8 @@ fi
 test_start "lens_check walks PAST an empty repo-local care.json to a fresh parent stamp"
 mkdir -p "$FIX/repo/.maude/plugin" "$FIX/.maude/plugin"
 printf '{"last_redteam_iso":{}}\n' > "$FIX/repo/.maude/plugin/care.json"
-printf '{"last_redteam_iso":{"bbbb2222":"%s"}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  > "$FIX/.maude/plugin/care.json"
+jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg tip "$TIP" \
+  '{last_redteam_iso:{bbbb2222:{ts:$ts, refs:[$tip]}}}' > "$FIX/.maude/plugin/care.json"
 git checkout -q t3 2>/dev/null
 OUT="$(bash "$SHIP" open --dry-run --review "a real second lens ran" 2>&1)"
 RC=$?
@@ -277,6 +371,27 @@ if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q 'SECOND LENS NOT PROVEN'; t
   _pass
 else
   _fail "empty repo-local care.json shadowed the parent's fresh stamp (rc=$RC): $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+# The refusal message named whichever candidate care.json was found FIRST, not the one the
+# newest stamp actually came from, so it could blame a file that had nothing to do with the
+# stamp it was describing. Found 2026-09-04 by the lens on this commit.
+test_start "the refusal names the care.json the newest stamp actually came from"
+mkdir -p "$FIX/repo/.maude/plugin" "$FIX/.maude/plugin"
+printf '{"last_redteam_iso":{}}\n' > "$FIX/repo/.maude/plugin/care.json"
+jq -nc --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{last_redteam_iso:{cccc3333:{ts:$ts, refs:["deadbeefdeadbeef"]}}}' \
+  > "$FIX/.maude/plugin/care.json"
+git checkout -q t3 2>/dev/null
+OUT="$(bash "$SHIP" open --dry-run --review "a lens ran on the wrong thing" 2>&1)"
+RC=$?
+git checkout -q main
+rm -rf "$FIX/repo/.maude" "$FIX/.maude"
+FIXP="$(cd "$FIX" && pwd -P)"   # git resolves symlinks in the root; macOS puts TMPDIR under /var -> /private/var
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q "newest stamp in $FIXP/.maude/plugin/care.json"; then
+  _pass
+else
+  _fail "message blamed the wrong file: $(printf '%s' "$OUT" | grep 'newest stamp' | head -c 200)"
 fi
 
 # The rail used to leave you STANDING ON the ship branch. A warning was tried first and was
