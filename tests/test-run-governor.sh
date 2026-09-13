@@ -123,6 +123,15 @@ seed_rs 80 "$(date +%s)"
 printf '{}' | PATH="$NOJQ" bash "$GOV" gate >/dev/null 2>&1
 assert_exit "$?" "0" "no-jq gate fail-open"
 
+# ── One quantity, one name: both whispers describe the same two numbers in the same
+# words, and name no one person (the UX lens, 2026-09-06, N2). ──
+test_start "the soft and hard whispers name the count and the clock the same way"
+seed_rs 40 "$(date +%s)"; run_gate '{}'
+assert_contains "$ERR" "since the last human turn" "soft whisper's clock"
+seed_rs 80 "$(date +%s)"; run_gate '{}'
+assert_contains "$ERR" "since the last human turn" "hard whisper's clock"
+assert_not_contains "$ERR" "John" "no one person named in a published whisper"
+
 print_summary
 teardown_test_env
 exit $FAILED

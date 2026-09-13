@@ -25,6 +25,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--db", required=True)
     p.add_argument("--k", type=int, default=5)
     p.add_argument("--log", default=None)
+    p.add_argument("--mem", default=None,
+                   help="the markdown dir the index mirrors; with it, a hit whose file is newer than the index is marked stale")
 
     args = parser.parse_args(argv)
     if args.cmd == "build":
@@ -33,7 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "page":
         query = args.query if args.query is not None else sys.stdin.read()
-        hits = page.page(args.db, query, args.k)
+        hits = page.page(args.db, query, args.k, mem_dir=args.mem)
         out = page.format_hits(hits)
         if out:
             print(out)

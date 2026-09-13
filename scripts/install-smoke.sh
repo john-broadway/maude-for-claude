@@ -19,7 +19,8 @@ REPO="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
 cd "$REPO" || { echo "install-smoke: cannot cd to $REPO" >&2; exit 1; }
 git rev-parse HEAD >/dev/null 2>&1 || { echo "install-smoke: not a git repo with a HEAD" >&2; exit 1; }
 
-STAGE="$(mktemp -d)"
+_ismk_base="${TMPDIR:-/tmp}"; _ismk_base="${_ismk_base%/}"; [ -n "$_ismk_base" ] || _ismk_base=/
+STAGE="$(mktemp -d "$_ismk_base/maude-smoke.XXXXXX")"   # a template: macOS mktemp ignores TMPDIR without one
 trap 'rm -rf "$STAGE"' EXIT
 
 echo "== install-smoke: staging git-archive of HEAD ($(git rev-parse --short HEAD)) =="
@@ -41,11 +42,22 @@ fi
 # ── Stage 2: the archive's own fleet (self-containment) ──────────────────
 # MAUDE_INSTALL_SMOKE=1 makes the smoke's own test self-skip inside this run —
 # same recursion-guard pattern as the eye's blink.
+# The inner fleet's output is kept and, on a red, its FAIL lines and summary are printed:
+# a red that says nothing is a launch stamp (the GitHub macOS runner went red here with
+# every other suite green and nothing to read, 2026-09-13, PR #70).
 if [ -f "$STAGE/tests/run.sh" ]; then
-  if (cd "$STAGE" && MAUDE_INSTALL_SMOKE=1 bash tests/run.sh >/dev/null 2>&1); then
+  if (cd "$STAGE" && MAUDE_INSTALL_SMOKE=1 bash tests/run.sh > "$STAGE/.fleet.log" 2>&1); then
     echo "  fleet    : PASS (from the archive)"
   else
     echo "  fleet    : FAIL — the shipped tree does not pass its own tests"; RC=1
+    # FAIL lines when the fleet ran and reported; the tail when it died before reporting
+    # (a missing file, a shell that would not start): either way the red is readable.
+    if grep -qE '^FAIL  |^    FAIL  ' "$STAGE/.fleet.log" 2>/dev/null; then
+      grep -E '^FAIL  |^    FAIL  |test files passed' "$STAGE/.fleet.log" 2>/dev/null | head -40 | sed 's/^/             /'
+    else
+      echo "             (no FAIL line: the archive's fleet did not report; last lines follow)"
+      tail -30 "$STAGE/.fleet.log" 2>/dev/null | sed 's/^/             /'
+    fi
   fi
 else
   echo "  fleet    : FAIL — no tests/run.sh in the archive"; RC=1

@@ -32,6 +32,24 @@ INPUT="$(cat 2>/dev/null)"
 # /reload-plugins; a rail that waits to be reloaded is how the mission rail sat dead for
 # twenty days. Script edits are live on save.
 printf '%s' "$INPUT" | bash "$DIR/maude-redteam-watch.sh" stamp 2>/dev/null
+# GATE token spend — a one-shot clear is spent by the command that RAN. The gate only
+# RESERVES at PreToolUse (a sibling hook's refusal must not spend it, 2026-09-06), and
+# this is the PostToolUse entry that sees every Bash completion, so the spend lives here.
+# The spend is spoken (stderr), the one moment in a token's life that used to be silent.
+# Cheap exit FIRST: nothing can be spent on a box that has never been given a clear, and
+# that is one grep. The precise question — is there a live token THIS call can spend — is
+# asked inside the gate before its pattern table (the 25th lens, IMPORTANT-1). Grepping
+# for `"reserved"` here was both too narrow and too broad: it made an unreserved live
+# token unspendable (MINOR-6) and it matched the word anywhere in a 34 KB shared file.
+if command -v jq >/dev/null 2>&1 \
+   && grep -q '"until"' "$(maude_self_dir)/care.json" "$(maude_redclear_file)" 2>/dev/null \
+   && [ "$(printf '%s' "$INPUT" | jq -r '.hook_event_name // ""' 2>/dev/null)" = "PostToolUse" ] \
+   && [ "$(printf '%s' "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null)" = "Bash" ] \
+   && maude_gate_spendable_here "$INPUT" \
+        "$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)" \
+        "$(maude_self_dir)/care.json" "$(maude_redclear_file)"; then
+  printf '%s' "$INPUT" | bash "$DIR/maude-gate.sh" consume 2>&1 >/dev/null | head -c 400 >&2
+fi
 KIND="${1:-event}"
 
 if command -v jq >/dev/null 2>&1 && [ -n "$INPUT" ]; then

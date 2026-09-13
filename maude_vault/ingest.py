@@ -54,8 +54,12 @@ def parse_note(path: pathlib.Path) -> dict:
 def build(mem_dir: str | os.PathLike, db_path: str | os.PathLike) -> int:
     mem_dir = pathlib.Path(mem_dir)
     conn = db.connect(db_path)
+    # notes_fts is an external-content index over `notes` (schema 3): the body is stored
+    # once, in notes, and the index holds only tokens. A plain FTS5 table kept its own
+    # copy of every column, 35.8 MB for 16.5 MB of markdown, and notes.body had no reader
+    # (the memory lens, 2026-09-06). External content is cleared by its own command.
+    conn.execute("INSERT INTO notes_fts(notes_fts) VALUES('delete-all')")
     conn.execute("DELETE FROM notes")
-    conn.execute("DELETE FROM notes_fts")
     count = 0
     for md in sorted(mem_dir.rglob("*.md")):
         try:
@@ -67,7 +71,7 @@ def build(mem_dir: str | os.PathLike, db_path: str | os.PathLike) -> int:
             # going; count only what actually got ingested.
             continue
         rel = str(md.relative_to(mem_dir))
-        conn.execute(
+        cur = conn.execute(
             "INSERT OR REPLACE INTO notes"
             "(path,name,description,type,body,mtime,links,superseded)"
             " VALUES (?,?,?,?,?,?,?,?)",
@@ -76,12 +80,22 @@ def build(mem_dir: str | os.PathLike, db_path: str | os.PathLike) -> int:
         )
         # A superseded note stays in `notes` (history) but never enters FTS —
         # it can no longer page. Mark, don't erase: the markdown is untouched.
+        # The index row shares the note's rowid: that is how external content finds
+        # the one copy of the body for snippets.
         if not note["superseded"]:
             conn.execute(
-                "INSERT INTO notes_fts(path,name,description,body) VALUES (?,?,?,?)",
-                (rel, note["name"], note["description"], note["body"]),
+                "INSERT INTO notes_fts(rowid,path,name,description,body) VALUES (?,?,?,?,?)",
+                (cur.lastrowid, rel, note["name"], note["description"], note["body"]),
             )
         count += 1
     conn.commit()
+    # SQLite reuses free pages but never gives them back: a build that wipes and reinserts
+    # every session keeps the file at its high-water mark, and the schema-3 rebuild left
+    # the live vault at 35.8 MB with two thirds of its pages free (2026-09-06). Return the
+    # space when the freelist is more than a quarter of the file.
+    (pages,) = conn.execute("PRAGMA page_count").fetchone()
+    (free,) = conn.execute("PRAGMA freelist_count").fetchone()
+    if pages and free * 4 > pages:
+        conn.execute("VACUUM")
     conn.close()
     return count

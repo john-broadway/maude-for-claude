@@ -330,7 +330,8 @@ def test_a_unicode_space_does_not_hide_a_secret_from_either_engine(label, space)
 # missed one each time — a hand-written field list is the thing that keeps being wrong.
 STORE_WRITERS = [
     ("reject", dict(phrase="a phrase", reason="he said so", source="cli")),
-    ("remember", dict(text="a line", topic="ops", source="cli", authority="user-verbatim")),
+    ("remember", dict(text="a line", topic="ops", source="cli", authority="user-verbatim",
+                      voice_sha="0" * 64)),
     ("capture", dict(text="a line", topic="ops", source="cli", authority="agent-inference")),
 ]
 

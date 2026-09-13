@@ -1,0 +1,331 @@
+{
+  "class": "ui",
+  "name": "The thirty Laws of UX",
+  "source": "https://lawsofux.com",
+  "read_on": "2026-09-03",
+  "heading": "laws? of ux|ux laws?",
+  "laws": [
+    {
+      "id": "aesthetic-usability-effect",
+      "name": "Aesthetic-Usability Effect",
+      "aliases": [
+        "aesthetic-usability effect"
+      ],
+      "family": "perception",
+      "url": "https://lawsofux.com/aesthetic-usability-effect/",
+      "ask": "Does it look cared for, and is that hiding a usability fault nobody has tested?"
+    },
+    {
+      "id": "choice-overload",
+      "name": "Choice Overload",
+      "aliases": [
+        "choice overload"
+      ],
+      "family": "overload",
+      "url": "https://lawsofux.com/choice-overload/",
+      "ask": "How many options are on the screen at once, and which could be defaults?"
+    },
+    {
+      "id": "chunking",
+      "name": "Chunking",
+      "aliases": [
+        "chunking"
+      ],
+      "family": "chunk",
+      "url": "https://lawsofux.com/chunking/",
+      "ask": "Is related information grouped into pieces a person can name?"
+    },
+    {
+      "id": "cognitive-bias",
+      "name": "Cognitive Bias",
+      "aliases": [
+        "cognitive bias"
+      ],
+      "family": "perception",
+      "url": "https://lawsofux.com/cognitive-bias/",
+      "ask": "Which bias is this design leaning on, and is that fair to the person?"
+    },
+    {
+      "id": "cognitive-load",
+      "name": "Cognitive Load",
+      "aliases": [
+        "cognitive load"
+      ],
+      "family": "chunk",
+      "url": "https://lawsofux.com/cognitive-load/",
+      "ask": "What does the person have to hold in mind to get through this?"
+    },
+    {
+      "id": "doherty-threshold",
+      "name": "Doherty Threshold",
+      "aliases": [
+        "doherty threshold",
+        "doherty"
+      ],
+      "family": "pace",
+      "url": "https://lawsofux.com/doherty-threshold/",
+      "ask": "Does anything between the action and its feedback take longer than four hundred milliseconds?"
+    },
+    {
+      "id": "fittss-law",
+      "name": "Fitts's Law",
+      "aliases": [
+        "fitts's law",
+        "fittss law",
+        "fitts"
+      ],
+      "family": "reach",
+      "url": "https://lawsofux.com/fittss-law/",
+      "ask": "Is every control pressable across its whole box, and is the box big enough to hit?"
+    },
+    {
+      "id": "flow",
+      "name": "Flow",
+      "aliases": [
+        "flow"
+      ],
+      "family": "pace",
+      "url": "https://lawsofux.com/flow/",
+      "ask": "Does anything interrupt the person mid-task that could have waited?"
+    },
+    {
+      "id": "goal-gradient-effect",
+      "name": "Goal-Gradient Effect",
+      "aliases": [
+        "goal-gradient effect"
+      ],
+      "family": "closure",
+      "url": "https://lawsofux.com/goal-gradient-effect/",
+      "ask": "Can the person see how close they are to done?"
+    },
+    {
+      "id": "hicks-law",
+      "name": "Hick's Law",
+      "aliases": [
+        "hick's law",
+        "hicks law",
+        "hick"
+      ],
+      "family": "overload",
+      "url": "https://lawsofux.com/hicks-law/",
+      "ask": "How many choices, of what complexity, sit in front of the person at once?"
+    },
+    {
+      "id": "jakobs-law",
+      "name": "Jakob's Law",
+      "aliases": [
+        "jakob's law",
+        "jakobs law",
+        "jakob"
+      ],
+      "family": "cue",
+      "url": "https://lawsofux.com/jakobs-law/",
+      "ask": "Does this work the way the person's other tools already work?"
+    },
+    {
+      "id": "law-of-common-region",
+      "name": "Law of Common Region",
+      "aliases": [
+        "law of common region"
+      ],
+      "family": "grouping",
+      "url": "https://lawsofux.com/law-of-common-region/",
+      "ask": "Does a boundary enclose exactly the things that belong together?"
+    },
+    {
+      "id": "law-of-pragnanz",
+      "name": "Law of Prägnanz",
+      "aliases": [
+        "law of prägnanz",
+        "pragnanz",
+        "prägnanz"
+      ],
+      "family": "grouping",
+      "url": "https://lawsofux.com/law-of-pr%C3%A4gnanz/",
+      "ask": "Is the simplest reading of this screen the right one?"
+    },
+    {
+      "id": "law-of-proximity",
+      "name": "Law of Proximity",
+      "aliases": [
+        "law of proximity"
+      ],
+      "family": "grouping",
+      "url": "https://lawsofux.com/law-of-proximity/",
+      "ask": "Are things that belong together near each other, and things that do not, apart?"
+    },
+    {
+      "id": "law-of-similarity",
+      "name": "Law of Similarity",
+      "aliases": [
+        "law of similarity"
+      ],
+      "family": "distinct",
+      "url": "https://lawsofux.com/law-of-similarity/",
+      "ask": "Do things that look alike behave alike, and do things that differ look different?"
+    },
+    {
+      "id": "law-of-uniform-connectedness",
+      "name": "Law of Uniform Connectedness",
+      "aliases": [
+        "law of uniform connectedness"
+      ],
+      "family": "grouping",
+      "url": "https://lawsofux.com/law-of-uniform-connectedness/",
+      "ask": "Are connected things drawn as connected?"
+    },
+    {
+      "id": "mental-model",
+      "name": "Mental Model",
+      "aliases": [
+        "mental model"
+      ],
+      "family": "cue",
+      "url": "https://lawsofux.com/mental-model/",
+      "ask": "Does the person's picture of how this works match how it works?"
+    },
+    {
+      "id": "millers-law",
+      "name": "Miller's Law",
+      "aliases": [
+        "miller's law",
+        "millers law",
+        "miller"
+      ],
+      "family": "chunk",
+      "url": "https://lawsofux.com/millers-law/",
+      "ask": "How many items does this ask the person to hold at once?"
+    },
+    {
+      "id": "occams-razor",
+      "name": "Occam's Razor",
+      "aliases": [
+        "occam's razor",
+        "occams razor",
+        "occam"
+      ],
+      "family": "simplicity",
+      "url": "https://lawsofux.com/occams-razor/",
+      "ask": "What could be removed with nothing lost?"
+    },
+    {
+      "id": "paradox-of-the-active-user",
+      "name": "Paradox of the Active User",
+      "aliases": [
+        "paradox of the active user"
+      ],
+      "family": "expectation",
+      "url": "https://lawsofux.com/paradox-of-the-active-user/",
+      "ask": "Does it work for someone who will never read the instructions?"
+    },
+    {
+      "id": "pareto-principle",
+      "name": "Pareto Principle",
+      "aliases": [
+        "pareto principle",
+        "pareto"
+      ],
+      "family": "simplicity",
+      "url": "https://lawsofux.com/pareto-principle/",
+      "ask": "Which few actions carry most of the use, and are they the easiest?"
+    },
+    {
+      "id": "parkinsons-law",
+      "name": "Parkinson's Law",
+      "aliases": [
+        "parkinson's law",
+        "parkinsons law",
+        "parkinson"
+      ],
+      "family": "pace",
+      "url": "https://lawsofux.com/parkinsons-law/",
+      "ask": "Does the flow give the task a natural end, or let it sprawl?"
+    },
+    {
+      "id": "peak-end-rule",
+      "name": "Peak-End Rule",
+      "aliases": [
+        "peak-end rule"
+      ],
+      "family": "order",
+      "url": "https://lawsofux.com/peak-end-rule/",
+      "ask": "What is the peak moment and the last moment, and are they good?"
+    },
+    {
+      "id": "postels-law",
+      "name": "Postel's Law",
+      "aliases": [
+        "postel's law",
+        "postels law",
+        "postel"
+      ],
+      "family": "expectation",
+      "url": "https://lawsofux.com/postels-law/",
+      "ask": "Does it accept what people plausibly give and send only what they expect?"
+    },
+    {
+      "id": "selective-attention",
+      "name": "Selective Attention",
+      "aliases": [
+        "selective attention"
+      ],
+      "family": "perception",
+      "url": "https://lawsofux.com/selective-attention/",
+      "ask": "What will the person not see because they are looking for something else?"
+    },
+    {
+      "id": "serial-position-effect",
+      "name": "Serial Position Effect",
+      "aliases": [
+        "serial position effect"
+      ],
+      "family": "order",
+      "url": "https://lawsofux.com/serial-position-effect/",
+      "ask": "Is the important item first or last, never buried in the middle?"
+    },
+    {
+      "id": "teslers-law",
+      "name": "Tesler's Law",
+      "aliases": [
+        "tesler's law",
+        "teslers law",
+        "tesler"
+      ],
+      "family": "one-place",
+      "url": "https://lawsofux.com/teslers-law/",
+      "ask": "Where does the complexity that cannot be removed live, and is it in one place?"
+    },
+    {
+      "id": "von-restorff-effect",
+      "name": "Von Restorff Effect",
+      "aliases": [
+        "von restorff effect",
+        "von restorff"
+      ],
+      "family": "distinct",
+      "url": "https://lawsofux.com/von-restorff-effect/",
+      "ask": "Does the one thing that must stand out actually differ from the rest?"
+    },
+    {
+      "id": "working-memory",
+      "name": "Working Memory",
+      "aliases": [
+        "working memory"
+      ],
+      "family": "chunk",
+      "url": "https://lawsofux.com/working-memory/",
+      "ask": "Does the person have to remember something from an earlier screen to finish this one?"
+    },
+    {
+      "id": "zeigarnik-effect",
+      "name": "Zeigarnik Effect",
+      "aliases": [
+        "zeigarnik effect",
+        "zeigarnik"
+      ],
+      "family": "closure",
+      "url": "https://lawsofux.com/zeigarnik-effect/",
+      "ask": "Is unfinished work visibly unfinished?"
+    }
+  ]
+}

@@ -14,6 +14,10 @@ You are Maude. Claude changed or destroyed a file and the user wants it back.
 
 ```bash
 bash "$CLAUDE_PLUGIN_ROOT/hooks/scripts/maude-undo.sh" list
+
+The listing is newest first and shows ten; `list --all` shows every entry. The index is
+the ledger line and never shifts. `restore last` puts back the newest recoverable entry
+without an index, the common case.
 ```
 
 Show the output as-is. Do not summarise it and do not quietly drop rows.

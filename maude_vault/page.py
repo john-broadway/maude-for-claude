@@ -66,7 +66,12 @@ def fts_query(text: str) -> str | None:
 
 
 def page(db_path: str | os.PathLike, query: str, k: int = 5,
-         now: float | None = None) -> list[dict]:
+         now: float | None = None,
+         mem_dir: str | os.PathLike | None = None) -> list[dict]:
+    """Hits for a query. With mem_dir, each hit is checked against the file on disk and
+    marked stale when the file is newer than its index row: the mirror is rebuilt at
+    SessionStart only, and served a body 849 s behind the file with no signal until then
+    (the memory lens, 2026-09-06). A missing file is stale too: it cannot be current."""
     if not pathlib.Path(db_path).exists():
         return []
     match = fts_query(query)
@@ -82,10 +87,20 @@ def page(db_path: str | os.PathLike, query: str, k: int = 5,
         return []
     ranked = sorted(rows, key=lambda r: _goodness(r[4], r[5], r[6], now),
                     reverse=True)
-    return [
-        {"path": r[0], "name": r[1], "description": r[2], "snippet": r[3]}
-        for r in ranked[:k]
-    ]
+    hits = []
+    for r in ranked[:k]:
+        hit = {"path": r[0], "name": r[1], "description": r[2], "snippet": r[3]}
+        if mem_dir is not None:
+            try:
+                on_disk = os.stat(os.path.join(os.fspath(mem_dir), r[0])).st_mtime
+                hit["stale"] = on_disk > (r[5] or 0.0) + 1e-6
+            except OSError:
+                # Gone since the build: stale, and said in its own word. A "changed"
+                # label sent the person to a file that was not there (MINOR-6).
+                hit["stale"] = True
+                hit["missing"] = True
+        hits.append(hit)
+    return hits
 
 
 _DESC_MAX = 200
@@ -110,7 +125,13 @@ def format_hits(hits: list[dict]) -> str:
     for h in hits:
         description = _clean(h["description"], _DESC_MAX)
         snippet = _clean(h["snippet"], _SNIPPET_MAX)
-        lines.append(f"- [[{h['name']}]] ({h['path']}) — {description}")
+        if h.get("missing"):
+            stale = " (deleted since the index was built)"
+        elif h.get("stale"):
+            stale = " (changed since the index was built)"
+        else:
+            stale = ""
+        lines.append(f"- [[{h['name']}]] ({h['path']}){stale} — {description}")
         if snippet:
             lines.append(f"    {snippet}")
     return "\n".join(lines)
