@@ -48,7 +48,25 @@ SCRIPTS_DIR="$MAUDE_ROOT/scripts"
 # tmpfs there and hit 100% twice, faking a scatter of unrelated failures. GNU mktemp
 # honours TMPDIR with no template; macOS mktemp does not (it uses the per-user Darwin temp
 # dir, so the leak sweep and the root refusal below never fired on the GitHub macOS runner,
-# 2026-09-13), so every mktemp in the suite names a template under "${TMPDIR:-/tmp}". The variable is readonly, so nothing a test later unsets
+# 2026-09-13), so every mktemp in THIS FILE, in tests/run.sh and in scripts/install-smoke.sh
+# names a template under "${TMPDIR:-/tmp}".
+#
+# ⚠ NOT yet true of the suite at large, and an earlier draft of this sentence claimed it was.
+# Counted 2026-09-14: 35 untemplated `$(mktemp)` / `$(mktemp -d)` calls across 12 test files
+# (test-verify.sh 18, test-session-start.sh 6, test-_maude-common.sh 2, and 9 more with one
+# each). Counted again 2026-09-14 because the first draft of THIS correction was itself wrong:
+# it said "only test-portability.sh's three are ever rm -rf'd", when 24 of the 35 do carry an
+# explicit rm -rf and test-portability contributes exactly ONE of them, which its own "9 more
+# with one each" already contradicted. The real residual is 11 never removed: TMP in
+# test-care.sh and test-probe-tier1.sh, WORK in test-eye-blink.sh and test-vault-hooks.sh, and
+# seven in test-verify.sh. By the macOS behaviour stated two lines up, all 35 land outside
+# TEST_TMPROOT (so the EXIT trap below does not sweep them) and outside SUITE_TMP (so run.sh's
+# leak refusal cannot see them), removed or not. Five are PATH-injection shim dirs: BSD_BIN,
+# NODATE (x2), STUB_DIR, NOFLOCK_SHIM. None of the 35 checks whether its mktemp SUCCEEDED, which
+# is the hazard _mk_shim_dir below closes for the three it owns; four of those five do rm -rf
+# their dir, so "unguarded" here means unguarded against mktemp FAILURE, not unswept. That sweep
+# is owed and is deliberately NOT claimed done here; a comment that overstates its own reach is
+# the defect this paragraph exists to record, twice now. The variable is readonly, so nothing a test later unsets
 # can take the path from the trap; a first version expanded the path into the trap string
 # instead, and one apostrophe in TMPDIR broke that string at exit. A file that sets its own
 # EXIT trap replaces this one and leaks the root, so no test file does; tests/run.sh refuses
@@ -58,7 +76,12 @@ SCRIPTS_DIR="$MAUDE_ROOT/scripts"
 # "${TMPDIR%/}": macOS exports TMPDIR with a trailing slash, and a root built as "$TMPDIR/x"
 # carries "//"; the gate canonicalises a command's repeated slashes before matching, so a
 # protected root configured from such a path matched nothing (22 sole-copy pins, PR #69).
-_tmp_base="${TMPDIR:-/tmp}"; _tmp_base="${_tmp_base%/}"; [ -n "$_tmp_base" ] || _tmp_base=/
+# One resolver for every temp base in this file, so setup_test_env and _mk_shim_dir below
+# cannot drift from it again (they did: both read a bare ${TMPDIR%/} while the comment above
+# claimed every mktemp named a template under "${TMPDIR:-/tmp}"). Referenced by NAME, not by
+# line number: the first draft of this note cited "line 72", which its own insertion moved.
+_tmp_base_of() { local b="${1:-}"; b="${b:-/tmp}"; b="${b%/}"; [ -n "$b" ] || b=/; printf '%s' "$b"; }
+_tmp_base="$(_tmp_base_of "${TMPDIR:-}")"
 TEST_TMPROOT="$(mktemp -d "${_tmp_base}/maude-tests.XXXXXX")" || { printf 'tests/lib.sh: mktemp -d failed under TMPDIR=%s; a file without an isolated root does not run\n' "${TMPDIR:-<unset>}" >&2; exit 2; }
 readonly TEST_TMPROOT
 export TMPDIR="$TEST_TMPROOT"
@@ -69,7 +92,10 @@ FAILED=0
 TEST_NAME=""
 
 setup_test_env() {
-  TEST_TMP="$(mktemp -d "${TMPDIR%/}/maude-test.XXXXXX")"
+  TEST_TMP="$(mktemp -d "$(_tmp_base_of "${TMPDIR:-}")/maude-test.XXXXXX")" || {
+    printf 'tests/lib.sh: mktemp -d failed under TMPDIR=%s; a test without its own dir does not run\n' "${TMPDIR:-<unset>}" >&2
+    exit 2
+  }
   # Hermetic: drop any ambient MAUDE_* runtime toggle inherited from the dev
   # shell (e.g. MAUDE_RUN_GOVERNOR=off, MAUDE_RETENTION_DAYS=1) so it can't leak
   # in and flip a default-behavior test. Tests that exercise a toggle set it
@@ -307,10 +333,47 @@ PY
 # Build a PATH directory containing every common binary EXCEPT jq, so a test can
 # exercise the jq-absent degradation path that the plugin promises to handle.
 # Prints the dir. Usage: NOJQ="$(make_nojq_bin)"; PATH="$NOJQ" bash "$SCRIPT"
+
+# HARDENING, not the cause of the 2026-09-13 macOS red. An earlier draft of this comment said
+# an empty PATH "falls back to a default PATH and runs the real binary", so the control would
+# go quietly GREEN. That is false, and measured: bash falls back to a compiled default only
+# when PATH is UNSET; PATH set-but-EMPTY searches the current directory and an absent binary is
+# a hard 127. Planting this failure gives `expected exit=2 got=127`, never the `got=0` the
+# macOS red actually showed. That red was a race in the eye-probe poll (see
+# tests/test-suite-runner.sh); this guard is a separate silent-control hazard found beside it.
+#
+# What an unchecked mktemp really costs: `d` is empty, so the builder loop below runs
+# `ln -s "$src" "/bash"`, `"/pgrep"` … writing symlinks into / as root on this sole-copy box,
+# and the caller's 127 then reads like a missing interpreter rather than a missing fixture.
+# TEST_TMPROOT above already refused loudly on this exact failure; these three did not. Resolve
+# the base through _tmp_base_of rather than a bare ${TMPDIR%/}, and refuse with the reason.
+# Every caller takes this through a command substitution (`X="$(make_no_binary_bin sleep)"`),
+# so an `exit` here kills only the subshell and the caller carries on with an empty string.
+# The first draft of this guard did exactly that: it printed a refusal AND still handed back
+# "" with status 0, which is the very defect it was written to close. So on failure it prints
+# the reason and returns a POISON path, which beats "" for two reasons: the failure names a
+# fixture instead of looking like a missing interpreter, and nothing is written into /.
+# KNOWN LIMIT: this is loud for `PATH="$D" cmd` (the replace form). Callers that PREPEND
+# (`PATH="$D:$PATH"`) still find the real binary, so for those the poison is not a backstop and
+# the stderr line above is the only signal. Nine prepend-form call sites take a dir from _mk_shim_dir (six in test-_maude-common.sh,
+# three in test-gate.sh). The suite has 19 prepend sites in all; the other 10 use bare-mktemp
+# dirs, for which the poison is equally not a backstop.
+_MK_SHIM_POISON='/nonexistent/maude-shim-dir-FAILED'
+_mk_shim_dir() {
+  local base d
+  base="$(_tmp_base_of "${TMPDIR:-}")"
+  if ! d="$(mktemp -d "${base}/maude-bin.XXXXXX" 2>/dev/null)" || [ -z "$d" ] || [ ! -d "$d" ]; then
+    printf 'tests/lib.sh: mktemp -d failed under TMPDIR=%s (got "%s"); a shim bin that is not created silently disables the control that uses it, so returning %s\n' \
+      "${TMPDIR:-<unset>}" "$d" "$_MK_SHIM_POISON" >&2
+    printf '%s' "$_MK_SHIM_POISON"
+    return 2
+  fi
+  printf '%s' "$d"
+}
 # (jq is deliberately omitted so `command -v jq` fails under this PATH.)
 make_nojq_bin() {
   local d b src
-  d="$(mktemp -d "${TMPDIR%/}/maude-bin.XXXXXX")"
+  d="$(_mk_shim_dir)"
   for b in bash sh env cat date grep sed awk tr head tail wc find \
            mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
            sort uniq readlink stat sleep chmod printf; do
@@ -325,7 +388,7 @@ make_nojq_bin() {
 # Usage: D="$(make_no_binary_bin flock)"; PATH="$D" bash "$SCRIPT"
 make_no_binary_bin() {
   local d b src
-  d="$(mktemp -d "${TMPDIR%/}/maude-bin.XXXXXX")"
+  d="$(_mk_shim_dir)"
   for b in bash sh env cat date grep sed awk tr head tail wc find xargs \
            mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
            sort uniq readlink stat sleep chmod printf jq python3 nohup \
@@ -340,7 +403,7 @@ make_no_binary_bin() {
 # where the infra-gate cannot identify the tool name at all. Prints the dir.
 make_nojq_nogrep_bin() {
   local d b src
-  d="$(mktemp -d "${TMPDIR%/}/maude-bin.XXXXXX")"
+  d="$(_mk_shim_dir)"
   for b in bash sh env cat date sed awk tr head tail wc find \
            mktemp mv rm cp mkdir rmdir dirname basename cut ls touch \
            sort uniq readlink stat sleep chmod printf; do

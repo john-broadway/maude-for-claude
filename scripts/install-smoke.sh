@@ -48,12 +48,17 @@ fi
 if [ -f "$STAGE/tests/run.sh" ]; then
   if (cd "$STAGE" && MAUDE_INSTALL_SMOKE=1 bash tests/run.sh > "$STAGE/.fleet.log" 2>&1); then
     echo "  fleet    : PASS (from the archive)"
+    # NOTE lines from the NESTED fleet, on the GREEN path too. This layer is the only one that
+    # has ever gone red (2026-09-13, macOS), and until now everything it measured died with
+    # $STAGE: the log is rm -rf'd on EXIT and the red-branch grep below never included NOTE. A
+    # measurement that exists only inside the layer nobody can read is not a measurement.
+    grep -E '^[[:space:]]*NOTE ' "$STAGE/.fleet.log" 2>/dev/null | sed 's/^ */             (nested) /'
   else
     echo "  fleet    : FAIL — the shipped tree does not pass its own tests"; RC=1
     # FAIL lines when the fleet ran and reported; the tail when it died before reporting
     # (a missing file, a shell that would not start): either way the red is readable.
     if grep -qE '^FAIL  |^    FAIL  ' "$STAGE/.fleet.log" 2>/dev/null; then
-      grep -E '^FAIL  |^    FAIL  |test files passed' "$STAGE/.fleet.log" 2>/dev/null | head -40 | sed 's/^/             /'
+      grep -E '^FAIL  |^    FAIL  |test files passed|^[[:space:]]*NOTE ' "$STAGE/.fleet.log" 2>/dev/null | head -40 | sed 's/^/             /'
     else
       echo "             (no FAIL line: the archive's fleet did not report; last lines follow)"
       tail -30 "$STAGE/.fleet.log" 2>/dev/null | sed 's/^/             /'
