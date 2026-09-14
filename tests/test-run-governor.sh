@@ -6,11 +6,11 @@ setup_test_env
 GOV="$HOOKS_DIR/maude-run-governor.sh"
 
 test_start "tick from empty state sets actions_since_human=1"
-bash "$GOV" tick
+printf '{}' | bash "$GOV" tick
 assert_eq "$(read_care '.run_state.actions_since_human')" "1" "first tick"
 
 test_start "tick increments again"
-bash "$GOV" tick
+printf '{}' | bash "$GOV" tick
 assert_eq "$(read_care '.run_state.actions_since_human')" "2" "second tick"
 
 test_start "tick initializes last_human_ts (non-null, numeric)"
@@ -19,7 +19,7 @@ ts="$(read_care '.run_state.last_human_ts')"
 assert_exit "$?" "0" "last_human_ts set"
 
 test_start "reset zeroes actions_since_human"
-bash "$GOV" tick; bash "$GOV" tick
+printf '{}' | bash "$GOV" tick; printf '{}' | bash "$GOV" tick
 bash "$GOV" reset
 assert_eq "$(read_care '.run_state.actions_since_human')" "0" "reset to 0"
 
@@ -30,12 +30,12 @@ assert_eq "$(read_care '.run_state.soft_warned')" "false" "soft_warned cleared"
 
 test_start "tick preserves other care.json keys"
 printf '{"gate_cleared":{"x":{"until":9}},"run_state":{"actions_since_human":3}}\n' > "$(care_path)"
-bash "$GOV" tick
+printf '{}' | bash "$GOV" tick
 assert_eq "$(read_care '.gate_cleared.x.until')" "9" "foreign key kept"
 
 test_start "tick is inert (exit 0) without jq"
 NOJQ="$(make_nojq_bin)"
-PATH="$NOJQ" bash "$GOV" tick >/dev/null 2>&1
+printf '{}' | PATH="$NOJQ" bash "$GOV" tick >/dev/null 2>&1
 assert_exit "$?" "0" "no-jq tick exit 0"
 
 # ── gate mode ─────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ assert_exit "$?" "0" "0 → disabled"
 
 test_start "MAUDE_RUN_GOVERNOR=off makes tick inert too (no state change)"
 printf '{}\n' > "$(care_path)"
-MAUDE_RUN_GOVERNOR=off bash "$GOV" tick
+printf '{}' | MAUDE_RUN_GOVERNOR=off bash "$GOV" tick
 assert_eq "$(read_care '.run_state.actions_since_human // "none"')" "none" "off → tick no-op"
 
 test_start "governor still ON by default (unset env) hard-pauses at ceiling"
@@ -131,6 +131,62 @@ assert_contains "$ERR" "since the last human turn" "soft whisper's clock"
 seed_rs 80 "$(date +%s)"; run_gate '{}'
 assert_contains "$ERR" "since the last human turn" "hard whisper's clock"
 assert_not_contains "$ERR" "John" "no one person named in a published whisper"
+
+# ── Per-agent counters ─────────────────────────────────────────────────────
+# Inside a subagent the harness stamps `agent_id` (and `agent_type`) on every tool hook's
+# stdin; the main thread carries neither, and only the main thread ever receives a
+# UserPromptSubmit. Before this, every agent under a project dir ticked ONE counter that
+# only a human prompt could reset, so an overnight fleet pooled its calls to the ceiling
+# and every worker was blocked together (the 2026-09-07 strand, reported 2026-09-14).
+sub_input() { printf '{"agent_id":"%s","agent_type":"general-purpose","tool_name":"Bash","tool_input":{"command":"ls"}}' "$1"; }
+sub_tick() { sub_input "$1" | bash "$GOV" tick; }
+sub_gate() { ERR="$(sub_input "$1" | bash "$GOV" gate 2>&1 >/dev/null)"; RC=$?; }
+
+test_start "a subagent's tick counts under its own agent_id, not the main counter"
+printf '{}\n' > "$(care_path)"
+sub_tick a1; sub_tick a1; sub_tick a1
+assert_eq "$(read_care '.run_agents["a1"].actions_since_human')" "3" "agent a1 counted"
+assert_eq "$(read_care '.run_state.actions_since_human // "untouched"')" "untouched" "main counter untouched"
+
+test_start "a subagent's first tick stamps its own clock"
+[ "$(read_care '.run_agents["a1"].last_human_ts')" -gt 0 ] 2>/dev/null
+assert_exit "$?" "0" "agent clock set"
+
+test_start "the fleet shape: ten agents at eight calls each all pass the gate"
+printf '{}\n' > "$(care_path)"
+for a in f1 f2 f3 f4 f5 f6 f7 f8 f9 f10; do for _i in 1 2 3 4 5 6 7 8; do sub_tick "$a"; done; done
+worst=0; for a in f1 f2 f3 f4 f5 f6 f7 f8 f9 f10; do sub_gate "$a"; [ "$RC" -gt "$worst" ] && worst=$RC; done
+assert_eq "$worst" "0" "no agent blocked at 80 pooled / 8 each"
+
+test_start "a subagent at its own ceiling is paused on its own count"
+NOW=$(date +%s)
+printf '{"run_agents":{"big":{"actions_since_human":80,"last_human_ts":%s,"soft_warned":false}}}\n' "$NOW" > "$(care_path)"
+sub_gate big
+assert_exit "$RC" "2" "own ceiling pauses"
+assert_contains "$ERR" "agent big" "names the agent"
+
+test_start "a subagent's pause tells it what it CAN do (it has no human to turn to)"
+assert_contains "$ERR" "finish and report" "subagent-actionable message"
+assert_not_contains "$ERR" "Take a turn with your human" "not the main-thread instruction"
+
+test_start "the main thread at its ceiling does not pause a fresh subagent"
+seed_rs 80 "$(date +%s)"
+sub_gate fresh
+assert_exit "$RC" "0" "main's count is not the agent's"
+
+test_start "a subagent at its ceiling does not pause the main thread"
+printf '{"run_state":{"actions_since_human":1,"last_human_ts":%s,"soft_warned":false},"run_agents":{"big":{"actions_since_human":80,"last_human_ts":%s,"soft_warned":false}}}\n' "$NOW" "$NOW" > "$(care_path)"
+run_gate '{}'
+assert_exit "$RC" "0" "agent's count is not main's"
+
+test_start "a human turn (reset) clears every agent counter"
+bash "$GOV" reset
+assert_eq "$(read_care '.run_agents // "gone" | if type=="object" then (keys|length) else . end')" "0" "run_agents emptied"
+
+test_start "a live stand-down token covers subagents too"
+printf '{"run_agents":{"big":{"actions_since_human":80,"last_human_ts":%s,"soft_warned":false}},"gate_cleared":{"run-governor":{"until":%s}}}\n' "$NOW" "$((NOW+600))" > "$(care_path)"
+sub_gate big
+assert_exit "$RC" "0" "token stands the agent down"
 
 print_summary
 teardown_test_env

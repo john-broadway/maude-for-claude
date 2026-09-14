@@ -1,6 +1,6 @@
-<!-- Version: 0.31.0 -->
+<!-- Version: 0.32.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-09-07 -->
+<!-- Revised: 2026-09-14 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,37 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.32.0 - the fleet was one counter, and the whisper died by the clock
+
+Two adopter-cost findings from a second site, verified against this workspace's own stores
+on 2026-09-14 and fixed the same day (John: "fix the governor counter per agent and the
+eye ttl").
+
+- **Run-governor: one counter per agent, not one per project.** `care.json .run_state` was
+  the only counter, ticked by every session and every subagent under the directory and
+  reset only by a human prompt, which no subagent ever receives. An overnight fleet pooled
+  its calls into one ceiling and every worker was blocked together, including the ones
+  that had finished and could not write their reports. The harness stamps `agent_id` on
+  every tool hook fired inside a subagent (probed live, Claude Code 2.1.270; the main
+  thread carries none), so a subagent now ticks and gates on `.run_agents[<agent_id>]`
+  with its own count and its own clock from dispatch. A human turn resets the main counter
+  and drops every agent slot. The pause a subagent sees tells it the one move it has:
+  finish and report to the agent that dispatched it, and its slot is dropped when it stops.
+  The stand-down token and the off-switch cover subagents as before. One behavior change
+  to know: the main thread's count no longer includes its workers' calls, so for a fleet
+  the ninety-minute clock is the operative ceiling on the thread that dispatched it. Nine
+  new governor tests, the first with a fleet shape, and two on subagent-stop.
+- **Eye: a whisper's age is measured in tool calls, not seconds.** Pickup happens only at
+  the next human prompt; a 300-second TTL below the human's turn cadence dropped every
+  whisper while nothing had moved (0 of 10 delivered over three days here, 6 of 6 at the
+  second site). `eye-state` now carries a monotonic tick total on line 3, a blink records
+  the tick its whisper is born at (`eye-whisper.born`), and a whisper older than
+  `MAUDE_EYE_WHISPER_TTL_ACTIONS` tool calls (default 40) is dropped with a receipt that
+  names the measure. `MAUDE_EYE_WHISPER_TTL` (seconds) stays as an opt-in wall-clock
+  ceiling, default off. A whisper with no birth record is fresh, as before. The tick's
+  read-modify-write of `eye-state` now runs under a lock: unlocked, 60 parallel ticks
+  landed 4, which would have left a whisper "fresh" through most of a fleet's work.
 
 ## v0.31.0 - the law arrives at the moment the work touches its class
 

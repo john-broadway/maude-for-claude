@@ -24,13 +24,23 @@ fi
 
 maude_log_trace "subagent-stop" "agent=${NAME:-unknown}${AID:+ id=${AID:0:8}}"
 
+# The agent's run-governor slot (care.json .run_agents[<id>]) dies with it, so a fleet that
+# never sees a human turn does not grow the file one slot per agent forever. Residual,
+# accepted: a tick for this agent that completed AFTER this stop would recreate the slot
+# (the lens reproduced it by hand); the harness awaits each PostToolUse hook before the
+# agent takes its next step, so the order does not arise there, and the next human turn
+# drops every slot regardless.
+CARE="$(maude_self_dir)/care.json"
+if [ -n "$AID" ] && [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
+  maude_care_set "$CARE" --arg aid "$AID" 'if .run_agents then del(.run_agents[$aid]) else . end'
+fi
+
 # A background lens leaves a PENDING stamp at launch (redteam-watch); this stop is the
 # moment it becomes a real one. Only when this id is in care.json at all: every stop
 # carries an id and almost none is a lens (the 24th lens, IMPORTANT-3: 131 shell-outs in
 # ninety minutes, each a bash, the lib, and a jq over 33 KB, to promote nothing).
 # The exact question, not a substring: a text match also fired on an id that appears only
 # as a git ref in someone's stamp (the 25th lens, MINOR-9).
-CARE="$(maude_self_dir)/care.json"
 if [ -n "$AID" ] && [ -f "$CARE" ] \
    && jq -e --arg a "$AID" '(.redteam_pending // {}) | has($a)' "$CARE" >/dev/null 2>&1; then
   printf '%s' "$INPUT" | bash "$DIR/maude-redteam-watch.sh" promote 2>/dev/null

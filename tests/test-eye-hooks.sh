@@ -179,11 +179,11 @@ test_start "second pickup is silent"
 OUT2="$(bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
 assert_eq "$OUT2" "" "second pickup is silent"
 
-# 6) staleness: a whisper past its TTL never wears a fresh voice (issue #35)
+# 6) wall-clock staleness is OPT-IN (MAUDE_EYE_WHISPER_TTL, default off): set, a whisper past it never wears a fresh voice (issue #35)
 test_start "stale whisper is dropped, not printed"
 printf 'watch the thing that already resolved\n' > "$SELF/eye-whisper.txt"
 touch_ago $(( 10*60 )) "$SELF/eye-whisper.txt"
-OUT3="$(bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
+OUT3="$(MAUDE_EYE_WHISPER_TTL=300 bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
 assert_eq "$OUT3" "" "stale whisper is dropped"
 
 test_start "stale drop clears the file (no zombie on next pickup)"
@@ -197,6 +197,59 @@ printf 'still warm under a long TTL\n' > "$SELF/eye-whisper.txt"
 touch_ago $(( 10*60 )) "$SELF/eye-whisper.txt"
 OUT4="$(MAUDE_EYE_WHISPER_TTL=1200 bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
 assert_contains "$OUT4" "still warm under a long TTL" "long TTL keeps it fresh"
+
+# 7) freshness is measured in tool calls since the whisper was born, not in seconds.
+# Pickup happens only at the next human prompt; a wall-clock TTL shorter than the
+# human's turn cadence dropped every whisper (0 of 10 delivered over three days,
+# 2026-09-14) while the work had not moved at all.
+test_start "tick keeps a monotonic total on line 3 of eye-state"
+rm -f "$STATE"
+for _i in 1 2 3 4; do printf '%s' "$EVENT" | bash "$ROOT/hooks/scripts/maude-eye.sh" tick >/dev/null 2>&1; done
+assert_eq "$(sed -n 3p "$STATE")" "4" "total counts every tick"
+
+test_start "blink spawn resets the burst count but not the total"
+printf '25\n0\n30\n' > "$STATE"
+printf '%s' "$EVENT" | bash "$ROOT/hooks/scripts/maude-eye.sh" tick >/dev/null 2>&1
+assert_eq "$(sed -n 1p "$STATE")" "0" "burst reset"
+assert_eq "$(sed -n 3p "$STATE")" "31" "total kept"
+
+test_start "blink spawn records the birth tick of the whisper it may produce"
+assert_eq "$(cat "$SELF/eye-whisper.born" 2>/dev/null)" "31" "birth tick recorded at spawn"
+
+test_start "a 10-minute-old whisper with no work since is FRESH (wall clock is not the measure)"
+printf 'nothing moved, still true\n' > "$SELF/eye-whisper.txt"
+touch_ago $(( 10*60 )) "$SELF/eye-whisper.txt"
+printf '31' > "$SELF/eye-whisper.born"; printf '3\n0\n34\n' > "$STATE"
+OUT5="$(bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
+assert_contains "$OUT5" "**Maude:** nothing moved, still true" "fresh by tool calls"
+
+test_start "a whisper more than MAUDE_EYE_WHISPER_TTL_ACTIONS tool calls old is dropped"
+printf 'the work moved on\n' > "$SELF/eye-whisper.txt"
+printf '31' > "$SELF/eye-whisper.born"; printf '10\n0\n72\n' > "$STATE"
+OUT6="$(bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
+assert_eq "$OUT6" "" "41 calls > default 40 → dropped"
+assert_contains "$(cat "$SELF/trace/"today-*.jsonl 2>/dev/null)" "aged 41 tool calls" "receipt names the measure"
+
+test_start "MAUDE_EYE_WHISPER_TTL_ACTIONS is configurable"
+printf 'the work moved on\n' > "$SELF/eye-whisper.txt"
+printf '31' > "$SELF/eye-whisper.born"; printf '10\n0\n72\n' > "$STATE"
+OUT7="$(MAUDE_EYE_WHISPER_TTL_ACTIONS=100 bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
+assert_contains "$OUT7" "the work moved on" "wider budget keeps it"
+
+test_start "60 parallel ticks all land in the total (the state file is read-modify-write under a lock)"
+# The lens (2026-09-14) ran 60 concurrent ticks against the unlocked file and read 5.
+rm -f "$STATE"; rmdir "$LOCK" 2>/dev/null
+printf '0\n%s\n0\n' "$(date +%s)" > "$STATE"   # blinked just now: the interval keeps every racer from spawning
+for _i in $(seq 1 60); do (printf '%s' "$EVENT" | bash "$ROOT/hooks/scripts/maude-eye.sh" tick >/dev/null 2>&1) & done
+wait
+assert_eq "$(sed -n 3p "$STATE")" "60" "no tick lost"
+assert_eq "$(sed -n 1p "$STATE")" "60" "burst count kept too"
+
+test_start "a whisper with no birth record is treated as fresh (fail-open, as before)"
+printf 'born before the counter existed\n' > "$SELF/eye-whisper.txt"
+rm -f "$SELF/eye-whisper.born"; printf '10\n0\n500\n' > "$STATE"
+OUT8="$(bash "$ROOT/hooks/scripts/maude-eye.sh" whisper 2>/dev/null)"
+assert_contains "$OUT8" "born before the counter existed" "no birth → fresh"
 
 # Every blink this file spawns is nohup'd and disowned (hooks/scripts/maude-eye.sh:51). One
 # still starting when this file exits rebuilds the swept closet with its first mkdir -p
