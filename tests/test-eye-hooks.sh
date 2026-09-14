@@ -45,14 +45,43 @@ printf '{"type":"user","message":{"role":"user","content":"hi"}}\n' > "$TRANSCRI
 sleep "7.${T_TOKEN}0" & _DECOY=$!
 sleep "7.$T_TOKEN" & _PROBE=$!
 _SEEN=""; _DECOY_SEEN=""; _ASKED=""
+# The cap below is an ITERATION count, not a time cap: the wall clock is 20 x (0.1s + up to two
+# pgrep calls + a bash spawn, because under a shim dir `sleep` is a script). Measured on Debian
+# at 2.42s mean over 10 runs, NOT the ~2.1s an earlier draft of this comment computed; on the
+# GitHub macOS runner inside install-smoke's nested fleet it is enough longer that a control
+# slowing the probe by 4s was outrun and the red said only "expected exit=2 got=0" (2026-09-13).
+#
+# The margin is reported on BOTH paths, which the first version of this instrument got wrong:
+# it printed only inside the refusal below, and on the observed red `_SEEN` equals `_PROBE`, so
+# that block is skipped and the line was never produced at all. On a green run it was produced
+# and discarded. An instrument that cannot observe either state it was built for is not an
+# instrument. The success path therefore prints a NOTE, which tests/run.sh passes through on a
+# PASS, so a green macOS run finally reports this platform's real poll duration.
+#
+# $SECONDS is integer, so the number is a FLOOR (measured over 30 local runs it read 2s
+# sixteen times and 3s fourteen, purely from where the process starts against a second
+# boundary; an earlier draft said 8 of 10, which the 2.42s mean three lines up already refuted). The pass count is the exact
+# half of the reading: 20 of 20 means the poll exhausted.
+_POLL_START=$SECONDS; _PASSES=0
 for _w in {1..20}; do
+  _PASSES=$_w
   if _DECOY_SEEN="$(pgrep -f "^sleep 7\.${T_TOKEN}0$" 2>&1)"; then
     _ASKED=1; _SEEN="$(pgrep -f "^sleep 7\.${T_TOKEN}$" 2>&1)"
     printf '%s\n' "$_SEEN" | grep -qx "$_PROBE" && break
   fi
   sleep 0.1
 done
+_POLL_ELAPSED=$((SECONDS - _POLL_START))
+# ONE canonical reading, emitted byte-identically on both paths. Two wordings is what made the
+# previous surfacing blind: the reader grepped the refusal's phrasing, and on the OBSERVED red
+# the probe IS seen, so the success phrasing landed instead, the grep matched nothing, and an
+# unconditional printf emitted an empty NOTE that still satisfied run.sh's `NOTE ` filter. A
+# reading that can be absent while still looking produced is worse than no reading.
+_POLL_READING="eye-poll ${_POLL_ELAPSED}s(floor) ${_PASSES}/20 passes"
 kill "$_DECOY" "$_PROBE" 2>/dev/null; wait "$_DECOY" "$_PROBE" 2>/dev/null
+if [ "$_SEEN" = "$_PROBE" ]; then
+  printf '  NOTE  %s\n' "$_POLL_READING"
+fi
 if [ "$_SEEN" != "$_PROBE" ]; then
   # Say what was seen, then every cause that reading leaves open, never one diagnosis: the
   # twenty-second pass read the one-cause wording clear the instrument for a pgrep that failed
@@ -69,7 +98,7 @@ if [ "$_SEEN" != "$_PROBE" ]; then
       *)        _WHY="pgrep returned pids other than exactly the probe's: a match past the anchor, or a different process" ;;
     esac
   fi
-  printf 'tests/test-eye-hooks.sh: pgrep -f "^sleep 7\\.%s$" returned "%s" (the decoy check returned "%s") for probe pid %s; %s; so this file does not run\n' "$T_TOKEN" "$_SEEN" "$_DECOY_SEEN" "$_PROBE" "$_WHY" >&2
+  printf 'tests/test-eye-hooks.sh: pgrep -f "^sleep 7\\.%s$" returned "%s" (the decoy check returned "%s") for probe pid %s [%s]; %s; so this file does not run\n' "$T_TOKEN" "$_SEEN" "$_DECOY_SEEN" "$_PROBE" "$_POLL_READING" "$_WHY" >&2
   exit 2
 fi
 

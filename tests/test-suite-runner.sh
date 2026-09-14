@@ -171,8 +171,15 @@ if [ -n "$REAL_PGREP" ]; then
   # the shim, a leak `pgrep -f 'sleep 7\.'` cannot see and a $( ) capture hides by waiting
   # for it. Callers exclude `sleep` from DIR at construction; this writes that one name.
   REAL_SLEEP="$(command -v sleep)"
+  # The delay branch touches DIR/.delay-fired before it sleeps, so a caller can assert the
+  # delay BRANCH was entered (entry, not completion). Without it the control encodes only "the probe was not
+  # seen", which a probe that dies instantly satisfies just as well: a lens defeated all three
+  # of its assertions with a shim that exits 1 on the probe's pattern and never delays at all,
+  # including the orphan check, which passes trivially when no delay ever started. This file
+  # has been bitten by the same class once before (a pgrep at a path with a space broke the
+  # shim's exec and the control stayed green).
   make_sleep_shim() {
-    printf '#!/usr/bin/env bash\ncase "$1" in %s) trap '"'"'kill "$_c" 2>/dev/null; exit 143'"'"' TERM; %q %s & _c=$!; wait "$_c" ;; esac\nexec -a sleep %q "$@"\n' "$2" "$REAL_SLEEP" "$3" "$REAL_SLEEP" > "$1/sleep"; chmod +x "$1/sleep"
+    printf '#!/usr/bin/env bash\ncase "$1" in %s) : > %q/.delay-fired; trap '"'"'kill "$_c" 2>/dev/null; exit 143'"'"' TERM; %q %s & _c=$!; wait "$_c" ;; esac\nexec -a sleep %q "$@"\n' "$2" "$1" "$REAL_SLEEP" "$3" "$REAL_SLEEP" > "$1/sleep"; chmod +x "$1/sleep"
   }
   test_start "and when the decoy is slow to appear"
   SLOWDECOY="$(make_no_binary_bin pgrep sleep)"; make_sleep_shim "$SLOWDECOY" '7.*0' 0.5
@@ -197,12 +204,22 @@ if [ -n "$REAL_PGREP" ]; then
   assert_exit "$RC" "2" "still a refusal"
   assert_eq "$(printf '%s' "$OUT" | tr '\n' ' ' | grep -cE '\$" returned "[0-9]+ [0-9]+" \(the decoy')" "0" "no two pids: this refusal is not the anchor case"
 
-  # A probe that has not exec'd by the poll's 2s cap is a refusal too, and the refusal must
+  # A probe that has not exec'd by the poll's cap is a refusal too, and the refusal must
   # say what it saw (the decoy and not the probe), not blame the instrument: under a real
   # pgrep the twenty-first pass read "cannot see its own failure" for a probe slowed 2.5s.
   # Slow only the probe, well past the cap, with a delay this run can name.
+  #
+  # THE DELAY IS 20s, NOT 4s (2026-09-13). test-eye-hooks.sh polls `for _w in {1..20}` with a
+  # 0.1s sleep, so its cap is an ITERATION count, not the "2s" the prose used to claim: the
+  # real wall clock is 20 x (0.1s + up to two pgrep calls). On Debian pgrep costs ~5ms and the
+  # loop lands near 2.1s, so a 4s delay cleared it. On the GitHub macOS runner, inside
+  # install-smoke's NESTED fleet, pgrep is far slower and the loop outran the 4s delay: the
+  # probe became visible inside the poll, no refusal was raised, and this assertion read
+  # `expected exit=2 got=0`. The same file passed 59/0 in the OUTER run on that same machine,
+  # and the PR was green eleven minutes before main went red on identical content, which is
+  # the signature of a race rather than a logic break. 20s exceeds any plausible poll.
   test_start "and when the probe is slow to appear, the refusal says so and the delay dies with the shim"
-  SLOWPROBE="$(make_no_binary_bin sleep)"; make_sleep_shim "$SLOWPROBE" '7.*1' "4.$$"
+  SLOWPROBE="$(make_no_binary_bin sleep)"; make_sleep_shim "$SLOWPROBE" '7.*1' "20.$$"
   # Not a $( ) capture: the shim's real sleep inherits the pipe, so a capture waits for an
   # orphan to die on its own clock and the check below could never see one (the twenty-second
   # pass caught the orphan only by running the file directly).
@@ -210,7 +227,19 @@ if [ -n "$REAL_PGREP" ]; then
   OUT="$(cat "$TEST_TMP/slowprobe.out")"
   assert_exit "$RC" "2" "a probe the poll never saw is a refusal"
   assert_contains "$OUT" "the decoy was seen and the probe was not" "and the refusal says which sleep was not seen, not that pgrep is blind"
-  assert_eq "$(pgrep -f "sleep 4\.$$\$" | wc -l | tr -d ' ')" "0" "the delay's own sleep died with the shim, not on its own clock"
+  assert_eq "$(pgrep -f "sleep 20\.$$\$" | wc -l | tr -d ' ')" "0" "the delay's own sleep died with the shim, not on its own clock"
+  assert_eq "$([ -f "$SLOWPROBE/.delay-fired" ] && echo yes || echo no)" "yes" "the delay BRANCH was entered: without this the assertions above pass for a probe that merely died. It proves entry, not that a delay completed — a shim that fires the marker and exits still passes"
+  # THE number for the open question. This is the only place the poll runs to EXHAUSTION, so it
+  # is the only place that measures the window the 20s delay has to beat. It was captured here
+  # and deleted with TEST_TMP; run.sh passes NOTE lines through on a PASS, so surfacing it puts
+  # this platform's real worst-case poll in the CI log of every GREEN run. Without it "20s
+  # exceeds any plausible poll" stays reasoned rather than measured on the platform that failed.
+  _READING="$(printf '%s' "$OUT" | grep -oE 'eye-poll [0-9]+s\(floor\) [0-9]+/20 passes' | head -1)"
+  # An ABSENT reading is said out loud, never printed as an empty value. The first version of
+  # this line greped only the refusal's wording and emitted "…exhausted poll: " with nothing
+  # after the colon on the one state it was built for, which run.sh's `NOTE ` filter happily
+  # passed through as if a number had been produced.
+  printf '  NOTE  slow-probe control: %s\n' "${_READING:-NO READING FOUND in the control output (the wordings drifted apart again)}"
 
   # The refusal's sentence is an observation and the causes it leaves open, never a single
   # diagnosis: the twenty-second pass read the one-cause wording clear the instrument for a
