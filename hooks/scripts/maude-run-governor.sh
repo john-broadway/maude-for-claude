@@ -9,7 +9,15 @@
 #   tick  (PostToolUse, all tools) — increment actions_since_human; init last_human_ts if unset.
 #   gate  (PreToolUse, all tools) — soft-surface once past threshold; hard-pause past ceiling.
 #
-# State: care.json `.run_state` = {actions_since_human, last_human_ts, soft_warned}.
+# State: care.json `.run_state` = {actions_since_human, last_human_ts, soft_warned} for the
+# main thread; `.run_agents[<agent_id>]` = the same shape, one per subagent. Inside a
+# subagent the harness stamps `agent_id` on every tool hook's stdin (the main thread
+# carries none, and only the main thread ever gets a UserPromptSubmit), so each agent is
+# governed on ITS OWN count and clock: a fleet no longer pools its calls into one ceiling
+# and blocks every worker together. A human turn resets the main counter and drops every
+# agent slot (they belonged to the turn that just ended; a background agent still running
+# across that turn is forgiven with them, as every agent was before), and a subagent's
+# stop drops its own slot (maude-subagent-stop.sh), so the map never outgrows the fleet.
 # Thresholds (env-overridable): MAUDE_RUN_SOFT_ACTIONS/MINS, MAUDE_RUN_HARD_ACTIONS/MINS.
 # ADVISORY layer (a checkpoint, NOT irreversible-action protection) → fail-OPEN
 # without jq. Always exits 0 except a gate-mode hard-pause (exit 2).
@@ -50,17 +58,24 @@ maude_ensure_self_dir
 CARE="$(maude_self_dir)/care.json"
 maude_care_ensure "$CARE"
 
+# Read the envelope once, only for the modes that carry one (tick and gate): reset has
+# nothing to read, and a hand-run from a tty must not sit on cat.
+INPUT=""
+case "$MODE" in tick|gate) [ -t 0 ] || INPUT="$(cat 2>/dev/null)" ;; esac
+AID="$(printf '%s' "$INPUT" | jq -r '.agent_id // ""' 2>/dev/null)"
+# The jq path of the counter this call governs.
+if [ -n "$AID" ]; then RS='.run_agents[$aid]'; else RS='.run_state'; fi
+
 case "$MODE" in
   reset)
     maude_care_set "$CARE" --argjson now "$NOW" \
-      '.run_state = ((.run_state // {}) + {actions_since_human: 0, last_human_ts: $now, soft_warned: false})'
+      '.run_state = ((.run_state // {}) + {actions_since_human: 0, last_human_ts: $now, soft_warned: false}) | .run_agents = {}'
     ;;
   tick)
-    maude_care_set "$CARE" --argjson now "$NOW" \
-      '.run_state = ((.run_state // {}) | .actions_since_human = ((.actions_since_human // 0) + 1) | .last_human_ts = (.last_human_ts // $now))'
+    maude_care_set "$CARE" --arg aid "$AID" --argjson now "$NOW" \
+      "$RS = (($RS // {}) | .actions_since_human = ((.actions_since_human // 0) + 1) | .last_human_ts = (.last_human_ts // \$now))"
     ;;
   gate)
-    INPUT="$(cat 2>/dev/null)"
     # The escape hatch must ALWAYS be reachable, or the ceiling deadlocks: never
     # gate the conscience-clear command itself.
     CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null)"
@@ -75,16 +90,25 @@ case "$MODE" in
       exit 0
     fi
 
-    ACTIONS="$(jq -r '.run_state.actions_since_human // 0' "$CARE" 2>/dev/null)"
-    LAST_HUMAN="$(jq -r '.run_state.last_human_ts // 0' "$CARE" 2>/dev/null)"
-    SOFT_WARNED="$(jq -r '.run_state.soft_warned // false' "$CARE" 2>/dev/null)"
+    ACTIONS="$(jq -r --arg aid "$AID" "$RS.actions_since_human // 0" "$CARE" 2>/dev/null)"
+    LAST_HUMAN="$(jq -r --arg aid "$AID" "$RS.last_human_ts // 0" "$CARE" 2>/dev/null)"
+    SOFT_WARNED="$(jq -r --arg aid "$AID" "$RS.soft_warned // false" "$CARE" 2>/dev/null)"
     [ "$LAST_HUMAN" -gt 0 ] 2>/dev/null || LAST_HUMAN="$NOW"
     ELAPSED_MIN=$(( (NOW - LAST_HUMAN) / 60 ))
+    # A subagent has no human to turn to: its clock runs from its dispatch, and the
+    # only move it can make at the ceiling is to finish and hand back what it has.
+    if [ -n "$AID" ]; then
+      WHO="agent ${AID:0:8}: "; CLOCK="since it was dispatched"
+      HARD_MOVE="finish and report what you have to the agent that dispatched you; the human can widen the budget with /maude:conscience run-governor"
+    else
+      WHO=""; CLOCK="since the last human turn"
+      HARD_MOVE="Take a turn with your human, or run /maude:conscience run-governor to continue with a fresh budget"
+    fi
 
     # Hard ceiling — actions OR minutes.
     if [ "$ACTIONS" -ge "$HARD_A" ] 2>/dev/null || [ "$ELAPSED_MIN" -ge "$HARD_M" ] 2>/dev/null; then
-      maude_log_trace "run-governor" "blocked actions=$ACTIONS elapsed_min=$ELAPSED_MIN"
-      printf 'Maude: run-governor — %s tool actions / %s min since the last human turn. Hard checkpoint: you have run unattended a long time. Take a turn with your human, or run /maude:conscience run-governor to continue with a fresh budget.\n' "$ACTIONS" "$ELAPSED_MIN" >&2
+      maude_log_trace "run-governor" "blocked actions=$ACTIONS elapsed_min=$ELAPSED_MIN${AID:+ agent=${AID:0:8}}"
+      printf 'Maude: run-governor — %s%s tool actions / %s min %s. Hard checkpoint: this run has gone unattended a long time. %s.\n' "$WHO" "$ACTIONS" "$ELAPSED_MIN" "$CLOCK" "$HARD_MOVE" >&2
       # NAME THE FILE WE LOOKED IN — this is the second reader of the yellow token
       # (after maude-gate.sh), and its writer maude-clear-gate.sh names where it
       # wrote. Same split shape as the 2026-09-02 bug: hook reads, Bash-tool
@@ -95,9 +119,9 @@ case "$MODE" in
 
     # Soft threshold — whisper once per budget.
     if { [ "$ACTIONS" -ge "$SOFT_A" ] 2>/dev/null || [ "$ELAPSED_MIN" -ge "$SOFT_M" ] 2>/dev/null; } && [ "$SOFT_WARNED" != "true" ]; then
-      printf 'Maude: run-governor — %s tool actions / %s min since the last human turn. Worth a checkpoint: summarize where you are and what RED line is next. (Hard pause at %s tool actions / %s min.)\n' "$ACTIONS" "$ELAPSED_MIN" "$HARD_A" "$HARD_M" >&2
-      maude_care_set "$CARE" '.run_state.soft_warned = true'
-      maude_log_trace "run-governor" "soft-warn actions=$ACTIONS elapsed_min=$ELAPSED_MIN"
+      printf 'Maude: run-governor — %s%s tool actions / %s min %s. Worth a checkpoint: summarize where you are and what RED line is next. (Hard pause at %s tool actions / %s min.)\n' "$WHO" "$ACTIONS" "$ELAPSED_MIN" "$CLOCK" "$HARD_A" "$HARD_M" >&2
+      maude_care_set "$CARE" --arg aid "$AID" "$RS.soft_warned = true"
+      maude_log_trace "run-governor" "soft-warn actions=$ACTIONS elapsed_min=$ELAPSED_MIN${AID:+ agent=${AID:0:8}}"
     fi
     ;;
   *)

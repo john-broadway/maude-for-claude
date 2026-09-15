@@ -39,6 +39,19 @@ last="$(tail -1 "$(trace_path)")"
 assert_contains "$last" "agent=general-purpose" "agent_type recorded"
 assert_contains "$last" "id=a7f93cda" "agent id recorded (8 chars)"
 
+# A subagent's run-governor slot (care.json .run_agents[<id>]) is dropped when it stops,
+# so a fleet that never sees a human turn does not grow the file one slot per agent forever.
+test_start "subagent-stop drops the stopped agent's run-governor slot and keeps the others"
+printf '{"run_agents":{"a1":{"actions_since_human":9},"a2":{"actions_since_human":3}}}\n' > "$(care_path)"
+printf '{"agent_id":"a1","agent_type":"general-purpose"}' | bash "$SUB" >/dev/null 2>&1
+assert_eq "$(read_care '.run_agents["a1"] // "gone"')" "gone" "a1 dropped"
+assert_eq "$(read_care '.run_agents["a2"].actions_since_human')" "3" "a2 kept"
+
+test_start "subagent-stop without an agent_id leaves run_agents alone"
+printf '{"run_agents":{"a2":{"actions_since_human":3}}}\n' > "$(care_path)"
+printf '{"subagent_type":"test"}' | bash "$SUB" >/dev/null 2>&1
+assert_eq "$(read_care '.run_agents["a2"].actions_since_human')" "3" "untouched"
+
 print_summary
 teardown_test_env
 exit $FAILED
