@@ -111,15 +111,44 @@ printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "
 make_bash_tool_input "git push origin main" | jq -c '. + {hook_event_name:"PostToolUse", tool_response:{stdout:"",stderr:"",interrupted:false}}' | bash "$TRACE_HOOK" >/dev/null 2>&1
 assert_eq "$(jq -r '.gate_cleared["git-push"].until // "absent"' "$TEST_TMP/.maude/plugin/care.json")" "absent" "the unreserved token is spent"
 
+# The property is the SHAPE of the work, not a clock. Two public PRs went red on a 150 ms
+# wall-clock budget (macOS runner: 164 ms in run 34866372823 on 2026-09-14, 178 ms in run
+# 35050279011 attempt 1 on 2026-09-16) while the guard was working, and the budget could
+# not see the guard's absence either: with both guard clauses cut, an unrelated completion
+# still cost under 150 ms on a fast box while the gate's whole pattern table ran. The walk
+# forks sed (its canonicaliser); the guarded path never does. So bill sed through a
+# counting shim and compare against a completion with no token file at all, which the hook
+# never gates: the same count means the walk did not run, whatever the box's clock says.
+. "$HOOKS_DIR/_maude-common.sh"
+SEDCOUNT="$(make_no_binary_bin sed)"; REAL_SED="$(command -v sed)"; SED_CALLS="$TEST_TMP/sed-calls"
+printf '#!/usr/bin/env bash\nprintf x >> %q\nexec %q "$@"\n' "$SED_CALLS" "$REAL_SED" > "$SEDCOUNT/sed"; chmod +x "$SEDCOUNT/sed"
+sed_forks() { wc -c < "$SED_CALLS" 2>/dev/null | tr -d ' '; }
+ORPHAN_INPUT="$(make_bash_tool_input "ls -la /tmp" | jq -c '. + {hook_event_name:"PostToolUse", tool_response:{stdout:"",stderr:"",interrupted:false}}')"
+
 test_start "an ORPHANED reservation for ANOTHER call does not put the gate's pattern walk back on every completion"
+rm -f "$TEST_TMP/.maude/plugin/care.json"; : > "$SED_CALLS"
+printf '%s' "$ORPHAN_INPUT" | PATH="$SEDCOUNT:$PATH" bash "$TRACE_HOOK" >/dev/null 2>&1
+BASE_SED="$(sed_forks)"
 printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d,"fp":"999999999","head":"git push origin other","v":2}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 400)) > "$TEST_TMP/.maude/plugin/care.json"
-T0=$(date +%s%N)
-for _i in 1 2 3 4 5; do make_bash_tool_input "ls -la /tmp" | jq -c '. + {hook_event_name:"PostToolUse", tool_response:{stdout:"",stderr:"",interrupted:false}}' | bash "$TRACE_HOOK" >/dev/null 2>&1; done
-T1=$(date +%s%N)
-MS=$(( (T1 - T0) / 5000000 ))
-[ "$MS" -lt 150 ]
-assert_exit "$?" "0" "an unrelated completion costs ${MS} ms, under 150"
+maude_gate_spendable_here "$ORPHAN_INPUT" "ls -la /tmp" "$TEST_TMP/.maude/plugin/care.json"
+assert_exit "$?" "1" "an unrelated completion is NOT spendable here"
+: > "$SED_CALLS"
+for _i in 1 2 3 4 5; do printf '%s' "$ORPHAN_INPUT" | PATH="$SEDCOUNT:$PATH" bash "$TRACE_HOOK" >/dev/null 2>&1; done
+assert_eq "$(sed_forks)" "$((BASE_SED * 5))" "five completions fork sed exactly as five ungated ones do (${BASE_SED} each): the walk never ran"
 assert_ne "$(jq -r '.gate_cleared["git-push"].until // "absent"' "$TEST_TMP/.maude/plugin/care.json")" "absent" "and the other call's reservation is untouched"
+
+# The control: a completion that CAN spend enters the gate, and the walk shows up in the
+# same counter. A shim that billed nothing, or a walk that forked no sed, would fail here.
+test_start "the command that can spend does enter the gate, and the walk is visible to the same counter"
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$TEST_TMP/.maude/plugin/care.json"
+SPEND_INPUT="$(make_bash_tool_input "git push origin main" | jq -c '. + {hook_event_name:"PostToolUse", tool_response:{stdout:"",stderr:"",interrupted:false}}')"
+maude_gate_spendable_here "$SPEND_INPUT" "git push origin main" "$TEST_TMP/.maude/plugin/care.json"
+assert_exit "$?" "0" "a live unreserved token IS spendable by the command that ran"
+: > "$SED_CALLS"
+printf '%s' "$SPEND_INPUT" | PATH="$SEDCOUNT:$PATH" bash "$TRACE_HOOK" >/dev/null 2>&1
+[ "$(sed_forks)" -gt "$BASE_SED" ]
+assert_exit "$?" "0" "the walk forked sed $(sed_forks) times against ${BASE_SED} ungated"
+assert_eq "$(jq -r '.gate_cleared["git-push"].until // "absent"' "$TEST_TMP/.maude/plugin/care.json")" "absent" "and the token was spent"
 rm -f "$TEST_TMP/.maude/plugin/care.json"
 
 print_summary
