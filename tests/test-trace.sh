@@ -111,15 +111,25 @@ printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "
 make_bash_tool_input "git push origin main" | jq -c '. + {hook_event_name:"PostToolUse", tool_response:{stdout:"",stderr:"",interrupted:false}}' | bash "$TRACE_HOOK" >/dev/null 2>&1
 assert_eq "$(jq -r '.gate_cleared["git-push"].until // "absent"' "$TEST_TMP/.maude/plugin/care.json")" "absent" "the unreserved token is spent"
 
+# The property is a DECISION, not a clock. Two public PRs went red on a 150 ms wall-clock
+# budget (macOS runner: 164 ms on 2026-09-14, 178 ms on 2026-09-16) while the guard was
+# working, and on a fast box the budget could not see the guard's absence either: with the
+# guard cut, the orphaned path cost 110 ms against 90 ms guarded, both under 150, because
+# the gate's own consume mode exits on the same question before its pattern table. So ask
+# the question the guard asks, and check the answer, not the time it took.
 test_start "an ORPHANED reservation for ANOTHER call does not put the gate's pattern walk back on every completion"
 printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d,"fp":"999999999","head":"git push origin other","v":2}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 400)) > "$TEST_TMP/.maude/plugin/care.json"
-T0=$(date +%s%N)
-for _i in 1 2 3 4 5; do make_bash_tool_input "ls -la /tmp" | jq -c '. + {hook_event_name:"PostToolUse", tool_response:{stdout:"",stderr:"",interrupted:false}}' | bash "$TRACE_HOOK" >/dev/null 2>&1; done
-T1=$(date +%s%N)
-MS=$(( (T1 - T0) / 5000000 ))
-[ "$MS" -lt 150 ]
-assert_exit "$?" "0" "an unrelated completion costs ${MS} ms, under 150"
-assert_ne "$(jq -r '.gate_cleared["git-push"].until // "absent"' "$TEST_TMP/.maude/plugin/care.json")" "absent" "and the other call's reservation is untouched"
+. "$HOOKS_DIR/_maude-common.sh"
+ORPHAN_INPUT="$(make_bash_tool_input "ls -la /tmp" | jq -c '. + {hook_event_name:"PostToolUse", tool_response:{stdout:"",stderr:"",interrupted:false}}')"
+maude_gate_spendable_here "$ORPHAN_INPUT" "ls -la /tmp" "$TEST_TMP/.maude/plugin/care.json"
+assert_exit "$?" "1" "an unrelated completion is NOT spendable here, so the gate is never entered"
+for _i in 1 2 3 4 5; do printf '%s' "$ORPHAN_INPUT" | bash "$TRACE_HOOK" >/dev/null 2>&1; done
+assert_ne "$(jq -r '.gate_cleared["git-push"].until // "absent"' "$TEST_TMP/.maude/plugin/care.json")" "absent" "and five completions later the other call's reservation is untouched"
+# The control: the same question answers YES for a call that can spend, so a guard that
+# always said no would fail here rather than pass by silence.
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s) + 600)) > "$TEST_TMP/.maude/plugin/care.json"
+maude_gate_spendable_here "$(make_bash_tool_input "git push origin main")" "git push origin main" "$TEST_TMP/.maude/plugin/care.json"
+assert_exit "$?" "0" "a live unreserved token IS spendable by the command that ran"
 rm -f "$TEST_TMP/.maude/plugin/care.json"
 
 print_summary
