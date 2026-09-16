@@ -654,20 +654,39 @@ printf '%s' 'src/x.py' | grep -qE -- "$(maude_doc_re)"; assert_exit "$?" "1" "py
 # measured 2026-09-06, so the brief was killed at every session start for weeks and her
 # spend ledger recorded the wake once in 31 days (the memory lens's N-2, unexplained
 # until the sweep was timed alone). Half the planted lines point at a blob that is gone.
-test_start "retention sweep over a 3000-line undo ledger finishes inside the wake budget"
-SWEEP_SELF="$(maude_self_dir)"; mkdir -p "$SWEEP_SELF/undo/blobs"
-: > "$SWEEP_SELF/undo/ledger.jsonl"
-for i in $(seq 1 3000); do
-  if [ $((i % 2)) -eq 0 ]; then
-    printf '{"ts":"2026-09-01T00:00:00Z","tool":"Edit","path":"/x/%d","blob":"b%d","bytes":1}\n' "$i" "$i"
-  else
-    printf '{"ts":"2026-09-01T00:00:00Z","tool":"Edit","path":"/x/%d","blob":"gone%d","bytes":1}\n' "$i" "$i"
-  fi
-done >> "$SWEEP_SELF/undo/ledger.jsonl"
-for i in $(seq 2 2 3000); do : > "$SWEEP_SELF/undo/blobs/b$i"; done
-SWEEP_S=$(date +%s%N); maude_retention_sweep; SWEEP_E=$(date +%s%N); SWEEP_MS=$(( (SWEEP_E - SWEEP_S) / 1000000 ))
-[ "$SWEEP_MS" -lt 5000 ]
-assert_exit "$?" "0" "sweep took ${SWEEP_MS} ms over 3000 lines; the whole wake hook has 10 s"
+# The property is the SHAPE of the work, not its clock: what the sweep executes must not
+# grow with the ledger. A wall-clock budget cannot see that (test-trace.sh's 150 ms budget
+# went red on the macOS runner twice while its guard worked). Counting forks of named tools
+# cannot either: the lens on 67105e7 moved the per-line loop from jq onto grep and sed, and
+# the lens on 60906ee moved it onto an unlisted tool and then onto a bare `$( )` subshell,
+# which forks with no exec and reproduced the incident's cost with zero forks billed. So
+# bill what bash itself runs: a DEBUG trap, inherited by every function, substitution and
+# subshell (set -T), appends one byte per simple command. Over 100 lines and over 3000 the
+# one-pass sweep bills the same; a per-line loop of any kind, external tool, subshell or
+# builtin, bills thousands more.
+CMDS_LOG="$TEST_TMP/sweep-cmds"
+sweep_cmds() {  # <lines> — rebuild the fixture at that size, sweep it under the trap, print the command count
+  local n="$1" i
+  rm -rf "$SWEEP_SELF/undo"; mkdir -p "$SWEEP_SELF/undo/blobs"
+  for i in $(seq 1 "$n"); do
+    if [ $((i % 2)) -eq 0 ]; then
+      printf '{"ts":"2026-09-01T00:00:00Z","tool":"Edit","path":"/x/%d","blob":"b%d","bytes":1}\n' "$i" "$i"
+    else
+      printf '{"ts":"2026-09-01T00:00:00Z","tool":"Edit","path":"/x/%d","blob":"gone%d","bytes":1}\n' "$i" "$i"
+    fi
+  done > "$SWEEP_SELF/undo/ledger.jsonl"
+  for i in $(seq 2 2 "$n"); do : > "$SWEEP_SELF/undo/blobs/b$i"; done
+  : > "$CMDS_LOG"
+  ( set -T; trap 'printf x >> "$CMDS_LOG"' DEBUG; maude_retention_sweep )
+  { wc -c < "$CMDS_LOG"; } 2>/dev/null | tr -d ' '
+}
+test_start "retention sweep over a 3000-line undo ledger runs no more commands than over 100 lines: one pass, never per-line work"
+SWEEP_SELF="$(maude_self_dir)"
+CMDS_100="$(sweep_cmds 100)"
+CMDS_3000="$(sweep_cmds 3000)"
+assert_eq "${CMDS_3000:-0}" "${CMDS_100:-0}" "commands over 3000 lines (${CMDS_3000}) equal commands over 100 (${CMDS_100}); per-line work adds thousands"
+[ "${CMDS_100:-0}" -gt 0 ]
+assert_exit "$?" "0" "and the trap saw the sweep at all (${CMDS_100} commands), so a silent zero cannot pass"
 
 test_start "and a line whose blob is gone is rewritten as a skip, the rest byte-identical, none lost"
 assert_eq "$(jq -r 'select(.path=="/x/1") | .skip' "$SWEEP_SELF/undo/ledger.jsonl")" "pruned" "missing blob -> skip=pruned"
