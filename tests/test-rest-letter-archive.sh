@@ -11,10 +11,8 @@ set +e
 setup_test_env
 source_common
 
-# CRITICAL ISOLATION: the helper writes to $HOME/.claude/maude. Point HOME at
-# the sandbox so a test NEVER touches the real letters.
-OLD_HOME="$HOME"
-export HOME="$TEST_TMP/home"
+# The helper writes to $HOME/.claude/maude; HOME is the sandbox's, pinned for every test
+# by setup_test_env (tests/lib.sh) and restored by teardown_test_env.
 mkdir -p "$HOME/.claude/maude"
 UD="$HOME/.claude/maude"
 LETTER="$UD/letter-from-maude.md"
@@ -201,7 +199,6 @@ else
   _fail "agents/maude.md: helper unanchored or no archive-first fallback"
 fi
 
-export HOME="$OLD_HOME"
 print_summary
 teardown_test_env
 exit "$FAILED"

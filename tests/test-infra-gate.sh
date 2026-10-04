@@ -63,13 +63,55 @@ printf '{"gate_cleared":{"infra-destructive":{"until":%d}}}\n' $(($(date +%s)+60
 run_infra "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":777}'
 assert_exit "$RC" "0" "token allowed pass"
 
-test_start "token clears after one use"
+# lens 5 (MAJOR): the RED token was read AND spent at PreToolUse, so a sibling PreToolUse
+# hook (the run-governor has no matcher) refusing the same call burned John's one clear on
+# a call that never ran. Now: RESERVE at Pre, SPEND at Post, as the YELLOW gate does.
+run_infra_consume() {  # tool, args-json — the PostToolUse leg
+  ERR="$(make_mcp_tool_input "$1" "$2" | bash "$GATE" consume 2>&1 >/dev/null)"
+  RC=$?
+}
+test_start "the pass RESERVES the token; it is not spent until the call runs"
+remaining="$(jq -r '.gate_cleared["infra-destructive"].until // "absent"' "$(redclear_path)" 2>/dev/null)"
+assert_ne "$remaining" "absent" "still in the store"
+assert_eq "$(jq -r '.gate_cleared["infra-destructive"].reserved.head // "none"' "$(redclear_path)")" "delete_thing" "reserved by this call"
+
+test_start "a sibling refusal does not burn the clear: the same call retried rides its reservation"
+ERR="$(make_mcp_tool_input "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":777}' | MAUDE_TOKEN_RETRY_MIN=0 bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "0" "rides it"
+
+test_start "a DIFFERENT destructive call waits behind the reservation"
+run_infra "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":778}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "reserved by another call" "says why"
+
+# lens 6 (BLOCKING): the fingerprint hashed the arguments alone, so ANOTHER destructive
+# tool with the same bytes (another server, or no arguments at all) rode the reservation.
+test_start "a DIFFERENT destructive TOOL with the SAME arguments is not the same call"
+ERR="$(make_mcp_tool_input "mcp__testsrv__wipe_thing" '{"node":"prod-x","vmid":777}' | MAUDE_TOKEN_RETRY_MIN=0 bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "reserved by another call" "waits behind delete_thing's reservation"
+test_start "and the same tool on ANOTHER server is not the same call either"
+ERR="$(make_mcp_tool_input "mcp__othersrv__delete_thing" '{"node":"prod-x","vmid":777}' | MAUDE_TOKEN_RETRY_MIN=0 bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "2" "blocked"
+
+test_start "the PostToolUse leg spends the token the call reserved"
+run_infra_consume "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":777}'
+assert_exit "$RC" "0" "consume never blocks"
+assert_contains "$ERR" "is spent" "says so"
 remaining="$(jq -r '.gate_cleared["infra-destructive"].until // "absent"' "$(redclear_path)" 2>/dev/null)"
 assert_eq "$remaining" "absent" "one-shot consumed"
 
 test_start "second destructive call re-blocks after token use"
 run_infra "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":777}'
 assert_exit "$RC" "2" "re-blocked"
+
+test_start "the PostToolUse leg is silent and exits 0 with nothing to spend"
+run_infra_consume "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":777}'
+assert_exit "$RC" "0" "exit 0"
+assert_not_contains "$ERR" "spent" "nothing said"
+test_start "the PostToolUse leg never blocks a read tool"
+run_infra_consume "mcp__testsrv__list_things" '{"node":"prod-x"}'
+assert_exit "$RC" "0" "exit 0"
 
 # ── Without jq the gate is INERT (can't read config → exit 0) ───────────
 # NOTE: jq is required to read infra_tool_prefix from gate-config.json.

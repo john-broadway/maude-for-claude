@@ -66,6 +66,62 @@ OUT="$(printf '{"prompt":"how do I handle johns metaphors"}' \
   | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
 assert_contains "$OUT" "user-visual-mind" "human prompts still recall"
 
+# 2026-10-04 (John: "quiet the maude recall lines"): a note is paged once per session. The
+# same three notes fired on almost every short prompt of a 17h session, adding nothing after
+# the first. Keyed on the hook's session_id; a turn with none pages as before.
+test_start "a note paged once in a session is not paged again in it"
+P='{"prompt":"how do I handle johns metaphors","session_id":"sess-a"}'
+OUT="$(printf '%s' "$P" | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_contains "$OUT" "user-visual-mind" "first time in the session: paged"
+OUT="$(printf '%s' "$P" | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_not_contains "$OUT" "user-visual-mind" "second time in the session: quiet"
+test_start "another session is paged the note afresh"
+OUT="$(printf '{"prompt":"how do I handle johns metaphors","session_id":"sess-b"}' \
+  | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_contains "$OUT" "user-visual-mind" "a new session: paged"
+test_start "a session id cannot steer the seen file out of its directory"
+OUT="$(printf '{"prompt":"how do I handle johns metaphors","session_id":"../../evil"}' \
+  | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_eq "$(find "$WORK" -name 'evil*' -not -path "$WORK/proj/.maude/plugin/recall-seen/*" | wc -l | tr -d ' ')" "0" "no file outside recall-seen/"
+
+test_start "at most two notes a turn by default"
+OUT="$(printf '{"prompt":"atlas orbit rooms mirroring metaphors vision johns","session_id":"sess-k"}' \
+  | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_eq "$(printf '%s\n' "$OUT" | grep -c '^- \[\[')" "2" "two notes, not three"
+test_start "a bad MAUDE_PAGE_K falls back to two, never silences recall"
+OUT="$(printf '{"prompt":"how do I handle johns metaphors","session_id":"sess-badk"}' \
+  | MAUDE_PAGE_K=abc bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_contains "$OUT" "user-visual-mind" "MAUDE_PAGE_K=abc still pages"
+# The Unicode digits only bite in a UTF-8 locale, where `[0-9]` matches them; run there when
+# the box has one, whatever locale the suite itself was started in.
+UTF8_LOC="$(locale -a 2>/dev/null | grep -i -m1 '^en_US\.utf-*8$')"
+n=0
+for k in 00 0 99999999999999999999 9223372036854775808 -1 ٠ ٠٠ ０ ٣٣; do
+  n=$((n + 1))
+  OUT="$(printf '{"prompt":"how do I handle johns metaphors","session_id":"sess-k%s"}' "$n" \
+    | LC_ALL="${UTF8_LOC:-$LC_ALL}" MAUDE_PAGE_K=$k bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+  assert_contains "$OUT" "user-visual-mind" "MAUDE_PAGE_K=$k still pages"
+done
+test_start "the week-old sweep stays inside recall-seen and spares the live session"
+SD="$WORK/proj/.maude/plugin/recall-seen"
+printf 'user-visual-mind\n' > "$SD/sess-live"
+touch_ago 864000 "$SD/old-sess" "$SD/sess-live" "$WORK/proj/.maude/plugin/outside-old"
+OUT="$(printf '{"prompt":"how do I handle johns metaphors","session_id":"sess-live"}' \
+  | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_eq "$([ -e "$SD/old-sess" ] && echo kept || echo swept)" "swept" "a week-old seen file is swept"
+assert_not_contains "$OUT" "user-visual-mind" "the prompting session's own file is not (its note stays quiet)"
+OUT="$(printf '{"prompt":"how do I handle johns metaphors","session_id":"sess-live"}' \
+  | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_not_contains "$OUT" "user-visual-mind" "… and on its next prompt too (the sweep after paging spared it)"
+assert_eq "$([ -e "$WORK/proj/.maude/plugin/outside-old" ] && echo kept || echo swept)" "kept" "nothing outside recall-seen"
+test_start "a very long session id still keeps its seen file"
+LONG="$(printf 'x%.0s' $(seq 1 300))"
+printf '{"prompt":"how do I handle johns metaphors","session_id":"%s"}' "$LONG" \
+  | bash "$ROOT/hooks/scripts/maude-page.sh" >/dev/null 2>&1
+OUT="$(printf '{"prompt":"how do I handle johns metaphors","session_id":"%s"}' "$LONG" \
+  | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+assert_not_contains "$OUT" "user-visual-mind" "second prompt of a 300-char session id: quiet"
+
 # ── #49: the spend column — a paged hit logs its bill (hook + bytes, no content) ──
 test_start "page hook logs spend bytes to the trace"
 TRACE_FILE="$WORK/proj/.maude/plugin/trace/today-$(date -u +%Y-%m-%d).jsonl"

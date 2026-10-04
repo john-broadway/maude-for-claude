@@ -22,6 +22,11 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 
 INPUT="$(cat 2>/dev/null)"
 [ -z "$INPUT" ] && exit 0
+# "gate" (PreToolUse, the default) reserves the RED token; "consume" (PostToolUse) spends it.
+MODE="${1:-gate}"
+SID=""
+command -v jq >/dev/null 2>&1 && SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null)"
+{ maude_is_ascii_token "$SID" && [ "${#SID}" -le 64 ]; } 2>/dev/null || SID="default"
 
 # ── Prefixes: a LIST, and no longer the thing that decides coverage ──────────
 # Until 2026-07-30 this was a single STRING and an empty value made the gate inert.
@@ -124,14 +129,57 @@ esac
 # John's ! line), not in care.json.
 NOW=$(date +%s)
 CARE="$(maude_redclear_file)"
+# RESERVE at PreToolUse, SPEND at PostToolUse, the split the YELLOW gate has had since
+# 09-06 and this RED gate lacked (lens 5, MAJOR): PreToolUse hooks run in parallel and the
+# run-governor (no matcher) can refuse the same call; PostToolUse never fires for a refused
+# call, so a read-and-spend here burned John's one hand-typed RED clear on a call that
+# never ran. Each step is one locked read (lens 1, B1): a busy store is "busy", never
+# "none", and a pass needs a reservation that LANDED.
 if [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
-  CU="$(jq -r '.gate_cleared["infra-destructive"].until // 0' "$CARE" 2>/dev/null)"
-  if [ -n "$CU" ] && [ "$CU" -gt 0 ] && [ "$CU" -gt "$NOW" ] 2>/dev/null; then
-    maude_care_set "$CARE" 'del(.gate_cleared["infra-destructive"])'
-    maude_log_trace "infra-gate" "passed=infra-destructive tool=$BARE"
+  FP="$(maude_call_fp "$INPUT")"
+  if [ "$MODE" = "consume" ]; then
+    # The call RAN. Spend the token this call reserved (or an unreserved one). Never blocks.
+    case "$(maude_care_consume_token "$CARE" "infra-destructive" "$FP" "$BARE" "$SID")" in
+      spent)
+        maude_log_trace "infra-gate" "spent=infra-destructive tool=$BARE"
+        printf 'Maude: infra-destructive is spent; the gate is closed again.\n' >&2 ;;
+      queued)
+        maude_log_trace "infra-gate" "spent-queued=infra-destructive tool=$BARE"
+        printf 'Maude: %s ran; the token store was busy, so its spend is queued and lands on the next gate read. It will not pass again.\n' "$BARE" >&2 ;;
+    esac
     exit 0
   fi
+  RES="$(maude_care_reserve_token "$CARE" "infra-destructive" "$SID" "$NOW" "$FP" "$BARE")"
+  case "${RES%%$'\037'*}" in
+    live)
+      maude_log_trace "infra-gate" "passed=infra-destructive tool=$BARE"
+      printf 'Maude: infra-destructive passed on its token; it is spent when the call runs.\n' >&2
+      exit 0 ;;
+    reserved)
+      IFS="$(printf '\037')" read -r _ RSID RLEFT RHEAD <<EOF
+$RES
+EOF
+      maude_log_trace "infra-gate" "blocked=infra-destructive reserved tool=$BARE"
+      printf 'Maude: infra-destructive has a live token, but it is reserved by another call (session %s: %s, %s s left). That exact call retried rides it; anything else waits for it to run, or clears again.\n' \
+        "${RSID:-?}" "${RHEAD:-?}" "${RLEFT:-?}" >&2
+      printf '       (looked in: %s)\n' "$CARE" >&2
+      exit 2 ;;
+    inflight)
+      maude_log_trace "infra-gate" "blocked=infra-destructive inflight tool=$BARE"
+      printf 'Maude: infra-destructive has a live token, but a call of yours is already passing on it; one token opens one call.\n' >&2
+      exit 2 ;;
+    unwritable)
+      maude_log_trace "infra-gate" "blocked=infra-destructive unwritable tool=$BARE"
+      printf 'Maude: infra-destructive has a live token, but its reservation could not be written to %s; nothing passes on a token that cannot be spent.\n' "$CARE" >&2
+      exit 2 ;;
+    busy)
+      maude_log_trace "infra-gate" "blocked=infra-destructive busy tool=$BARE"
+      printf 'Maude: the token store is busy (another hook holds its lock); nothing was checked for infra-destructive. Retry the same call.\n' >&2
+      exit 2 ;;
+  esac
 fi
+# PostToolUse never blocks: with no store, or no jq, there is nothing to spend.
+[ "$MODE" = "consume" ] && exit 0
 
 # Target. Without jq we cannot parse the target → fail CLOSED (block below).
 NODE=""; VMID=""

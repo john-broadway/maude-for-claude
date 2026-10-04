@@ -28,9 +28,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 DB="$(maude_project_dir)/.maude/plugin/vault.db"
 [ -f "$DB" ] || exit 0
 
-PROMPT=""
+PROMPT="" INPUT=""
 if command -v jq >/dev/null 2>&1; then
-  PROMPT="$(jq -r '.prompt // .message // ""' 2>/dev/null)"
+  INPUT="$(cat)"
+  PROMPT="$(printf '%s' "$INPUT" | jq -r '.prompt // .message // ""' 2>/dev/null)"
 fi
 [ -z "$PROMPT" ] && exit 0
 
@@ -46,8 +47,26 @@ case "$PROMPT" in
     exit 0 ;;
 esac
 
+# Quiet by default (2026-10-04, John: "quiet the maude recall lines"): at most two notes
+# (MAUDE_PAGE_K, a whole number 1-99, else 2), and a note already shown this session is not
+# shown again. The session's shown names live in one file per session id, the id reduced to
+# [A-Za-z0-9_-] and 64 characters so it names no path and fits a file name; other sessions'
+# files a week old are swept after paging. No session id: no once-per-session memory.
+K="${MAUDE_PAGE_K:-2}"
+K="${K#"${K%%[!0]*}"}"   # leading zeros off: `00` is 0, not a count
+# 1-99, else 2 (a 20-digit K overflowed sqlite). The digits are spelled out: in a UTF-8 locale
+# `[0-9]` also matches `٠` and `０`, which python reads as 0 (third lens).
+case "$K" in ''|*[!0123456789]*|???*) K=2 ;; esac
+SEEN_ARGS=() SEEN_DIR=""
+SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null | tr -cd 'A-Za-z0-9_-' | cut -c1-64)"
+if [ -n "$SID" ]; then
+  SEEN_DIR="$(maude_project_dir)/.maude/plugin/recall-seen"
+  mkdir -p "$SEEN_DIR" 2>/dev/null && SEEN_ARGS=(--seen "$SEEN_DIR/$SID")
+fi
 OUT="$(printf '%s' "$PROMPT" | PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m maude_vault page \
-  --db "$DB" --k 5 --mem "$(maude_mem_dir)" --log "$(maude_project_dir)/.maude/plugin/recall-log.jsonl" 2>/dev/null)"
+  --db "$DB" --k "$K" --mem "$(maude_mem_dir)" "${SEEN_ARGS[@]}" \
+  --log "$(maude_project_dir)/.maude/plugin/recall-log.jsonl" 2>/dev/null)"
+[ -n "$SEEN_DIR" ] && find "$SEEN_DIR" -maxdepth 1 -type f -mtime +7 ! -name "$SID" -delete 2>/dev/null
 if [ -n "$OUT" ]; then
   printf '%s\n' "$OUT"
   # #49: log the bill — hook class + bytes, never content.

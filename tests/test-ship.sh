@@ -83,13 +83,27 @@ test_start "ship build roots the branch on origin/main"
 BASE="$(git merge-base t3 origin/main 2>/dev/null)"
 assert_eq "$BASE" "$(git rev-parse origin/main)" "branch descends from origin/main"
 
-test_start "ship build prints the one push line for John's hand"
+test_start "ship build prints the one push line for the maintainer's hand"
 git checkout -q main
 OUT="$(SHIP_SKIP_GATES=1 SHIP_BRANCH=t4 bash "$SHIP" build 2>&1)"
 git checkout -q main
 assert_contains "$OUT" "git push -u origin t4" "push line printed"
 
 # ── build: the leak-audit ───────────────────────────────────────────────
+test_start "ship build blocks a planted session-scratch path and names the file"
+git checkout -q main
+printf 'line 962: /var/lib/%s/claude-0/x/scratchpad/care.json.lock\n' "claude-""scratch" > err-capture.md
+git add err-capture.md && git commit -qm "plant scratch"
+OUT="$(SHIP_SKIP_GATES=1 SHIP_BRANCH=t5s bash "$SHIP" build 2>&1)"
+RC=$?
+git checkout -q main
+git reset -q --hard HEAD~1
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'err-capture.md'; then
+  _pass
+else
+  _fail "expected leak block naming err-capture.md, rc=$RC: $(printf '%s' "$OUT" | head -c 200)"
+fi
+
 test_start "ship build blocks a planted leak shape and names the file"
 git checkout -q main
 printf 'server lives at %s ok\n' "$QUAD" > leaky.md

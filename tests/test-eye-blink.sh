@@ -125,4 +125,24 @@ FAKE_CLAUDE_ARGS="$WORK/args" PATH="$WORK/bin:/usr/bin:/bin" MAUDE_EYE_RUNNER_OV
   bash "$ROOT/hooks/scripts/maude-eye-blink.sh" "$WORK/t.jsonl" >/dev/null 2>&1
 assert_contains "$(cat "$WORK/args" 2>/dev/null)" "--model sonnet" "MAUDE_EYE_MODEL unpins the model"
 
+
+# 2026-10-04: the recall went to one line per note for people; the eye reads the notes,
+# not a person, and keeps the snippet under each (`--snippets` on its page call).
+cat > "$WORK/runner-capture" <<'EOF'
+#!/usr/bin/env bash
+cat > "$EYE_CAPTURE"
+printf '{"signal": false}\n'
+EOF
+chmod +x "$WORK/runner-capture"
+PYTHONPATH="$ROOT" python3 -m maude_vault build --mem-dir "$DIR/vault/fixtures/mem" \
+  --db "$WORK/proj/.maude/plugin/vault.db" >/dev/null 2>&1
+printf '%s\n' '{"type":"user","message":{"role":"user","content":"how do I handle johns metaphors"}}' \
+  > "$WORK/t2.jsonl"
+test_start "the eye's memory notes carry their snippets"
+EYE_CAPTURE="$WORK/eye-prompt" MAUDE_EYE_RUNNER_OVERRIDE="$WORK/runner-capture" \
+  bash "$ROOT/hooks/scripts/maude-eye-blink.sh" "$WORK/t2.jsonl" >/dev/null 2>&1
+NOTES_BLOCK="$(sed -n '/^MEMORY NOTES:/,/^RECENT ACTIVITY/p' "$WORK/eye-prompt" 2>/dev/null)"
+assert_contains "$NOTES_BLOCK" "user-visual-mind" "the eye was paged the note"
+assert_eq "$(printf '%s\n' "$NOTES_BLOCK" | grep -q '^    ' && echo yes || echo no)" "yes" "with its snippet lines"
+
 print_summary; exit $FAILED

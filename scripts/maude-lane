@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# maude-lane <session_id> — print this session's LANE, one line, for the remember plugin.
+#
+# remember writes "## HH:MM | <branch>" headers into .remember/now.md, and resolves
+# <branch> through $REMEMBER_BRANCH_CMD "<session_id>" when that is set; unset, every
+# concurrent session under one project wrote "unknown", and the wake could not tell one
+# lane's "where you left off" from another's (2026-09-25: a pacioli line greeted the maude
+# lane). Point it here:
+#     "env": { "REMEMBER_BRANCH_CMD": "<maude plugin root>/scripts/maude-lane" }
+# The lane is maude_session_label: the tmux session name, else the session id's first 8
+# characters. The same function names the lane when the wake reads the entries back, so
+# writer and reader cannot disagree. Prints nothing and exits 1 when it has no safe label,
+# so remember falls through to its own default instead of writing garbage into a header.
+set +e
+DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$DIR/../hooks/scripts/_maude-common.sh"
+L="$(maude_session_label "${1:-}")"
+maude_is_ascii_token "$L" || exit 1
+printf '%s\n' "$L"

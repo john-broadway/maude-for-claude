@@ -33,7 +33,7 @@ print_book() {
   status="$(jq -r '.status // "canon"' "$book")"
   class="$(jq -r .class "$book")"
   printf '%s (%s laws, read %s)\n' "$(jq -r .name "$book")" "$(jq '.laws | length' "$book")" "$(jq -r .read_on "$book")"
-  [ "$status" = "draft" ] && printf 'DRAFT: not canon until John cuts it. Name from it anyway; say it is the draft.\n'
+  [ "$status" = "draft" ] && printf 'DRAFT: not canon until the user cuts it. Name from it anyway; say it is the draft.\n'
   printf '\n'
   jq -r '.laws[] | "\(.name)\t\(.family)\t\(.ask)"' "$book" | while IFS="$(printf '\t')" read -r name fam ask; do
     printf -- '- %s [%s]: %s\n' "$name" "$fam" "$ask"
