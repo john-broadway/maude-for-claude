@@ -6,8 +6,9 @@
 # Last substantive change: 2026-06-14 — added the shellcheck lint job (v0.5.5).
 # Authors: John Broadway, Claude (Anthropic)
 #
-# Three independent jobs run on every push and pull request to main:
-#   - tests   : full bash test harness (make test → tests/run.sh)
+# Independent jobs run on every push and pull request to main:
+#   - tests   : full bash test harness (make test → tests/run.sh), the archive smoke
+#               split into its own smoke-matrix legs so the fleet runs once per leg
 #   - verify  : programmatic project audit (make verify → scripts/maude-verify.sh)
 #   - lint    : shellcheck the shell, gated at warning severity (make lint)
 #
@@ -42,17 +43,38 @@ jobs:
 
       - name: Run hook test suite (make test)
         run: make test
+        env:
+          MAUDE_SMOKE_SEPARATE: "1"   # the smoke-matrix job runs the archive's fleet once
+
+  # The prove-it-real gate on its own legs: a git-archive of HEAD must validate, pass its
+  # own fleet, and greet. It re-runs the whole fleet inside the archive, so inside
+  # test-matrix it doubled every leg (ubuntu 6 -> 10 min by v0.33.0); in parallel it costs
+  # no wall time.
+  smoke-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Verify jq present
+        run: jq --version
+
+      - name: Install smoke on the archive of HEAD (make smoke)
+        run: make smoke
 
   # Summary gate: branch protection requires a check literally named "tests".
   # A matrix job publishes per-leg names ("test-matrix (macos-latest)"), so
-  # this job restores the contracted name — green iff EVERY leg is green.
+  # this job restores the contracted name — green iff EVERY leg of both matrices is green.
   tests:
-    needs: test-matrix
+    needs: [test-matrix, smoke-matrix]
     runs-on: ubuntu-latest
     if: always()
     steps:
-      - name: All test legs green
-        run: test "${{ needs.test-matrix.result }}" = "success"
+      - name: All test and smoke legs green
+        run: test "${{ needs.test-matrix.result }}" = "success" && test "${{ needs.smoke-matrix.result }}" = "success"
 
   verify:
     runs-on: ubuntu-latest

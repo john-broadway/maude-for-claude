@@ -221,7 +221,7 @@ hold_locks() {
   if command -v flock >/dev/null 2>&1; then
     local s="" f fd=9
     for f in "$@"; do s="$s exec $fd>\"$f\"; flock $fd;"; fd=$((fd - 1)); done
-    bash -c "$s sleep 6" & HOLD=$!
+    bash -c "$s exec sleep 6" & HOLD=$!   # exec: the kill lands on the fd holder itself, no orphan
     sleep 0.3
   else
     for f in "$@"; do mkdir "$f.d"; HELD_DIRS="$HELD_DIRS $f.d"; done
@@ -233,6 +233,9 @@ release_locks() {
   HOLD=""; HELD_DIRS=""
 }
 
+# The timings below come from python3; without it every elapsed time is empty, reads as 0,
+# and two of three checks pass vacuously while the third blames the lock (lens on aad5cda).
+command -v python3 >/dev/null 2>&1 || { test_start "python3 is required for the lock timings"; _fail "python3 not on PATH: the latch timings cannot be measured"; }
 # ── a wait-0 busy must not silence the next lock's wait (residual 1: the process-wide latch) ──
 test_start "a busy at wait 0 leaves the next lock its own wait; a busy at a real wait still latches"
 LK="$TEST_TMP/lk"; mkdir -p "$LK"

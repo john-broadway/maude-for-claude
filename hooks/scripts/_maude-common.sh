@@ -986,7 +986,7 @@ maude_locked() {  # <lockfile> <command> [args…]
   # this branch runs) a 1 s bound waited 4 s and "08" waited 20 (PR #81). $SECONDS is a
   # builtin (bash 3.2 has it), so reading it costs no fork. It is whole seconds, so the
   # wait ends between `wait` and `wait + 1` s; the try count stays as a second ceiling.
-  local d="$lock.d" tries=$((wait * 20)) t0="$SECONDS"
+  local d="$lock.d" tries=$((wait * 20)) t0="$SECONDS" gone=0
   while ! mkdir "$d" 2>/dev/null; do
     if [ "$tries" -le 0 ] || [ $((SECONDS - t0)) -gt "$wait" ]; then
       [ "$wait" -gt 0 ] && _MAUDE_LOCK_BUSY_SEEN=1; return "$MAUDE_LOCK_BUSY"
@@ -1005,11 +1005,16 @@ maude_locked() {  # <lockfile> <command> [args…]
       # Judge THAT from the path, never from "the dir is gone again": under churn another
       # waiter takes and releases the lock between our retry and this look, and reading
       # that as unlockable dropped 2 of 60 eye ticks with no wait at all (macOS shape).
-      if [ -e "$d" ] && [ ! -d "$d" ] || [ ! -d "$lockdir" ] || [ ! -w "$lockdir" ]; then
+      # A dir that never appears across five looks is not churn (churn shows a holder's dir
+      # at some look, which resets the count): disk full, or a reason the path checks cannot
+      # see. Give up then, not at the end of the bound (lens on aad5cda, MINOR 1).
+      gone=$((gone + 1))
+      if [ -e "$d" ] && [ ! -d "$d" ] || [ ! -d "$lockdir" ] || [ ! -w "$lockdir" ] || [ "$gone" -ge 5 ]; then
         [ "$wait" -gt 0 ] && _MAUDE_LOCK_BUSY_SEEN=1; return "$MAUDE_LOCK_BUSY"
       fi
       sleep 0.05; continue
     fi
+    gone=0
     if [ $(( $(date +%s) - $(maude_mtime "$d" "$(date +%s)") )) -gt 30 ]; then
       rmdir "$d" 2>/dev/null
     fi

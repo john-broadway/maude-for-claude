@@ -1,4 +1,4 @@
-<!-- Version: 0.33.0 -->
+<!-- Version: 0.33.1 -->
 <!-- Created: 2026-03-28 MST -->
 <!-- Revised: 2026-10-05 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
@@ -8,6 +8,33 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.33.1 - the macOS leg runs here before it runs in public
+
+v0.33.0 went red on the public macOS leg twice before it shipped green, each time for
+something this box could have shown. This release makes the macOS shape a gate, gives the
+time those reds cost back to CI, and folds the last review's three minor findings.
+
+- **`make mac-shape`: the full suite in a macOS-shaped userland, here.** A PATH farm with no
+  `flock`, `original-awk` (the one-true-awk macOS ships) as `awk`, a slowed `mkdir`, and a
+  trailing-slash `TMPDIR`. It proves each property before it trusts a run (an awk that
+  carries a NUL is refused as not macOS-shaped), removes only its own links and shim, and
+  refuses without `original-awk` rather than reporting a run that was not macOS-shaped.
+  `--check` builds and proves the shape without running anything. `ship.sh build` runs it
+  as a gate after `make test`. What it cannot give is BSD `sed` and bash 3.2; the
+  portability lint and the public leg remain the word on those.
+- **CI runs the archive smoke once, in parallel.** The install smoke re-runs the whole fleet
+  inside a `git archive`; inside the test job that doubled every leg (ubuntu 6 to 10 min by
+  v0.33.0). It is its own `smoke-matrix` job now, ubuntu and macOS, and the test job sets
+  `MAUDE_SMOKE_SEPARATE=1`. The required `tests` check waits on both. Local `make test` and
+  `ship.sh` still run it inline. The flag is read before the test's hermetic setup, which
+  unsets every `MAUDE_*` variable: read after, it never skipped anything.
+- **A lock dir that never appears gives up after five looks, not at the end of the bound.**
+  Disk full, or a reason the path checks cannot see, used to cost the whole wait; churn
+  shows a holder's dir at some look and resets the count. Pinned by a `mkdir` that never
+  makes the dir: the old code took 6 s against a 5 s bound.
+- **The prune-race test names a missing `python3`** instead of reading empty timings as 0,
+  and its `flock` holder `exec`s its sleep, so the kill releases the locks with no orphan.
 
 ## v0.33.0 - the gate learned whose house it is in
 
