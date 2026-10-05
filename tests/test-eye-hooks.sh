@@ -240,7 +240,10 @@ test_start "60 parallel ticks all land in the total (the state file is read-modi
 # The lens (2026-09-14) ran 60 concurrent ticks against the unlocked file and read 5.
 rm -f "$STATE"; rmdir "$LOCK" 2>/dev/null
 printf '0\n%s\n0\n' "$(date +%s)" > "$STATE"   # blinked just now: the interval keeps every racer from spawning
-for _i in $(seq 1 60); do (printf '%s' "$EVENT" | bash "$ROOT/hooks/scripts/maude-eye.sh" tick >/dev/null 2>&1) & done
+# This proves EXCLUSION (no lost update), so the 2 s bound is lifted: 60 racers queued behind
+# one lock on a slow box (no flock, slow forks) outlast it and drop ticks by design, which
+# test-lock-bound.sh owns. Under the default it read 30 of 60 in a macOS-shaped run.
+for _i in $(seq 1 60); do (printf '%s' "$EVENT" | MAUDE_LOCK_WAIT=60 bash "$ROOT/hooks/scripts/maude-eye.sh" tick >/dev/null 2>&1) & done
 wait
 assert_eq "$(sed -n 3p "$STATE")" "60" "no tick lost"
 assert_eq "$(sed -n 1p "$STATE")" "60" "burst count kept too"

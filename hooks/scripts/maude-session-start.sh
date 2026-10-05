@@ -65,36 +65,156 @@ fi
 # is workspace-WIDE — it may name a different project than the current focus. Intended:
 # one session spans the whole workspace, so "the latest thing done anywhere" is where you
 # left off. In a single-project .remember/, it's naturally that project's latest.
+# THIS LANE's newest entry (2026-09-25). Entry headers are "## HH:MM | <label>", the
+# label being the writer's branch slot; with remember's REMEMBER_BRANCH_CMD pointed at
+# scripts/maude-lane it is the lane, named by the same maude_session_label this reads
+# with. Unset, every entry said "unknown" and the wake greeted one lane with another's
+# line. So: the newest entry labelled with this lane; else the newest entry, saying
+# whose it is ("workspace-wide" for unlabelled) and that this lane has none yet.
+# The session's lane, once, for both readers below: a namespaced name, because a bare LANE
+# picked up whatever the environment held (lens 2: LANE=pacioli relabelled the line).
+_MAUDE_LANE="$(maude_session_label "")"
 LEFTOFF_LINE=""
 LEFTOFF_SRC="workspace-wide"
 if [ -s "$REMEMBER/now.md" ]; then
-  LEFTOFF_LINE="$(grep -A1 -E '^## [0-9]{2}:[0-9]{2}' "$REMEMBER/now.md" 2>/dev/null \
-    | grep -vE '^## |^--$|^[[:space:]]*$' | tail -1 | head -c 200)"
-  # The session tie (the fleet fix): under concurrent sessions the newest entry
-  # may be a NEIGHBOR session's work, so the line declares its source instead of
-  # masquerading as this session's state. Entry headers are "## HH:MM | label";
-  # the label is the writer's branch field (a fleet can set REMEMBER_BRANCH per
-  # session to put its session name here). "unknown"/absent → workspace-wide.
-  LEFTOFF_HDR="$(grep -E '^## [0-9]{2}:[0-9]{2}' "$REMEMBER/now.md" 2>/dev/null | tail -1)"
-  case "$LEFTOFF_HDR" in
-    *"|"*)
-      LEFTOFF_SRC="$(printf '%s' "$LEFTOFF_HDR" | sed -E 's/^[^|]*\|[[:space:]]*//; s/[[:space:]]*$//' | head -c 40)"
-      case "$LEFTOFF_SRC" in ''|unknown) LEFTOFF_SRC="workspace-wide" ;; esac
-      ;;
-  esac
+  # No awk interval expressions ({n,m}): mawk before 20200717 has none and matched nothing,
+  # so the line vanished silently (lens 2, I3). CRs are dropped; the body and the label are
+  # cut inside awk at a character boundary, never mid-sequence.
+  LEFTOFF_PICK="$(LC_ALL=C awk -v lane="$_MAUDE_LANE" '
+    function cut(x, n) { if (length(x) <= n) return x; x = substr(x, 1, n); sub(/[\300-\377][\200-\277]*$/, "", x); return x }
+    { gsub(/\r/, "") }
+    /^## [0-9][0-9]?:[0-9][0-9]/ {
+      n++; lbl = ""
+      if (index($0, "|")) { lbl = substr($0, index($0, "|") + 1); gsub(/^[ \t]+|[ \t]+$/, "", lbl) }
+      L[n] = lbl; B[n] = ""; next
+    }
+    n && B[n] == "" && $0 !~ /^[ \t]*$/ && $0 !~ /^--$/ { B[n] = $0 }
+    END {
+      if (!n) exit
+      for (i = n; i >= 1; i--) if (tolower(L[i]) == tolower(lane) && B[i] != "") { print cut(L[i], 80) "\t" cut(B[i], 240); exit }
+      for (i = n; i >= 1; i--) if (B[i] != "") {
+        src = L[i]; if (src == "" || src == "unknown") src = "workspace-wide"
+        print cut(src, 60) "; none yet for " cut(lane, 20) "\t" cut(B[i], 240); exit
+      }
+    }' "$REMEMBER/now.md" 2>/dev/null)"
+  if [ -n "$LEFTOFF_PICK" ]; then
+    LEFTOFF_SRC="${LEFTOFF_PICK%%	*}"
+    LEFTOFF_LINE="${LEFTOFF_PICK#*	}"
+  fi
 fi
 
 # Tier 2: remember plugin's handoff file (the dense, intentional signal from last session)
 # The handoff file is append-only under the house law: the LAST "## Next" block is the
 # last handoff (grep -m1 read the first of thirty-one and labelled it "Last" until
 # 2026-09-06). The line carries the file's own age, so a stale handoff says so.
+#
+# THIS LANE's handoff, whole enough to act on (2026-09-25). One file holds every lane's
+# handoffs, each opening "# Handoff … (<lane> lane …)". One line from the last "## Next"
+# anywhere was the wrong subject twice over: another lane's, and when the newest block had
+# no "## Next", the block before it, whose Next ("fix pmg dropping orderby") its own later
+# trap said NOT to do. So: the last block whose HEADER names this lane (the tmux session
+# name, maude_session_label), else the newest block, labelled whose it is; from its State
+# (else its Next, else its body) onward, so a block's Traps ride along. Capped at
+# HANDOFF_CAP bytes: past ~3.5 KB the harness parks the whole brief in a file unread.
+# A file with no "# Handoff" headers keeps the older last-"## Next" reading.
 REMEMBER_AGE=""
+HANDOFF_CAP="${MAUDE_HANDOFF_CAP:-1200}"
+case "$HANDOFF_CAP" in ''|*[!0-9]*) HANDOFF_CAP=1200 ;; esac
+# Base 10 and bounded: "08" was a bash arithmetic error (value too great for base), "0300"
+# silently octal 192 (lens 4). Five digits is past any sane cap.
+[ "${#HANDOFF_CAP}" -gt 5 ] && HANDOFF_CAP=99999
+HANDOFF_CAP=$((10#$HANDOFF_CAP))
+# LC_ALL=C: bytes, not characters. Under gawk in a UTF-8 locale (the default awk on Fedora
+# and Arch) length/substr count characters, so every cap here was a character cap, up to
+# ~3x in bytes, and the byte classes below would read as code points (lens 3, I-D).
+_maude_handoff() {  # <cap>
+  LC_ALL=C awk -v lane="$_MAUDE_LANE" -v cap="$1" '
+    # The lane is whatever stands before " lane" inside the header parentheses, compared
+    # whole: a charset regex read "ma.ude+ lane" as "ude" and "my lane" as "my", and told a
+    # lane that its own block belonged to nobody (lens 5). The bare "<token> lane" form is
+    # kept for headers written without parentheses. (No apostrophes in here: the program is
+    # a single-quoted shell string.)
+    function lane_of(h,  l, x) {
+      l = tolower(h)
+      if (match(l, /\([^()]* lane[,)]/)) {
+        # The LAST comma item before " lane": "(opus 5, sur lane)" is sur, not "opus 5, sur"
+        # (lens 6: five live headers read wrong the other way).
+        x = substr(l, RSTART + 1, RLENGTH - 7); sub(/^.*, */, "", x); return x
+      }
+      # Bare form: the words before " lane", each starting with a letter, so a lane of two
+      # words ("pierce county lane", live on 09-15) is whole and a date or time before it
+      # is not swept in (lens 7). A leading "handoff" is the title, not the lane.
+      # The run must start at a token boundary (a space is prepended so a first-column
+      # token has one): "07:5xZ maude lane" must read maude, not "xz maude".
+      if (match(" " l, /[^a-z0-9_.+:-][a-z][a-z0-9_.+-]*( [a-z][a-z0-9_.+-]*)* lane/)) {
+        x = substr(" " l, RSTART + 1, RLENGTH - 6); sub(/^handoff /, "", x); return x
+      }
+      return ""
+    }
+    # Cut at a character boundary: drop the trailing lead byte and its continuations, so a
+    # partial sequence never prints (at an exact boundary this drops one whole character).
+    # Stripping every trailing byte >= 0x80 dropped a whole line of em dashes (lens 2).
+    function cut(x, n) { if (length(x) <= n) return x; x = substr(x, 1, n); sub(/[\300-\377][\200-\277]*$/, "", x); return x }
+    { gsub(/\r/, ""); L[NR] = $0 }
+    /^# Handoff/ { hn++; H[hn] = NR; HL[hn] = lane_of($0) }
+    END {
+      if (!hn) exit 3
+      pick = 0
+      for (i = hn; i >= 1; i--) if (HL[i] == tolower(lane)) { pick = i; break }
+      mine = (pick > 0); if (!pick) pick = hn
+      s = H[pick]; e = (pick < hn) ? H[pick + 1] - 1 : NR
+      n = 0; st = 0
+      for (j = s + 1; j <= e; j++) if (L[j] ~ /^## Next/) n = j
+      for (j = s + 1; j <= e; j++) if (L[j] ~ /^## State/ && (n == 0 || j < n)) st = j
+      b = st ? st : (n ? n : s + 1)
+      hdr = L[s]; sub(/^# Handoff[^A-Za-z0-9(]*/, "", hdr)
+      if (length(hdr) > 200) hdr = cut(hdr, 200) "…"
+      if (!mine) hdr = hdr " [newest; none yet for " cut(lane, 20) "]"
+      print hdr
+      # Every PRINTED byte counts: the 4-space indent and the newline too. Counting the text
+      # alone let 400 short lines print 2.5 KB against a 1,200 cap (lens 2, I2).
+      used = 0
+      for (j = b; j <= e; j++) {
+        x = L[j]
+        if (x ~ /^[ \t]*$/) continue
+        if (used + length(x) + 5 > cap) {
+          x = cut(x, cap - used - 8)
+          if (length(x) > 0) print "    " x "…"
+          break
+        }
+        print "    " x; used += length(x) + 5
+      }
+      print "    (full: .remember/remember.md:" s ")"
+    }' "$REMEMBER/remember.md" 2>/dev/null
+}
 if [ -s "$REMEMBER/remember.md" ]; then
-  REMEMBER_HANDOFF="$(grep -A1 '^## Next' "$REMEMBER/remember.md" 2>/dev/null \
-    | grep -vE '^## |^--$|^[[:space:]]*$' | tail -1 | head -c 200)"
+  REMEMBER_HANDOFF="$(_maude_handoff "$HANDOFF_CAP")"
+  HANDOFF_FROM_BLOCKS=""; [ -n "$REMEMBER_HANDOFF" ] && HANDOFF_FROM_BLOCKS=1
+  if [ -z "$REMEMBER_HANDOFF" ]; then
+    REMEMBER_HANDOFF="$(grep -A1 '^## Next' "$REMEMBER/remember.md" 2>/dev/null \
+      | grep -vE '^## |^--$|^[[:space:]]*$' | tail -1 | head -c 200)"
+  fi
   [ -z "$REMEMBER_HANDOFF" ] && REMEMBER_HANDOFF="$(head -3 "$REMEMBER/remember.md" | tail -1 | head -c 200)"
-  REMEMBER_AGE_D=$(( ( $(date +%s) - $(maude_mtime "$REMEMBER/remember.md") ) / 86400 ))
-  if [ "$REMEMBER_AGE_D" -lt 1 ]; then REMEMBER_AGE="today"; else REMEMBER_AGE="${REMEMBER_AGE_D}d ago"; fi
+  # The chosen block's own date when its header carries one: every lane appends here, so
+  # the file's mtime read "today" beside a ten-day-old handoff.
+  # The header's LAST date: a date in a reference comes first ("session 2026-09-01 ref").
+  HANDOFF_DATE="$(printf '%s\n' "$REMEMBER_HANDOFF" | head -1 | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | tail -1)"
+  REMEMBER_AGE_D=""
+  [ -n "$HANDOFF_DATE" ] && REMEMBER_AGE_D="$(maude_days_between "$HANDOFF_DATE" "$(date +%Y-%m-%d)")"
+  # A block whose header carries a date in some OTHER shape ("09/20/2026") is "undated",
+  # never the shared file's mtime, which read it as "today" (lens 5). A header with no
+  # date at all (the old one-title shape, "# Handoff") still reads the file's mtime.
+  # Date-shaped = a four-digit year at one end ("09/20/2026", "2026.09.25"); "v1.2.34" is
+  # a version, not a date, and read as one it said "undated" for a header with no date (lens 6).
+  if [ -n "$HANDOFF_FROM_BLOCKS" ] && [ -z "$HANDOFF_DATE" ] \
+     && printf '%s\n' "$REMEMBER_HANDOFF" | head -1 | grep -Eq '(^|[^0-9.A-Za-z])([0-9]{1,2}[/.][0-9]{1,2}[/.][0-9]{4}|[0-9]{4}[/.][0-9]{1,2}[/.][0-9]{1,2})([^0-9.]|$)'; then
+    REMEMBER_AGE="undated"
+  else
+    case "$REMEMBER_AGE_D" in ''|*[!0-9-]*)
+      REMEMBER_AGE_D=$(( ( $(date +%s) - $(maude_mtime "$REMEMBER/remember.md") ) / 86400 )) ;;
+    esac
+    if [ "$REMEMBER_AGE_D" -lt 1 ]; then REMEMBER_AGE="today"; else REMEMBER_AGE="${REMEMBER_AGE_D}d ago"; fi
+  fi
 fi
 
 # Tier 3: cross-project patterns (her own home base) — one scar per wake, rotating.
@@ -258,7 +378,22 @@ fi
 GREETING="$(maude_greeting)"
 # Composed into a variable so the brief's bill can be logged (#49) — the
 # emission itself is unchanged.
-BRIEF="$({
+# Her mark, drawn by her, above the greeting (John, 2026-09-26: "wake brief banner, hers to
+# draw" · "Maude for Claude" · "go back to your original MAUDE then put in txt for Claude
+# below align right"). Plain 7-bit ASCII, five lines, 145 bytes, inside the brief so the
+# budget counts it and the spend line bills it. MAUDE_BANNER=off hides it; nothing else moves.
+_maude_banner() {
+  case "${MAUDE_BANNER:-on}" in off|OFF|0|false|FALSE|no|NO) return 0 ;; esac   # the spellings MAUDE_RUN_GOVERNOR takes
+  cat <<'EOF'
+  __  __                _
+ |  \/  | __ _ _  _ __| |___
+ | |\/| |/ _` | || / _` / -_)
+ |_|  |_|\__,_|\_,_\__,_\___|
+                   for Claude
+EOF
+}
+_maude_brief() {
+  _maude_banner
   [ -n "$GREETING" ] && printf '%s ' "$GREETING"
   printf 'Maude here.'
   [ -n "$HAS_MAP" ] && printf ' (house-map ✓%s)' "$MAP_NOTE"
@@ -274,7 +409,47 @@ BRIEF="$({
   [ "$TOPIC_COUNT" -gt 0 ]    && printf '  %s memory file(s) on hand.\n' "$TOPIC_COUNT"
   [ -n "$CUSHION_LINE" ]      && printf '  %s\n' "$CUSHION_LINE"
   [ -z "$HAS_MAP" ] && printf '  No house-map yet — run /maude:found.\n'
-} 2>/dev/null)"
+}
+BRIEF="$(_maude_brief 2>/dev/null)"
+# The WHOLE brief has a budget, not only the handoff: with every other line at its own cap
+# the brief measured 3,858 bytes against the ~3.5 KB that lands inline (lens 3, I-D). Past
+# MAUDE_BRIEF_MAX (default 3,300, leaving room for the chores line printed after it) the
+# handoff, the one elastic line, is re-cut by the overrun, never below 150 bytes of body.
+BRIEF_MAX="${MAUDE_BRIEF_MAX:-3300}"
+case "$BRIEF_MAX" in ''|*[!0-9]*) BRIEF_MAX=3300 ;; esac
+[ "${#BRIEF_MAX}" -gt 5 ] && BRIEF_MAX=99999
+BRIEF_MAX=$((10#$BRIEF_MAX))
+# One pass, from the handoff BODY's actual size (the header and pointer lines are not under
+# the cap): a lower cap on a body already under its cap cut nothing, and measuring the whole
+# block let a long header keep the cap above the body. The body's printed bytes never exceed
+# its cap (every printed byte is counted), so cutting the cap by the overrun cuts the brief
+# by at least that much, down to the floor.
+_BRIEF_BYTES="$(printf '%s\n' "$BRIEF" | wc -c | tr -d ' ')"
+if [ -n "$REMEMBER_HANDOFF" ] && [ "$_BRIEF_BYTES" -gt "$BRIEF_MAX" ]; then
+  if [ -n "$HANDOFF_FROM_BLOCKS" ]; then
+    _BODY="$(printf '%s\n' "$REMEMBER_HANDOFF" | sed '1d;$d' | wc -c | tr -d ' ')"
+  else
+    _BODY="$(printf '%s' "$REMEMBER_HANDOFF" | wc -c | tr -d ' ')"   # the line's bytes, no newline: the cut counts the same
+  fi
+  _CAP="$HANDOFF_CAP"; [ "$_BODY" -lt "$_CAP" ] && _CAP="$_BODY"
+  _CAP=$(( _CAP - (_BRIEF_BYTES - BRIEF_MAX) ))
+  [ "$_CAP" -lt 150 ] && _CAP=150
+  if [ -n "$HANDOFF_FROM_BLOCKS" ]; then
+    REMEMBER_HANDOFF="$(_maude_handoff "$_CAP")"
+  else
+    # The headerless shape is one line; the same budget cuts it the same way. It was
+    # exempt, so the whole-brief budget was a no-op on the older file shape (lens 5).
+    # The ellipsis (3 bytes) is inside the cap, as the block cut counts it.
+    REMEMBER_HANDOFF="$(printf '%s\n' "$REMEMBER_HANDOFF" | LC_ALL=C awk -v cap="$_CAP" '
+      { x = $0; if (length(x) > cap) { x = substr(x, 1, cap - 3); sub(/[\300-\377][\200-\277]*$/, "", x); x = x "…" } print x; exit }')"
+  fi
+  BRIEF="$(_maude_brief 2>/dev/null)"
+fi
+# At the floor and still over: said in the trace, not in silence (lens 4). The brief itself
+# is not cut further; its other lines are each capped already.
+_BRIEF_BYTES="$(printf '%s\n' "$BRIEF" | wc -c | tr -d ' ')"
+[ "$_BRIEF_BYTES" -gt "$BRIEF_MAX" ] && \
+  maude_log_trace "session-start" "brief $_BRIEF_BYTES bytes over MAUDE_BRIEF_MAX $BRIEF_MAX"
 printf '%s\n' "$BRIEF"
 # #49: the brief is injected context — log its bill (hook + bytes, no content).
 maude_log_spend "session-start" "$(printf '%s' "$BRIEF" | wc -c | tr -d ' ')"

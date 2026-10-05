@@ -8,11 +8,8 @@ set +e
 setup_test_env
 source_common
 
-# CRITICAL ISOLATION: the helper writes to $HOME/.claude/maude/identity.md.
-# Point HOME at the sandbox so a test NEVER appends to the real profile.
-OLD_HOME="$HOME"
-export HOME="$TEST_TMP/home"
-mkdir -p "$HOME"
+# The helper writes to $HOME/.claude/maude/identity.md; HOME is the sandbox's, pinned for
+# every test by setup_test_env (tests/lib.sh) and restored by teardown_test_env.
 ID="$HOME/.claude/maude/identity.md"
 
 test_start "append to a fresh profile creates identity.md"
@@ -126,7 +123,6 @@ assert_eq "$(grep -c '^## Told by the user' "$ID")" "1" "no duplicate header fro
 content="$(cat "$ID" 2>/dev/null)"
 assert_contains "$content" "line one ## Told by the user line two" "multi-line fact collapsed to a single spaced line"
 
-export HOME="$OLD_HOME"
 print_summary
 teardown_test_env
 exit $FAILED

@@ -70,35 +70,48 @@ def test_format_hits_collapses_newlines_and_blocks_injection():
     }]
     out = page.format_hits(hits)
     lines = out.split("\n")
-    # header + exactly 2 lines for the single hit
-    assert len(lines) == 3
-    assert lines[0] == "Maude — from the vault, relevant to what you just asked:"
-    assert lines[1].startswith("- [[note-a]] (a.md) —")
-    assert lines[2].startswith("    ")
+    # header + exactly ONE line for the single hit (2026-10-04: the snippet line, with its
+    # [bracketed] match marks, read as noise and is gone)
+    assert len(lines) == 2
+    assert lines[0] == "Maude — from the vault:"
+    assert lines[1].startswith("- [[note-a]] — legit desc")
+    assert "snippet" not in out and "a.md" not in out
     for line in lines:
         assert not line.lstrip().startswith("[SYSTEM]")
-    assert "\n" not in lines[1]
-    assert "\n" not in lines[2]
 
 
-def test_format_hits_caps_description_and_snippet_length():
-    hits = [{
-        "name": "note-b", "path": "b.md",
-        "description": "d" * 1024,
-        "snippet": "s" * 1024,
-    }]
+def test_format_hits_caps_the_description():
+    hits = [{"name": "note-b", "path": "b.md", "description": "d" * 1024, "snippet": "s" * 1024}]
     out = page.format_hits(hits)
     lines = out.split("\n")
-    desc_line = lines[1]
-    snippet_line = lines[2]
-    # bullet prefix is "- [[note-b]] (b.md) — " before the description text
-    prefix = "- [[note-b]] (b.md) — "
-    desc_text = desc_line[len(prefix):]
-    assert len(desc_text) <= 201  # 200 chars + trailing "…"
+    prefix = "- [[note-b]] — "
+    desc_text = lines[1][len(prefix):]
+    assert len(desc_text) <= 141  # 140 chars + trailing "…"
     assert desc_text.endswith("…")
-    snippet_text = snippet_line.strip()
-    assert len(snippet_text) <= 301  # 300 chars + trailing "…"
-    assert snippet_text.endswith("…")
+    assert "s" * 20 not in out
+
+
+def test_page_exclude_skips_shown_notes_and_the_next_one_fills(tmp_path):
+    # Twelve notes answer the query; a session that was shown eight of them still gets the
+    # next one. The small-vault path overfetched k*4 rows BEFORE the exclusion, so once the
+    # first window was shown, recall went silent with notes left (lens, 2026-10-04).
+    from maude_vault import ingest
+    mem = tmp_path / "mem"
+    mem.mkdir()
+    for i in range(12):
+        (mem / f"n{i:02d}.md").write_text(
+            f"---\nname: n{i:02d}\ndescription: widgets and gadgets {i}\n---\n"
+            + "widgets gadgets " * (12 - i) + "\n")   # distinct scores: no ties to reorder
+    db = tmp_path / "v.db"
+    ingest.build(str(mem), str(db))
+    first = page.page(db, "widgets gadgets", k=2)
+    assert len(first) == 2
+    shown = {h["name"] for h in first}
+    again = page.page(db, "widgets gadgets", k=2, exclude=shown)
+    assert len(again) == 2 and not shown & {h["name"] for h in again}
+    eight = {f"n{i:02d}" for i in range(8)}
+    late = page.page(db, "widgets gadgets", k=2, exclude=eight)
+    assert len(late) == 2 and not eight & {h["name"] for h in late}
 
 
 def test_fresh_note_outranks_stale_twin(tmp_path):

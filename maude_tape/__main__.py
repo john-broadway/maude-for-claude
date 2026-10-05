@@ -73,6 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("wake", "rest", "pending"):
         sp = sub.add_parser(name)
         sp.add_argument("--db", required=True)
+        if name == "wake":
+            sp.add_argument("--full", action="store_true",
+                            help="play every live row, past the wake's byte budget")
 
     pr = sub.add_parser("promote")   # his hand on the buffer's door into canon
     pr.add_argument("--db", required=True)
@@ -236,35 +239,100 @@ def main(argv: list[str] | None = None) -> int:
         rejections = tape.list_rejections()
         if not brief.canon_texts and not rejections and not brief.identity:
             return 0  # empty tape (fresh install) — play nothing
-        print("=== THE TAPE — play at wake ===")
+        # A BYTE BUDGET (2026-09-25). Every live row played, 31 KB on this workspace, and hook
+        # output past the harness's inline size is parked in a file with only a ~2 KB preview
+        # read: the tape was cut to its first screen every wake, in silence. 3.6 KB is the
+        # largest SessionStart output measured landing inline, so the default is 3,000
+        # (MAUDE_TAPE_WAKE_BUDGET; --full plays everything). Order is what must never be cut
+        # first: NEVER RENDER, WHO I AM; then his words newest first, then Claude's approved
+        # wording, WHOLE ROWS ONLY: a quote cut mid-sentence under "use verbatim" is a
+        # re-rendering of him. A footer counts what stayed on the tape and names the command.
+        try:
+            budget = int(os.environ.get("MAUDE_TAPE_WAKE_BUDGET", "3000"))
+        except ValueError:
+            budget = 3000
+        full = getattr(args, "full", False)
         # Split by authority. His verbatim words are the only ones that may be replayed as
         # his; a rendering he approved, or an inference he promoted, is Claude's wording and
         # saying otherwise hands his voice away. promote.md already promised authority is
         # preserved — it was true in the table and false on the screen.
-        entries = brief.canon_entries or [(t, "user-verbatim", None, None) for t in brief.canon_texts]
-        his = [(t, ts, sha) for t, a, ts, sha in entries if a == "user-verbatim"]
-        ours = [(t, a, ts) for t, a, ts, sha in entries if a != "user-verbatim"]
-        # Each row carries its date, so two rulings on one topic can be ranked, and a
-        # verbatim row the tape never heard him type says so (the memory lens, 2026-09-06).
-        if his:
-            print("\nHIS WORDS (his rendering — use verbatim, never re-render):")
-            for text, ts, sha in his:
-                tag = "" if sha else "  [unverified: no voice row holds it]"
-                print(f"  • {_one_line(text)}{_when(ts)}{tag}")
-        if ours:
-            # Header deliberately does NOT contain the substring "HIS WORDS" — a reader splitting
-            # on that string would otherwise land inside this block. Never substring-match.
-            print("\nCLAUDE'S WORDING, APPROVED BY HIM (never quote as his):")
-            for text, authority, ts in ours:
-                print(f"  ◦ {_one_line(text)}  [{authority}]{_when(ts)}")
+        # Work from the live canon ROWS, by id. Keying by text (lens, 2026-09-25) hid a
+        # verbatim row whose text matched an identity row, and printed identity rows with no
+        # authority label, so an inference could play as a bare bullet under WHO I AM.
+        rows = tape._conn.execute(
+            "SELECT id, text, authority, ts, voice_sha, source, topic FROM canon "
+            "WHERE superseded_by IS NULL ORDER BY id").fetchall()
+
+        def line(text, authority, ts, sha):
+            # Each row carries its date, so two rulings on one topic can be ranked, and a
+            # verbatim row the tape never heard him type says so (the memory lens, 2026-09-06).
+            # Only user-verbatim wears the plain bullet; everything else names its authority.
+            authority = authority or "agent-inference"
+            if authority == "user-verbatim":
+                return (f"  • {_one_line(text)}{_when(ts)}"
+                        f"{'' if sha else '  [unverified: no voice row holds it]'}")
+            return f"  ◦ {_one_line(text)}  [{authority}]{_when(ts)}"
+
+        # WHO I AM: one copy per (text, authority), the NEWEST, in the order the rows were
+        # written, the same rule as every other section. Three copies of one line played
+        # three times (lens round 4); keyed on text alone and keeping the oldest, the first
+        # fix dropped his later verbatim ratification of a line Claude had inferred and
+        # printed it as an inference (lens round 5). A different authority is a different
+        # ruling and plays on its own line.
+        ident_newest = {}
+        for r in rows:
+            if r[6] == "maude-identity":
+                key = (r[1], r[2] or "agent-inference")
+                if key not in ident_newest or float(r[3] or 0) >= float(ident_newest[key][3] or 0):
+                    ident_newest[key] = r
+        ident_rows = sorted(ident_newest.values(), key=lambda r: r[0])
+        # His deliberately seeded words first (a source that is not a session capture: the
+        # vision, the horse), then newest first; an undated row sorts oldest. Newest-first
+        # alone played "2 go" and cut "ridden like a horse" (live, 2026-09-25). The same text
+        # stored twice plays once, its newest copy ("fix as you find own as you go" is on the
+        # live tape four times).
+        # One copy per (text, authority): the NEWEST, whatever its tier, so the verified,
+        # dated copy plays rather than an older unverified seed (lens round 2). A different
+        # authority is a different ruling and plays on its own line.
+        newest_copy = {}
+        for r in rows:
+            if r[6] == "maude-identity":
+                continue
+            key = (r[1], r[2] or "agent-inference")
+            if key not in newest_copy or float(r[3] or 0) >= float(newest_copy[key][3] or 0):
+                newest_copy[key] = r
+        seeded_of = {}
+        for r in rows:   # a text is seeded if ANY live copy of it was seeded on purpose
+            if r[6] != "maude-identity" and not str(r[5] or "").startswith("session-"):
+                seeded_of[(r[1], r[2] or "agent-inference")] = True
+        rest_rows = sorted(newest_copy.values(),
+                           key=lambda r: (seeded_of.get((r[1], r[2] or "agent-inference"), False),
+                                          float(r[3] or 0)), reverse=True)
+        his, ours = [], []
+        for r in rest_rows:
+            seeded_row = seeded_of.get((r[1], r[2] or "agent-inference"), False)
+            ((his if (r[2] or "agent-inference") == "user-verbatim" else ours)
+             .append((seeded_row, line(r[1], r[2], r[3], r[4]))))
+
+        fixed = ["=== THE TAPE — play at wake ==="]
+        # NEVER RENDER is bounded to half the budget: every correction adds a rejection, and
+        # an uncut list would carry the wake past the inline size again, silently. The gate
+        # (`maude_tape check`) refuses every rejection whatever the wake shows; the count of
+        # the rest is said.
         if rejections:
-            print(f"\nNEVER RENDER ({len(rejections)}):")
-            for hit in rejections:
-                print(f"  ✗ {hit.phrase!r} — {_one_line(hit.reason)}")
-        if brief.identity:
-            print("\nWHO I AM:")
-            for text in brief.identity:
-                print(f"  • {_one_line(text)}")
+            rej = [f"  ✗ {hit.phrase!r} — {_one_line(hit.reason)}" for hit in rejections]
+            shown, spent = [], 0
+            for l in rej:
+                if not full and spent + len(l.encode()) + 1 > budget // 2:
+                    break
+                shown.append(l)
+                spent += len(l.encode()) + 1
+            fixed += ["", f"NEVER RENDER ({len(rejections)}):"] + shown
+            if len(shown) < len(rej):
+                fixed.append(f"  … {len(rej) - len(shown)} more; the gate still refuses every one "
+                             f"(maude_tape check)")
+        if ident_rows:
+            fixed += ["", "WHO I AM:"] + [line(r[1], r[2], r[3], r[4]) for r in ident_rows]
         # The queue has to be said where there are ears. `rest` announces it at SessionEnd,
         # into a hook that redirects to /dev/null — so the count was built and never heard.
         # Wake is read. Observer discipline: a broken buffer costs the line, never the tape.
@@ -272,8 +340,83 @@ def main(argv: list[str] | None = None) -> int:
             waiting = len(tape.pending())
         except Exception:
             waiting = 0
-        if waiting:
-            print(f"\n{waiting} awaiting your word — see them with /maude:promote")
+        pending_line = f"\n{waiting} awaiting your word — see them with /maude:promote" if waiting else ""
+        # Reserve exactly what prints after the rows: the two section headers, the footer at
+        # its widest (both counts at their totals), and the pending line. A flat 200 ran 50
+        # bytes over on the live tape, whose footer carries a long db path.
+        # The command is handed to a person at a prompt, and the package is never installed:
+        # bare `python3 -m maude_tape` works only with the plugin root on PYTHONPATH, which
+        # the hooks set and a shell does not. "No module named maude_tape" from the canonical
+        # workspace root (John, 2026-09-29). The hint carries its own path.
+        full_cmd = (f"PYTHONPATH={os.path.dirname(os.path.dirname(os.path.abspath(__file__)))} "
+                    f"python3 -m maude_tape wake --full --db {args.db}")
+        footer_max = (f"\n{len(his)} more of his words and {len(ours)} more approved lines stay on "
+                      f"the tape: {full_cmd}")
+        # Header comment: CLAUDE'S WORDING deliberately does NOT contain the substring "HIS
+        # WORDS" — a reader splitting on that string would otherwise land inside it.
+        his_hdr = "\nHIS WORDS (his rendering — use verbatim, never re-render):"
+        ours_hdr = "\nCLAUDE'S WORDING, APPROVED BY HIM (never quote as his):"
+        used = (sum(len(l.encode()) + 1 for l in fixed)
+                + len(footer_max.encode()) + 1 + len(pending_line.encode()) + 1)
+
+
+        def take(rows, ceiling, hdr, kept):
+            # rows: [(rank, text)]; kept: {rank: text}. A section's header is paid by its
+            # first row, so a section with no row that fits costs nothing.
+            nonlocal used
+            for rank, text in rows:
+                if rank in kept:
+                    continue
+                cost = len(text.encode()) + 1 + (0 if kept else len(hdr.encode()) + 1)
+                if not full and used + cost > ceiling:
+                    continue   # whole rows only; a shorter, older row may still fit
+                kept[rank] = text
+                used += cost
+
+        # His words in three passes, printed in rank order: the seeded tier up to two thirds
+        # of what is left (so the newest session words have room), then the session tier,
+        # then whatever room is left goes back to held seeded rows, before any of Claude's
+        # wording (the cap had held his seeded words while Claude's lines played).
+        seeded_ceiling = used + max(0, budget - used) * 2 // 3
+        seeded_rows = [(i, t) for i, (s_, t) in enumerate(his) if s_]
+        session_rows = [(i, t) for i, (s_, t) in enumerate(his) if not s_]
+        his_by_rank = {}
+        take(seeded_rows, seeded_ceiling, his_hdr, his_by_rank)
+        take(session_rows, budget, his_hdr, his_by_rank)
+        take(seeded_rows, budget, his_hdr, his_by_rank)
+        his_kept = [his_by_rank[i] for i in sorted(his_by_rank)]
+        ours_by_rank = {}
+        take(list(enumerate(t for _, t in ours)), budget, ours_hdr, ours_by_rank)
+        ours_kept = [ours_by_rank[i] for i in sorted(ours_by_rank)]
+        tail = []
+        if his_kept:
+            tail += [his_hdr, "\n".join(his_kept)]
+        if ours_kept:
+            tail += [ours_hdr, "\n".join(ours_kept)]
+        held_his, held_ours = len(his) - len(his_kept), len(ours) - len(ours_kept)
+        if held_his or held_ours:
+            tail.append(f"\n{held_his} more of his words and {held_ours} more approved lines stay "
+                        f"on the tape: {full_cmd}")
+        if pending_line:
+            tail.append(pending_line)
+
+        def render(head):
+            return "".join(p + "\n" for p in ["\n".join(head)] + tail)
+        # The fixed block is never cut, so the wake can run over; when it does it says so, with
+        # the size of what actually prints, note included. Decided on the rendered bytes, not
+        # on a reservation (lens round 4: a reserved footer that never printed made a
+        # 2,903-byte wake say it was over, and the note's own bytes were never counted).
+        out = render(fixed)
+        if not full and len(out.encode()) > budget:
+            size = len(out.encode())
+            for _ in range(3):   # the note's own digits can change its length; settle it
+                note = (f"  (this wake is {size} bytes, over the {budget}-byte wake budget; "
+                        f"the gate list and WHO I AM are never cut; wake --full plays everything)")
+                out = render(fixed + [note])
+                if len(out.encode()) == size:
+                    break
+                size = len(out.encode())
+        sys.stdout.write(out)
         return 0
 
     if args.cmd == "check":

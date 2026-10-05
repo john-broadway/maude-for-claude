@@ -608,9 +608,14 @@ _maude_care_set_unlocked() {
 # "none" when the consume did not land (fail closed).
 maude_care_take_token() {  # <care.json> <key> <now-epoch>
   maude_locked "$1.lock" _maude_care_take_token_unlocked "$@"
+  # Busy, never none: nothing was read, and "none" would send the person for a clear he
+  # may hold. The caller blocks on anything but "live" (fail closed).
+  [ $? -eq "$MAUDE_LOCK_BUSY" ] && printf 'busy'
+  return 0
 }
 _maude_care_take_token_unlocked() {
   local care="$1" key="$2" now="$3" until
+  _maude_care_drain_spent_unlocked "$care" "$key"
   until="$(jq -r --arg k "$key" '.gate_cleared[$k].until // 0' "$care" 2>/dev/null)"
   # The whole group is quiet: a non-numeric `until` made `[` print "integer expression
   # expected" on the person's channel when only the last test was silenced (MINOR-5).
@@ -651,7 +656,11 @@ maude_call_head() {  # <command>
 maude_call_fp() {  # <hook-input-json>
   local canon
   command -v jq >/dev/null 2>&1 || { printf ''; return 0; }
-  canon="$(printf '%s' "$1" | jq -Sc '.tool_input // {}' 2>/dev/null)"
+  # The TOOL is part of the call: hashing the arguments alone let a different destructive
+  # tool with the same bytes ({"target":"x"} on another server, or no arguments at all) ride
+  # the reservation as "the same call retried" and spend John's one RED clear (lens 6,
+  # BLOCKING). Formula change → reservation v3; a v2 reservation names no call.
+  canon="$(printf '%s' "$1" | jq -Sc '{n: (.tool_name // ""), i: (.tool_input // {})}' 2>/dev/null)"
   [ -n "$canon" ] || { printf ''; return 0; }
   if command -v cksum >/dev/null 2>&1; then printf '%s' "$canon" | cksum 2>/dev/null | awk '{print $1}'
   elif command -v shasum >/dev/null 2>&1; then printf '%s' "$canon" | shasum 2>/dev/null | awk '{print $1}'
@@ -693,7 +702,7 @@ maude_gate_spendable_here() {  # <hook-input-json> <command> <token-file>...
       '(.gate_cleared // {}) | if type == "object" then to_entries else [] end
        | any(((.value.until? // 0 | if type == "number" then . else 0 end) > $now)
              and (((.value.reserved | type) != "object")
-                  or (((.value.reserved.v? // 0) | tostring) != "2")
+                  or (((.value.reserved.v? // 0) | tostring) != "3")
                   or ((.value.reserved.fp // "") == $f and $f != "")
                   or (((.value.reserved.fp // "") == "") and ((.value.reserved.head // "") == $h))))' \
       "$f" >/dev/null 2>&1 && return 0
@@ -716,6 +725,7 @@ maude_gate_spendable_here() {  # <hook-input-json> <command> <token-file>...
 #                  reservation is the clear's problem, never another lane's opening;
 #     "unwritable" the token is live but the reservation did not land (fail closed, and
 #                  say so: the person holds a clear the gate cannot record);
+#     "busy"       the store's lock was held past MAUDE_LOCK_WAIT: nothing was read;
 #     "none"       absent or expired.
 #              The same call again after RETRY_MIN is a pass: its earlier run was refused
 #              by a sibling hook and never ran. A reservation carrying neither <fp> nor
@@ -732,9 +742,13 @@ maude_gate_spendable_here() {  # <hook-input-json> <command> <token-file>...
 MAUDE_TOKEN_RETRY_MIN="${MAUDE_TOKEN_RETRY_MIN:-3}"
 maude_care_reserve_token() {  # <care.json> <key> <sid> <now-epoch> <fp> <head>
   maude_locked "$1.lock" _maude_care_reserve_token_unlocked "$@"
+  # Busy, never none: the person may hold a clear, and "none" sends him for one he has.
+  [ $? -eq "$MAUDE_LOCK_BUSY" ] && printf 'busy'
+  return 0
 }
 _maude_care_reserve_token_unlocked() {
   local care="$1" key="$2" sid="$3" now="$4" fp="$5" head="$6" until rsid rat rfp rhead rv _same
+  _maude_care_drain_spent_unlocked "$care" "$key"
   until="$(jq -r --arg k "$key" '.gate_cleared[$k].until // 0' "$care" 2>/dev/null)"
   if ! { [ -n "$until" ] && [ "$until" -gt 0 ] && [ "$until" -gt "$now" ]; } 2>/dev/null; then
     printf 'none'; return 0
@@ -746,7 +760,7 @@ EOF
   # changed once between releases, and comparing across a change refused the person their
   # own command on a clear they held (the 26th lens, IMPORTANT-4). Anything else names no
   # call: re-reserve here, spend at Post.
-  if [ "$rv" = 2 ] && { [ -n "$rfp" ] || [ -n "$rhead" ]; }; then
+  if [ "$rv" = 3 ] && { [ -n "$rfp" ] || [ -n "$rhead" ]; }; then
     _same=0
     if [ -n "$fp" ] && [ "$rfp" = "$fp" ] && [ "$rsid" = "$sid" ]; then _same=1
     elif [ -z "$fp" ] && [ -z "$rfp" ] && [ -n "$head" ] && [ "$rhead" = "$head" ] && [ "$rsid" = "$sid" ]; then _same=1
@@ -763,24 +777,111 @@ EOF
   if _maude_care_set_unlocked "$care" --arg k "$key" --arg s "$sid" --argjson t "$now" --arg f "$fp" --arg h "$head" \
        '.gate_cleared = ((.gate_cleared // {}) | if type == "object" then . else {} end
           | with_entries(select((.key == $k) or ((.value.until? // 0 | if type == "number" then . else 0 end) > $t))))
-        | .gate_cleared[$k].reserved = {sid: $s, at: $t, fp: $f, head: $h, v: 2}'; then
+        | .gate_cleared[$k].reserved = {sid: $s, at: $t, fp: $f, head: $h, v: 3}'; then
     printf 'live'; return 0
   fi
   printf 'unwritable'
 }
-maude_care_consume_token() {  # <care.json> <key> <fp> <head>
+# A consume that finds the store busy must not leave a one-shot spendable: the command
+# RAN. Answering "none" left the reservation, and after MAUDE_TOKEN_RETRY_MIN the same
+# bytes rode the token again, a RED force-push included (the lens, B2). So a busy consume
+# leaves a SPENT MARKER beside the store, written without the lock (a rename is atomic),
+# and prints "queued"; every locked token read drains the marker first, spending the token
+# only while the same session's same call still holds its reservation (see the drain).
+# A marker can only ever SPEND, never grant.
+maude_care_consume_token() {  # <care.json> <key> <fp> <head> [sid]
   maude_locked "$1.lock" _maude_care_consume_token_unlocked "$@"
+  if [ $? -eq "$MAUDE_LOCK_BUSY" ]; then
+    if _maude_care_mark_spent "$@"; then printf 'queued'; else printf 'none'; fi
+  fi
+  return 0
+}
+_maude_care_spent_marker() { printf '%s.spent-%s' "$1" "$2"; }  # <care.json> <key>
+_maude_care_mark_spent() {  # <care.json> <key> <fp> <head> [sid]
+  local m tmp
+  maude_is_ascii_token "$2" || return 1
+  m="$(_maude_care_spent_marker "$1" "$2")"
+  tmp="$m.$$"
+  # Only a regular file (or nothing) may stand at the marker path. `mv -f` onto a DIRECTORY
+  # moves the marker INTO it and reports success, the drain's -f test then never sees a
+  # marker, and the same bytes pass again on the token the person believed spent (lens 5,
+  # BLOCKING). The obstacle is moved aside, never removed: nothing here deletes what it
+  # did not write.
+  _maude_care_marker_path_clear "$m" || return 1
+  # The session is part of the call's identity: two lanes running the same bytes share an
+  # fp, and a late marker from one ate the other's reservation (lens 3, I-A).
+  printf '%s\037%s\037%s\n' "${5:-}" "$3" "${4:-}" > "$tmp" 2>/dev/null && mv -f "$tmp" "$m" 2>/dev/null \
+    && [ -f "$m" ] && [ ! -L "$m" ] && return 0
+  rm -f "$tmp" 2>/dev/null
+  return 1
+}
+# True when nothing or a regular file stands at <path>; anything else (a directory, a
+# symlink, a fifo) is renamed aside and the function fails if it could not be.
+_maude_care_marker_path_clear() {  # <path>
+  [ -L "$1" ] || [ -e "$1" ] || return 0
+  [ -f "$1" ] && [ ! -L "$1" ] && return 0
+  mv -f "$1" "$1.notafile.$$" 2>/dev/null
+  ! { [ -L "$1" ] || [ -e "$1" ]; }
+}
+# Under the store's lock: spend what a queued consume could not, and ONLY that. The marker
+# names one call (its fp, else its head when neither side could hash); it spends the token
+# only while that exact call still holds the reservation. Anything else (the token gone,
+# expired, unreserved because John cleared again, or reserved by another call) makes the
+# marker stale: it is dropped and spends nothing. The first version spent through the
+# ordinary consume, which also spends an UNRESERVED token, so a marker left from one push
+# ate John's next, unrelated clear (lens 2, I1). A marker that names no call is stale.
+# The marker is removed only if it still holds what was read (a newer marker renamed in
+# between is kept), and never when the store could not be read (jq failed).
+_maude_care_drain_spent_unlocked() {  # <care.json> <key>
+  local care="$1" key="$2" m snap msid mfp mhead state
+  maude_is_ascii_token "$key" || return 0
+  m="$(_maude_care_spent_marker "$care" "$key")"
+  [ -f "$m" ] || return 0
+  snap="$(cat "$m" 2>/dev/null)"
+  IFS="$(printf '\037')" read -r msid mfp mhead <<EOF
+$snap
+EOF
+  state="$(jq -r --arg k "$key" --arg s "$msid" --arg f "$mfp" --arg h "$mhead" '
+    (.gate_cleared[$k].reserved // null) as $r
+    | if ($r | type) != "object" then "stale"
+      elif ($s != "" and $s != "default" and ($r.sid // "") != "default" and ($r.sid // "") != $s) then "stale"
+      elif ($f != "" and ($r.fp // "") == $f) then "ours"
+      elif ($f == "" and $h != "" and ($r.fp // "") == "" and ($r.head // "") == $h) then "ours"
+      else "stale" end' "$care" 2>/dev/null)"
+  case "$state" in
+    ours)  _maude_care_set_unlocked "$care" --arg k "$key" 'del(.gate_cleared[$k])' || return 0 ;;
+    stale) : ;;
+    *)     return 0 ;;   # the store could not be read: keep the marker for the next read
+  esac
+  [ "$(cat "$m" 2>/dev/null)" = "$snap" ] && rm -f "$m" 2>/dev/null
+  return 0
 }
 _maude_care_consume_token_unlocked() {
-  local care="$1" key="$2" fp="$3" head="${4:-}" until rfp rhead rv
+  _maude_care_drain_spent_unlocked "$1" "$2"
+  _maude_care_spend_unlocked "$@"
+}
+_maude_care_spend_unlocked() {
+  local care="$1" key="$2" fp="$3" head="${4:-}" sid="${5:-}" until rfp rhead rv rsid
   until="$(jq -r --arg k "$key" '.gate_cleared[$k].until // 0' "$care" 2>/dev/null)"
   { [ -n "$until" ] && [ "$until" -gt 0 ]; } 2>/dev/null || { printf 'none'; return 0; }
+  # An UNRESERVED live token IS spent by the command that ran (the 25th lens, MINOR-6): the
+  # gate that should have reserved it may never have run (killed by its budget, the very
+  # timer errors of 2026-09-25), and a one-shot left open lets a SECOND command through.
+  # Lens 3 (I-A) asked the opposite, because this also spends a re-clear John gives while
+  # the command runs; that fails closed (one more clear), the other fails open, so MINOR-6
+  # holds and I-A is a named residual. The queued (busy) path stays strict: a marker can
+  # sit long after its command, so it spends only the reservation it names.
+  rsid="$(jq -r --arg k "$key" '.gate_cleared[$k].reserved.sid // ""' "$care" 2>/dev/null)"
   rfp="$(jq -r --arg k "$key" '.gate_cleared[$k].reserved.fp // ""' "$care" 2>/dev/null)"
   rhead="$(jq -r --arg k "$key" '.gate_cleared[$k].reserved.head // ""' "$care" 2>/dev/null)"
   rv="$(jq -r --arg k "$key" '.gate_cleared[$k].reserved.v // 0' "$care" 2>/dev/null)"
   # A reservation this build did not write names no call it can match; the command ran, so
   # spend it. A clear left open is the wrong direction for a one-shot (IMPORTANT-4).
-  if [ "$rv" != 2 ]; then rfp=""; rhead=""; fi
+  if [ "$rv" != 3 ]; then rfp=""; rhead=""; rsid=""; fi
+  # Another session's reservation of the same bytes is not this call's. "default" is the
+  # gate's name for an envelope with no session_id: it spends on the bytes (MINOR-1).
+  if [ -n "$sid" ] && [ "$sid" != default ] && [ -n "$rsid" ] && [ "$rsid" != default ] \
+     && [ "$rsid" != "$sid" ]; then printf 'none'; return 0; fi
   if [ -n "$rfp" ] && [ "$rfp" != "$fp" ]; then printf 'none'; return 0; fi
   # Nothing on either side could hash: the head is the identity (IMPORTANT-3).
   if [ -z "$rfp" ] && [ -z "$fp" ] && [ -n "$rhead" ] && [ "$rhead" != "$head" ]; then printf 'none'; return 0; fi
@@ -810,6 +911,18 @@ maude_is_ascii_token() {
   [ "$1" = "$(printf '%s' "$1" | LC_ALL=C tr -cd 'A-Za-z0-9_-')" ]
 }
 
+# The eye's per-session file suffix: ".<session_id>" for a safe id, "" otherwise (the
+# unkeyed files, the shape before 2026-09-25). One helper for the tick, the whisper and
+# the blink: every session shared one eye-state and one whisper file, so a whisper born
+# from one lane's transcript reached whichever lane prompted next (a fresh session, zero
+# tool calls, was told "the last two bash calls appear identical").
+maude_eye_suffix() {  # <session_id>
+  # Capped: a 250-char id made every eye filename exceed NAME_MAX, and every eye write
+  # failed in silence (the lens, m6). Real ids are 36-char UUIDs.
+  [ "${#1}" -le 64 ] && maude_is_ascii_token "${1:-}" && printf '.%s' "$1"
+  return 0
+}
+
 # Run "$@" while holding LOCK, for every read-modify-write of a shared file. flock(1)
 # where it exists, blocking: a writer must never lose its write. Without it (macOS), a
 # mkdir spin-lock reclaimed off the DIR'S OWN age, the one signal every waiter agrees
@@ -818,17 +931,67 @@ maude_is_ascii_token() {
 # and its later write clobbers the thief's. No live caller holds it that long (a jq
 # and a mv), so the 30 s is a dead-holder floor, not a guarantee (the 23rd lens).
 # Returns the command's exit status.
+#
+# BOUNDED (2026-09-25): the wait was blocking, so its only bound was the harness's 5 s
+# hook timer. Every session on a box shares one store, and a holder past the budget
+# turned each waiter into a "hook timed out" on the person's screen (an eye tick behind
+# a held lock died at 5003 ms). Now a waiter gives up after MAUDE_LOCK_WAIT seconds
+# (whole seconds, default 2) and returns 75 WITHOUT running the command. Every caller
+# turns 75 into its safe direction: a lost tick, a write reported as not landed, a
+# token read as none, a reservation read as busy.
+# The bound is per HOOK, not per call (the lens, I2): a hook that locks three times behind
+# a held lock waited 3 x 2 s past its 5 s budget. After one busy, every later wait in the
+# same process is a single try. Base-10 and capped: "08" was an arithmetic error on the
+# fallback, and a 20-digit value overflowed it into never timing out (the lens, m2).
+MAUDE_LOCK_BUSY=75
+_MAUDE_LOCK_BUSY_SEEN=""
+# The wait, in seconds, from MAUDE_LOCK_WAIT: digits only (else the default 2), base 10,
+# at most 60. Its own function so the parse is testable without waiting it out (lens 5:
+# the 60 cap on a three-digit value had no test that could see it go).
+maude_lock_wait() {  # [value] → seconds
+  local wait="${1-${MAUDE_LOCK_WAIT:-2}}"
+  case "$wait" in ''|*[!0-9]*) wait=2 ;; esac
+  [ "${#wait}" -gt 3 ] && wait=60
+  wait=$((10#$wait)); [ "$wait" -gt 60 ] && wait=60
+  printf '%s' "$wait"
+}
+# The busy latch: once a lock has cost this process a real wait and still come back busy,
+# every later lock in it waits 0, so one contended store cannot spend a hook's budget
+# twice. A caller that asked for wait 0 spent nothing, so its busy does not latch: the
+# prune runs wait 0 at every session start and used to silence the next lock's wait.
 maude_locked() {  # <lockfile> <command> [args…]
-  local lock="$1"; shift
+  local lock="$1" wait rc; shift
+  wait="$(maude_lock_wait "${MAUDE_LOCK_WAIT:-2}")"
+  [ -n "$_MAUDE_LOCK_BUSY_SEEN" ] && wait=0
+  # A lock path that cannot be opened (a DIRECTORY where the file should be, no parent)
+  # is "busy" on both branches: the flock branch's redirect failed with rc 1, which no
+  # caller names, so reserve/consume/take printed nothing (lens 6, MAJOR).
+  # A bare name has no directory part (it is "."), and a symlink at the lock path is not
+  # ours to open: -e/-f follow it and a dangling one would be created through (lens 7).
+  local lockdir="${lock%/*}"; [ "$lockdir" = "$lock" ] && lockdir=.
+  if ! { [ -d "$lockdir" ] && [ ! -L "$lock" ] && { [ ! -e "$lock" ] || [ -f "$lock" ]; }; }; then
+    [ "$wait" -gt 0 ] && _MAUDE_LOCK_BUSY_SEEN=1; return "$MAUDE_LOCK_BUSY"
+  fi
   if command -v flock >/dev/null 2>&1; then  # portability-shim (util-linux)
     (
-      flock 9 || exit 1  # portability-shim
+      flock -w "$wait" 9 || exit "$MAUDE_LOCK_BUSY"  # portability-shim
       "$@"
     ) 9>"$lock"
-    return $?
+    rc=$?
+    [ "$rc" -eq "$MAUDE_LOCK_BUSY" ] && [ "$wait" -gt 0 ] && _MAUDE_LOCK_BUSY_SEEN=1
+    return "$rc"
   fi
-  local d="$lock.d" rc
+  # The bound is the CLOCK, not a try count. `wait * 20` tries of `sleep 0.05` assumed a try
+  # costs 50 ms, but each also forks mkdir, date, stat and sleep: on macOS (the only place
+  # this branch runs) a 1 s bound waited 4 s and "08" waited 20 (PR #81). $SECONDS is a
+  # builtin (bash 3.2 has it), so reading it costs no fork. It is whole seconds, so the
+  # wait ends between `wait` and `wait + 1` s; the try count stays as a second ceiling.
+  local d="$lock.d" tries=$((wait * 20)) t0="$SECONDS"
   while ! mkdir "$d" 2>/dev/null; do
+    if [ "$tries" -le 0 ] || [ $((SECONDS - t0)) -gt "$wait" ]; then
+      [ "$wait" -gt 0 ] && _MAUDE_LOCK_BUSY_SEEN=1; return "$MAUDE_LOCK_BUSY"
+    fi
+    tries=$((tries - 1))
     # mkdir fails for two reasons: the dir EXISTS (a holder; wait, reclaim if stale) or it
     # CANNOT be made (no parent, no permission). The second used to spin forever: the age
     # of a dir that is not there reads as zero, so nothing was ever reclaimed and a hook
@@ -836,7 +999,16 @@ maude_locked() {  # <lockfile> <command> [args…]
     # One retry covers a holder that released between the failure and this look.
     if [ ! -d "$d" ]; then
       mkdir "$d" 2>/dev/null && break
-      [ -d "$d" ] || return 1
+      # Cannot be made (a stray FILE at the lock path, no parent, no permission): the
+      # store is not lockable, which to every caller is "busy", the outcome they all
+      # handle; a bare 1 fell past their case arms and printed nothing (lens 5).
+      # Judge THAT from the path, never from "the dir is gone again": under churn another
+      # waiter takes and releases the lock between our retry and this look, and reading
+      # that as unlockable dropped 2 of 60 eye ticks with no wait at all (macOS shape).
+      if [ -e "$d" ] && [ ! -d "$d" ] || [ ! -d "$lockdir" ] || [ ! -w "$lockdir" ]; then
+        [ "$wait" -gt 0 ] && _MAUDE_LOCK_BUSY_SEEN=1; return "$MAUDE_LOCK_BUSY"
+      fi
+      sleep 0.05; continue
     fi
     if [ $(( $(date +%s) - $(maude_mtime "$d" "$(date +%s)") )) -gt 30 ]; then
       rmdir "$d" 2>/dev/null
@@ -1304,6 +1476,11 @@ maude_retention_sweep() {
   # The trace is metadata-only by design, so age alone is the whole question.
   [ -d "$self/trace" ] && \
     find "$self/trace" -maxdepth 1 -type f -name 'today-*.jsonl' -mtime +"$days" -delete 2>/dev/null
+  # The eye's per-session files (one set per session since 2026-09-25): a week untouched
+  # means the session is gone. Named shapes only, never a bare glob of the store.
+  [ -d "$self" ] && \
+    find "$self" -maxdepth 1 -type f \( -name 'eye-state.*' -o -name '.eye-state.*.lock' \
+      -o -name 'eye-whisper.*.txt' -o -name 'eye-whisper.*.born' \) -mtime +7 -delete 2>/dev/null
   # Snapshots are CONTENT — a pre-compact capture from a session that never
   # saved may be the only copy of that context. Value before the dustpan: age
   # qualifies a snapshot for the sweep, but it only goes if a later save covers
@@ -1323,27 +1500,141 @@ maude_retention_sweep() {
   # would fail at the last step.
   if [ -d "$self/undo/blobs" ]; then
     find "$self/undo/blobs" -maxdepth 1 -type f -mtime +"$days" -delete 2>/dev/null
-    if [ -f "$self/undo/ledger.jsonl" ] && command -v jq >/dev/null 2>&1; then
-      # ONE jq pass with the blob directory's listing read once, never one fork per
-      # line: on the dev box an 8,158-line ledger took 33.5 s through a per-line jq,
-      # and the wake hook, budgeted at 10 s by the harness, was killed before its brief
-      # at every session start for weeks (found 2026-09-06 under the memory lens's
-      # unexplained "the wake was billed once in 31 days"). A line whose blob is not in
-      # the listing is rewritten as a skip; every other line passes through untouched;
-      # a jq failure leaves the ledger as it was rather than half-written.
-      ls -1A "$self/undo/blobs" 2>/dev/null > "$self/undo/.blobs.list"
-      if jq -cn --rawfile have "$self/undo/.blobs.list" \
-          '($have | split("\n") | map(select(length > 0)) | map({key: ., value: true}) | from_entries) as $h
-           | inputs
-           | if (.blob | type) == "string" and .blob != "" and ($h[.blob] | not)
-             then del(.blob) | .skip = "pruned" else . end' \
-          "$self/undo/ledger.jsonl" > "$self/undo/ledger.jsonl.tmp" 2>/dev/null \
-         && [ -s "$self/undo/ledger.jsonl.tmp" ]; then
-        mv "$self/undo/ledger.jsonl.tmp" "$self/undo/ledger.jsonl" 2>/dev/null
-      fi
-      rm -f "$self/undo/ledger.jsonl.tmp" "$self/undo/.blobs.list" 2>/dev/null
+    if [ -s "$self/undo/ledger.jsonl" ] && command -v jq >/dev/null 2>&1; then
+      # Under a lock, wait 0: five lanes share this closet and every SessionStart runs the
+      # sweep. Unlocked, two prunes wrote ONE temp name; a peer's `>` truncated the file a
+      # live jq was still writing, the peer died at its hook budget, and the survivor's mv
+      # installed 999,424 NUL bytes where the ledger's head had been (found 2026-09-27; jq
+      # then failed on it in silence at every wake). Busy means another lane is pruning.
+      MAUDE_LOCK_WAIT=0 maude_locked "$self/undo/.prune.lock" _maude_undo_prune "$self/undo"
+      [ "$?" -eq "$MAUDE_LOCK_BUSY" ] && maude_log_trace "undo-prune" "skipped=busy"
     fi
   fi
+}
+
+# The ledger prune, run under the prune lock. Temp names carry the pid so no two lanes can
+# ever write the same file. A ledger whose head is zero-filled (the race above, already
+# landed) is healed first: the damaged bytes are kept beside it, the NULs and the torn line
+# they end in are dropped, and the prune goes on over what is left.
+_maude_undo_prune() {  # <undo dir>
+  local u="$1" L="$1/ledger.jsonl" tmp="$1/.prune.$$" have="$1/.blobs.$$" snap="$1/.snap.$$" out="$1/.out.$$" hole torn n0 rc
+  if [ "$(head -c1 "$L" | od -An -tx1 | tr -d ' \n')" = "00" ]; then
+    # Each failure names itself in the trace; the caller's row is for the lock alone
+    # (lens 1: a cp that died mid-copy was logged "busy" and its partial copy stayed).
+    # The copy's name is taken only if nothing holds it, so a second heal in the same
+    # second keeps the first one's bytes, and the cleanup below removes only what this
+    # call created (lens round 2: a same-second name overwrote, and rm -f'd, evidence).
+    hole="$(_maude_undo_free_name "$L.hole")"
+    if ! cp -p "$L" "$hole" 2>/dev/null; then
+      rm -f "$hole" 2>/dev/null; maude_log_trace "undo-prune" "heal=cp-failed"; return 1
+    fi
+    n0="$(wc -c < "$L" | tr -d ' ')"
+    if ! { case "$n0" in ''|*[!0-9]*) false ;; esac && head -c "$n0" "$L" | tr -d '\000' | awk 'NR == 1 && !/^\{/ { next } { print }' > "$tmp" 2>/dev/null \
+           && _maude_undo_install "$tmp" "$L" "$n0"; }; then
+      rm -f "$tmp" 2>/dev/null; maude_log_trace "undo-prune" "heal=rewrite-failed"; return 1
+    fi
+    maude_log_trace "undo-prune" "healed=nul-head"
+  fi
+  # Bytes with no line in them (a healed-away ledger, a stray newline) are nothing to
+  # prune, on every sweep, not only the one after a heal (lens 4, then lens round 2 B).
+  grep -q . "$L" 2>/dev/null || return 0
+  # ONE jq pass with the blob directory's listing read once, never one fork per
+  # line: on the dev box an 8,158-line ledger took 33.5 s through a per-line jq,
+  # and the wake hook, budgeted at 10 s by the harness, was killed before its brief
+  # at every session start for weeks (found 2026-09-06 under the memory lens's
+  # unexplained "the wake was billed once in 31 days"). A line whose blob is not in
+  # the listing is rewritten as a skip; every other line passes through untouched;
+  # a jq failure leaves the ledger as it was and says so in the trace.
+  # jq reads a snapshot of the first n0 bytes; whatever a capture appended after that is
+  # carried onto the result before it is installed (residual 2 of the 09-27 fix: an
+  # append landing between the read and the mv was lost).
+  ls -1A "$u/blobs" 2>/dev/null > "$have"
+  n0="$(wc -c < "$L" | tr -d ' ')"
+  case "$n0" in ''|*[!0-9]*) maude_log_trace "undo-prune" "size-unread"; rm -f "$have"; return 1 ;; esac
+  head -c "$n0" "$L" > "$snap" 2>/dev/null
+  # Lines are read RAW: a line that parses to an object is pruned as before; one that does
+  # not (a short write on a full disk, a killed writer, a later append glued onto it) is
+  # reported by its line NUMBER and copied out of the snapshot by sed, so the quarantine
+  # file ledger.jsonl.torn-<utc> holds its exact bytes (jq would have replaced invalid UTF-8
+  # with U+FFFD; lens on d73f0cf). One bad line used to stop every prune after it, forever.
+  # The snapshot gets a final newline first: jq numbers an unterminated last line the same
+  # as the line before it.
+  [ -s "$snap" ] && [ "$(tail -c1 "$snap" | od -An -tx1 | tr -d ' \n')" != "0a" ] && printf '\n' >> "$snap"
+  jq -cnR --rawfile have "$have" \
+    '($have | split("\n") | map(select(length > 0)) | map({key: ., value: true}) | from_entries) as $h
+     | inputs | select(length > 0) | (try fromjson catch null)
+     | if type != "object" then input_line_number
+       elif (.blob | type) == "string" and .blob != "" and ($h[.blob] | not)
+       then del(.blob) | .skip = "pruned" else . end' \
+    "$snap" > "$out" 2>/dev/null; rc=$?
+  if [ "$rc" -ne 0 ]; then
+    maude_log_trace "undo-prune" "jq=$rc"; rm -f "$tmp" "$out" "$have" "$snap" 2>/dev/null; return 0
+  fi
+  # Every count is checked before anything is installed: the kept bytes must be exactly the
+  # output minus the torn numbers, or the rewrite is short (a failed write, a full disk) and
+  # installing it would silently drop live entries under a trace that reads as success
+  # (lens on d73f0cf, BLOCKING). The quarantine copy must hold exactly the torn lines.
+  # Bytes, not lines: a write that loses its tail keeps a non-empty last line, so a line
+  # count passed a corrupt ledger (lens r2 on dbe6db9). The kept bytes plus the torn-number
+  # bytes must add up to the jq output exactly.
+  local keep g nums="$u/.nums.$$" b_out b_keep b_nums
+  torn="$(grep -c '^[0-9]' "$out" 2>/dev/null)"
+  grep -v '^[0-9]' "$out" > "$tmp" 2>/dev/null; g=$?
+  keep="$(grep -c . "$tmp" 2>/dev/null)"
+  b_out="$(wc -c < "$out" | tr -d ' ')"; b_keep="$(wc -c < "$tmp" | tr -d ' ')"
+  b_nums="$(grep '^[0-9]' "$out" 2>/dev/null | wc -c | tr -d ' ')"
+  if [ "$g" -gt 1 ] || [ "${b_out:-x}" != "$(( ${b_keep:-0} + ${b_nums:-0} ))" ]; then
+    maude_log_trace "undo-prune" "keep-failed"; rm -f "$tmp" "$out" "$have" "$snap" 2>/dev/null; return 1
+  fi
+  if [ "${torn:-0}" -gt 0 ]; then
+    hole="$(_maude_undo_free_name "$L.torn")"
+    # One awk pass: the torn numbers into a set, then every snapshot line whose number is in
+    # it, bytes untouched (C locale; NUL and invalid UTF-8 verified). The numbers go in a
+    # FILE, never argv (a sed script as one argument hit the 128 KiB cap near 21,000 torn
+    # lines), and never one sed address each (addresses x lines: 54 s at 100,000).
+    grep '^[0-9]' "$out" > "$nums" 2>/dev/null
+    # Some awks hold a record as a C string and drop everything after a NUL (busybox,
+    # shown; the BSD awk on macOS, documented), and the line count below cannot see a
+    # shortened line. So when the snapshot holds a NUL, the copy runs only after the same
+    # program has carried a NUL through on a probe; otherwise it refuses, named, and the
+    # ledger stays as it was (lens round 4 on 4dbf9fd).
+    if [ -n "$(tr -cd '\000' < "$snap" | head -c1 | od -An -tx1)" ]; then
+      printf '1\n' > "$nums.p"; printf 'a\000b\n' > "$nums.q"
+      if [ "$(LC_ALL=C awk 'NR == FNR { t[$1]; next } (FNR in t)' "$nums.p" "$nums.q" 2>/dev/null | wc -c | tr -d ' ')" != 4 ]; then
+        rm -f "$nums" "$nums.p" "$nums.q" "$hole" "$tmp" "$out" "$have" "$snap" 2>/dev/null
+        maude_log_trace "undo-prune" "torn=$torn nul-unsafe-awk"; return 1
+      fi
+      rm -f "$nums.p" "$nums.q" 2>/dev/null
+    fi
+    LC_ALL=C awk 'NR == FNR { t[$1]; next } (FNR in t)' "$nums" "$snap" > "$hole" 2>/dev/null
+    if [ "$(wc -l < "$hole" 2>/dev/null | tr -d ' ')" != "$torn" ]; then
+      rm -f "$hole" "$nums" "$tmp" "$out" "$have" "$snap" 2>/dev/null
+      maude_log_trace "undo-prune" "torn=$torn copy-failed"; return 1
+    fi
+    maude_log_trace "undo-prune" "torn=$torn"
+  fi
+  # All torn is still a rewrite (to empty); all whole and empty output is nothing at all.
+  if [ "${keep:-0}" -gt 0 ] || [ "${torn:-0}" -gt 0 ]; then _maude_undo_install "$tmp" "$L" "$n0"; fi
+  rm -f "$nums" 2>/dev/null
+  rm -f "$tmp" "$out" "$have" "$snap" 2>/dev/null
+  return 0
+}
+
+# A name for an evidence copy that nothing holds: <base>-<utc>, then -2, -3, … A dangling
+# symlink counts as taken (lens round 3), so a copy is never written through one or over
+# another heal's bytes inside the same second (lens round 2).
+_maude_undo_free_name() {  # <base>
+  local base n=2 name
+  base="$1-$(date -u +%Y%m%dT%H%M%SZ)"; name="$base"
+  while [ -e "$name" ] || [ -L "$name" ]; do name="$base-$n"; n=$((n+1)); done
+  printf '%s' "$name"
+}
+
+# Install a rewritten ledger: first carry every byte appended past the n0 the rewrite read,
+# then rename. Captures append under the same lock, so the carry only has work when one
+# fell back to a bare append after its short wait; the window left is the carry itself.
+_maude_undo_install() {  # <tmp> <ledger> <bytes the rewrite read>
+  tail -c +"$(( $3 + 1 ))" "$2" >> "$1" 2>/dev/null && mv "$1" "$2" 2>/dev/null
 }
 
 # ─── Tier model ───────────────────────────────────────────────────────────
@@ -1683,14 +1974,19 @@ maude_strip_heredocs() {
     # <<< herestrings; $((…)) arithmetic; then PROTECT real quoted delimiters
     # (<<'EOF' → <<EOF) so the quoted-SPAN blanking that follows cannot eat
     # them. What remains in quotes is prose — `echo "note << EOF"` — and
-    # blanking it is exactly what stops the phantom body.
+    # blanking it is exactly what stops the phantom body. Quotes go in ONE
+    # left-to-right pass: two passes paired the apostrophe in "it's" with a
+    # later `'` and ate the real text between. An escaped `\<<` and a `#`
+    # comment are not openers either: `# note <<EOF` on one line made the
+    # next line's real `bash <<EOF` a body and stripped it (lens, 2026-10-01).
     scan="${line//<<</ }"
+    scan="${scan//\\<</  }"
     scan="$(printf '%s' "$scan" | sed -E \
       -e 's/\$\(\([^)]*\)\)//g' \
       -e "s/<<(-?)[[:space:]]*'([A-Za-z_][A-Za-z0-9_]*)'/<<\1\2/g" \
       -e 's/<<(-?)[[:space:]]*"([A-Za-z_][A-Za-z0-9_]*)"/<<\1\2/g' \
-      -e "s/'[^']*'//g" \
-      -e 's/"[^"]*"//g')"
+      -e "s/('[^']*'|\"[^\"]*\")//g" \
+      -e 's/(^|[[:space:]])#.*$//')"
     # Queue EVERY delimiter on the line: << [-] [spaces] [\] WORD.
     while [[ "$scan" =~ \<\<-?[[:space:]]*\\?([A-Za-z_][A-Za-z0-9_]*) ]]; do
       q+=("${BASH_REMATCH[1]}")

@@ -1,11 +1,504 @@
-<!-- Version: 0.32.0 -->
+<!-- Version: 0.33.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-09-14 -->
+<!-- Revised: 2026-10-05 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
 
 The Maude Claude Code plugin.
+
+---
+
+## v0.33.0 - the gate learned whose house it is in
+
+Eleven changes landed on canon since v0.32.0, each tested and given an adversarial pass before
+it merged. The one that named this release: a user hit a RED-gate refusal that told them to
+ask the maintainer by name. Every line Maude speaks now addresses the account owner. The rest
+are the gate reading commands more exactly (a heredoc body is text, a flag belongs to its own
+command), the stores surviving torn writes and parallel lanes, the vault recall going quiet,
+and her mark on the wake.
+
+### the macOS matrix read what Linux could not
+
+- **The gate sees a quoted shell after a wrapper on macOS too.** `cat <<EOF | docker exec -i
+  c 'bash'` and `… | pct exec 1 -- "bash"` passed the gate on macOS: the quote-blanking rule
+  unquoted a single word with a back-reference, `(['"])…\1`, which BSD `sed -E` does not
+  have, so the next rule erased `'bash'` as a quoted span and no shell was left to see. One
+  pass over an alternation now, no back-reference (two rules per quote would cascade and
+  unwrap `"'bash'"` twice; a 15-input differential against the old rule shows no change on
+  GNU sed), and the portability lint bans a back-reference in product regexes, with a
+  control that shares the lint's pattern and goes red when it breaks. Only the public PR's macOS
+  leg runs this; the internal lane is Linux-only.
+- **Three lock tests assumed flock or a fast box.** One failed on any box without `flock`
+  and now skips by name there (the fallback has its own stray-file test); one asserted the
+  flock branch's lock file and now asserts the fallback's released dir where there is no
+  flock; one gave the bounded waiter five outer seconds, which a loaded macOS runner spent
+  starting bash, and now gives fifteen (a waiter that never gives up still reads 124). All
+  three were run here under a PATH with no flock.
+- **On macOS the lock bound now holds.** With no `flock`, the fallback counted `wait x 20`
+  tries of `sleep 0.05`, assuming a try costs 50 ms; each also forks `mkdir`, `date`, `stat`
+  and `sleep`, which on macOS cost far more, so a 1 s bound waited 4 s and `08` waited 20 (the
+  second PR's macOS leg). The loop is bounded by `$SECONDS` now (a builtin in bash 3.2, no
+  fork), the try count kept as a second ceiling. Reproduced here first: with a slowed `mkdir`
+  and no `flock`, the old code failed the lock-bound tests exactly as macOS did; the new code
+  passes them.
+- **On macOS a contended lock no longer gives up as "unlockable".** The fallback read a lock
+  dir that was gone again after a failed retry as "cannot be made" and returned busy with no
+  wait; under churn (another waiter taking and releasing it in between) that dropped 2 of 60
+  eye ticks. Unlockable is now judged from the path (a stray file, a missing or unwritable
+  parent); churn waits. A shim that refuses the first two lock mkdirs pins it: the old code
+  returned busy, the new code lands the write.
+- **Two prune-race tests and the NUL quarantine test now test the host they run on.** The
+  race tests held their lock with `flock` and timed with `date +%N`, neither on macOS, so
+  nothing was held; they hold the fallback's lock dir where there is no `flock` and time
+  with `python3`. The NUL test assumed a NUL-safe awk; on the BSD awk the sweep correctly
+  refuses (`nul-unsafe-awk`) and the test now checks that refusal. Run here under a PATH
+  with no `flock` and `original-awk` (the one-true-awk macOS ships) as `awk`.
+- **CodeQL action pinned to v4.38.1** (`1c5b675`, tag dereferenced upstream), folded from
+  Dependabot #79 into canon; the PR closes once this ships.
+
+### the ship audit sees the session scratch dir
+
+- **A stray `err.log` is out of the tree, and the ship audit now refuses the shape it
+  carried.** A lens run on 2026-09-26 left its stderr in the repo root: one line holding a
+  session scratch path and a session id. It rode canon for eight days and reached a public
+  ship branch, because neither the ship audit nor the pre-push guard knew that path shape.
+  The final lens of this release caught it before merge. `ship.sh build` now blocks a
+  session scratch path (pattern assembled by concatenation, like the others), with a
+  planted-file test proven red without the pattern; `*.log` is ignored.
+
+### the gate speaks to whoever owns the account
+
+- **No user-facing line names the maintainer any more.** A user on their own machine hit a
+  RED-gate refusal that told them it was "John's hand only" and to have John paste a line.
+  Whoever installed the plugin is the account owner, so the RED refusals, the red-clear and
+  red-self-clear blocks, the public-publish block, the secret guard's alert, the
+  `/maude:conscience` and `/maude:rules` prompts, and the marker CLI's usage text now say
+  "the account owner" or "the user". `maude-clear-red.sh` takes `--owner` as its documented
+  flag; `--john` stays as an alias, so lines already handed out keep working. The trace
+  reasons `red-needs-john` / `no-chain-john-only` are now `red-needs-owner` /
+  `no-chain-owner-only`. Three tests had pinned the name INTO the refusal; they now require
+  "account owner" and refuse the name. New `tests/test-no-maintainer-name.sh` scans every
+  surface that reaches a user or Claude's prompt (non-comment hook lines, commands, agents,
+  skills, `__main__` usage docstrings), with a planted control per surface; its first run
+  caught a leak the hand sweep missed. Comments and this changelog keep attribution.
+  Reported by John, 2026-10-04.
+
+### the vault recall speaks once, in one line
+
+- **The recall block is quiet by default.** It paged up to five notes on nearly every prompt,
+  each with a snippet line of `[bracketed]` match marks, and the same notes again on the next
+  prompt: the proximo lane's recall log for one 17-hour session showed its top three notes
+  firing 18 times each, matched on generic words, adding nothing after the first. Now a note
+  is paged at most once per session (the hook's `session_id`, reduced to `[A-Za-z0-9_-]` and
+  64 characters, keys a small list under `.maude/plugin/recall-seen/`; other sessions' lists
+  a week old are swept after paging), at most two notes a turn (`MAUDE_PAGE_K`, a whole number
+  from 1 to 99, else 2), one line each: the note's name and what it is. A turn with no
+  session id gets the same two-note, one-line block, without the once-per-session memory.
+  The eye, which reads the notes rather than a person, keeps a snippet under each note
+  (`--snippets`); its notes take the new header and lose the file path like everyone's.
+  The relevance floor is unchanged. Named: two session ids that differ only in characters
+  outside that set share one list. Asked for by John, 2026-10-04.
+
+### a heredoc body is text for the wrapped-command scan too
+
+- **A heredoc that merely carries a wrapped command as text no longer trips the gate.** The
+  plain patterns have excised heredoc bodies since v0.27.0, but the `bash -c` / `eval`
+  payload scan read them, so a python heredoc holding a quoted `bash -c` string that names
+  an amend was blocked (found live 2026-09-28, on an edit to the gate's own tests, and
+  again on the commit of this fix). Bodies are now excised for that scan too, unless a
+  heredoc is fed to something that runs it, in which case every body stays in the scan.
+  The first cut decided that with one grep over the whole command for a shell word before
+  a `<<`, and its lens (round 1, 2 MAJOR) showed it failing at its own purpose: the
+  standard commit shape `git add . && git commit -m "$(cat <<'EOF'` read the `.` as
+  `source`, `cat > x.sh <<EOF` read `.sh` as `sh`, and a body that mentioned `bash <<EOF`
+  flipped the verdict, so all three still blocked; while `cat <<EOF | bash`, the shell
+  AFTER the heredoc, read as text. The decision is now per opener line, on the stripped
+  command with quotes blanked, split on `;` `|` `&`: the segment holding the `<<` and the
+  one after it decide, on a shell word standing alone (`bash`, `/bin/sh`, `sudo bash`,
+  `docker exec -i c sh`, `pct exec 1 -- bash`, `ssh host`, `su`, `chroot`, `(bash)`),
+  `source` or `.` in command position, or `sudo` with a login/shell option. The second
+  lens moved the line again: "the segment after" was one too few (`cat <<EOF > x.sh;
+  chmod +x x.sh; bash x.sh`, a pipe through `tee`, a `bash x.sh` on the next line all ran
+  the body unread), `bash<<EOF` hid the word behind the `<`, `eval "$(cat <<'EOF'` had
+  dropped off the list, `sudo -u root -i` was not `sudo -i`, and `ash`/`tcsh`/`rbash`/
+  `$SHELL` were not shells. Everything from the opener onward now counts. The third lens
+  found three more false passes: a `# note <<EOF` comment (or an escaped `\<<`) read as
+  an opener in the stripper and made the next line's real `bash <<EOF` a body; a body
+  written to a file and run BY PATH (`cat <<EOF > r.sh; chmod +x r.sh; ./r.sh`) had no
+  shell word to find, so the redirect target is remembered and its name recurring after
+  the opener counts; and `>` was missing from the word boundary (`| sh>out`). Quoted
+  single words are words (`exec -i c 'bash'`), `$0`/`${SHELL}`/`$BASH` are shells, and
+  quotes are blanked in one left-to-right pass (`"it's"` had paired its apostrophe with a
+  later quote). The fourth lens found the recurrence boundary missed `./r.sh;` and
+  `(./r.sh)`; fixed. Every shape named here is pinned; the rules the lenses named each
+  have a mutation that reds. The scan stays best-effort by design, and what stays open is
+  named: the redirect target remembered is the opener's FIRST one (`tee r.sh <<EOF` and
+  `cat <<EOF 2>err > r.sh` are not seen), a quoted or globbed path (`./"r s.sh"`,
+  `./r*`) and a quoted shell path (`| "/bin/bash"`) are blanked before they are read, a
+  shell by any other name (`bash5`, `xonsh`) is not on the list, and a text heredoc whose
+  file name or a shell word recurs later in the same call (`> README.md; git add
+  README.md`) keeps the old reading, which costs nothing unless the body itself carries a
+  wrapped gated command. By choice, named: an interpreter body (`python3 -`,
+  `perl -`, `node -`, `make -f -`) is text even when it runs a shell, because the python
+  body that quotes "bash -c '…'" is the incident this exists to pass and one that runs it
+  is indistinguishable; the plain patterns never read those bodies either, so the only
+  loss is a `bash -c`/`eval` payload inside one.
+
+### a flag belongs to its own command
+
+- **`git push … && git worktree remove --force x` is no longer a RED force-push.** The five
+  flag patterns (`push … --force`, `--force-with-lease`, `-f`, `reset … --hard`,
+  `commit … --amend`) matched with `.*`, which ran past `&&` / `;` / `|` into the next
+  command; found live 2026-09-28 when a push and a worktree cleanup shared one line and the
+  RED gate stopped it. The narrow match (the rest of ONE simple command, `[^;&|]*`) runs
+  only on a command made of the plain class (`A-Za-z0-9`, space, `./:=@+,%_~-`) and the
+  separators `;` `&` `|` themselves, and only when every segment's command word is on an
+  allowlist: `git` with a listed, non-executing subcommand (add, commit, push, reset,
+  status, worktree, …) or an inert tool (`echo ls rm cd true false tee cat grep head tail
+  sleep test mkdir cp mv touch wc sort date pwd printf`). Anything else (`$`, backticks,
+  backslashes, quotes, brackets, braces, redirects, globs, `#`, a newline, a wrapper, an
+  env-assignment, a tool or a git subcommand the lists do not know, a git global option)
+  keeps the old greedy match: on every line it does not narrow the gate blocks exactly as
+  it did, and it narrows only where every command word is known inert. Six lens rounds
+  got it there, each breaking the cut before it. A list of hiding constructs missed
+  `${x//|/z}`, bracket globs, `2>&1` / `&>` / `>|` and a backslash line continuation (61
+  commands the old gate blocked passed or fell from RED to the self-clearable YELLOW
+  key), so the plain class became an allowlist. Then the allowlist alone dropped an
+  accidental cover: `sudo git push -f` on its own is invisible to the gate (it knows
+  env-assignments and `command`, no other wrapper, a hole older than this branch), and on
+  a plain line the greedy `.*` had been carrying an EARLIER `git push` across the
+  separator into it; `git push a; sudo git push -f` fell RED→YELLOW and `git commit -m x
+  && env git commit --amend` to a pass. A list of wrappers was the next answer, and 95
+  wrapper words through it found 48 not on it (`pct exec`, `docker exec`, `eval`, `.`,
+  `FOO=1 sudo`, …), so the command words became an allowlist too. Then `git` itself on
+  that list was a wrapper twice over: a global option the git-prefix regex does not know
+  (`git --no-pager push -f`, `git -c alias.x=push x -f`) hides the verb, and some plain
+  subcommands RUN their arguments (`git submodule foreach git push -f`, `git bisect run`,
+  `git rebase -x`, `git for-each-repo`, difftool, mergetool, filter-branch); hence the
+  subcommand list. The word boundary that keeps `catchsegv` from reading as `cat` and a
+  pipe as a boundary on both halves (a `[^;&]*` had survived every test) have their own
+  tests, and every inert word and listed subcommand is pinned by a line that is RED greedy
+  and YELLOW narrow. Under some UTF-8 locales (en_US.UTF-8, not C.UTF-8) bash's `[A-Za-z]`
+  admits letters like `é` into the plain class, so a line carrying one is narrow there and
+  greedy under `C`; harmless to soundness, since no non-ASCII character hides a separator,
+  but the verdict does differ by locale. The cost: a later command's flag still counts
+  when the line carries a quote, a redirect, a wrapper, an unlisted tool or a git global
+  option. Older than this branch and untouched by it: `sudo git push -f`, `eval git push
+  -f`, `pct exec 1 -- git push -f`, `git-push -f` and `git submodule foreach git push -f`
+  on their own are invisible to CMD_START/PREFIX, and `git --no-pager push -f` to the
+  git-prefix regex. A user-config alias (`git p -f`) is not a listed subcommand, so it
+  keeps the greedy match, and so does an unlisted-but-harmless one (`git config`), the
+  safe side of an allowlist; a subcommand's own exec option (`--upload-pack=`,
+  `--receive-pack=`) is not seen by any regex gate.
+
+### a torn line is quarantined, not fatal
+
+- **The Revised-date gate reads the file's history, not the calendar.** John: "fix the
+  header-date gate, get main green" (2026-09-29). Main went red on 09-28 (CI #328, #329)
+  with no commit between the green run and the red one: `make verify` called eight docs
+  stale for carrying a `Revised: 2026-09-14` stamp fifteen days old, and its only cure was
+  to restamp files nobody had touched. A gate whose fix is a lie. The same run passed the
+  one stamp that WAS behind its file (CHANGELOG.md, stamped 09-28, committed 09-29) and
+  named README.md (edited 09-16 on a 09-14 stamp) for the wrong reason. Check 4 now reads
+  each stamp against the file's last change: the AUTHOR date of the last commit that added,
+  modified or moved-and-edited it (an exact move is walked past; it is not a revision), or
+  today if the file is modified or untracked. A stamp behind that is a finding that names
+  both dates, unless that commit moved the stamp FORWARD along with the file (both header
+  lines, in the diff), which is what survives a squash merge. A committed new file's stamp
+  is taken at its word (a squash merge re-dates the add to the merge day); a copied header
+  is caught while the file is untracked. A stamp more than one day after today is a
+  finding (one day is a writer east of the checker's clock); a stamp the regex admits that
+  the clock cannot place (2026-13-45) is a finding. Ignored files are nobody's. A tree the
+  stamp cannot be anchored in (outside git, a shallow clone whose boundary commit "adds"
+  every file and would accuse honest stamps, a git that gives no date) is a finding that
+  says NOT checked, never a skip. Both CI checkouts fetch full history for it (gitea drops
+  `--depth 50`, the GitHub verify job sets `fetch-depth: 0`; a full fetch of this repo is
+  a few MB on the wire). The
+  14-day window, its boundary pair and the DST essay at the callsite are gone; the tests
+  plant commit dates with `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`, and the only clock they
+  read is today for the dirty-file anchor. `maude_days_between` stays for its other
+  callers. Three lens rounds (no BLOCKING; 3, 4, then 3 MAJOR), each breaking the cut
+  before it: committer-date anchoring broke rebase, squash and rename, and an ignored file
+  was reported; then the rename fixture never renamed (`git mv -q` is not a flag) and the
+  restamp rule took any diff line mentioning the word, so a body mention, a backwards stamp
+  and a whitespace change all laundered a lie; then a move-and-edit in one commit read as
+  an add, a non-ASCII name came back quoted and could not be asked about, a project that
+  is a subdirectory of its repo asked `git show` for a doubled path, and a `color.ui
+  always` painted the `+` the rule greps for; then (round four, narrow) a `[` or `*` in a
+  file name was a glob to every pathspec, so `a[1].md` read its neighbour a1.md's diff and
+  borrowed its restamp, a false GREEN, and the honest move-with-edit had no fixture at
+  all. Every pathspec is literal now (`--literal-pathspecs`; `:(top,literal)` on the
+  show), the diff is read `--text` past a `-diff` attribute, and every rule above has a
+  planted fixture and a mutation that reds without it, run by byte-restore of both files
+  after each (a `git checkout --` in that loop ate a round of uncommitted tests once
+  tonight, which is the law it exists for). Round five, on main, found no MAJOR: a fenced
+  example of the header at column 0, edited forward, read as a restamp, so the restamp
+  rule now reads only the header window of the diff; a doc inside a nested repository was
+  refused for a reason that was not true and now names the true one; an unplaceable date
+  is reported once. What stays by choice, named: a stamp is
+  self-attested (a backdated `--date` passes), a sweep, formatter or mode-only commit that
+  touches a file without restamping it is a finding, a new file's committed stamp is not
+  date-tested and neither is a rewrite git no longer recognises as a rename (below 50%
+  similarity it is an add), a name carrying a tab, a quote or a backslash fails toward a
+  finding, and merge commits are never anchors. README.md and CHANGELOG.md are restamped
+  because the commits carrying this entry touch them.
+- **One bad ledger line no longer stops every prune after it.** John: "merge it when the
+  lens is clean" (2026-09-28), on the residual the last entry named. The prune reads lines
+  raw: a line that parses to an object is pruned as before; one that does not (a short write
+  on a full disk, a killed writer, a later append glued onto it) moves to
+  `ledger.jsonl.torn-<utc>` with a `torn=<n>` trace row, and the rest is pruned and
+  installed. The torn line is reported by number and copied out by awk, so its bytes are
+  exact, invalid UTF-8 included (plus a final newline if it had none). Before, jq failed on the one line and every later prune logged
+  `jq=5` with the ledger untouched, forever. The evidence-copy naming (never reused, a
+  dangling symlink counts as taken) is one helper now, `_maude_undo_free_name`, for both the
+  hole copy and the torn copy. 116 ms on a copy of the live ledger, output byte-identical.
+  Lens (1 BLOCKING, 1 MAJOR): my first version installed the kept lines whenever a line was
+  torn, so a failed write of the survivors (a full disk) put an empty ledger in place under
+  a `torn=1` row that read as success; now the kept BYTES plus the torn-number bytes must
+  equal the jq output exactly and the quarantine must hold exactly the torn lines, or
+  nothing is installed and the trace says `keep-failed` / `copy-failed`. (Round 2: a line
+  count passed a write that lost its tail; and the sed script, passed as one argument, hit
+  the 128 KiB per-argument cap near 21,000 torn lines. Round 3: as a file, one sed address
+  per torn line cost addresses x lines, 54 s at 100,000 torn, past the 10 s hook budget; one
+  awk pass over a number set takes the copy, 60,000 torn inside 5 s. The torn copy keeps
+  exact bytes with this box's mawk; its checks are counts, so a hostile grep or awk on
+  PATH that pads to the same length could still fool them. Round 4, named residual: an awk
+  that treats a record as a C string (busybox, demonstrated; the BSD awk on macOS,
+  documented, unverified) drops a torn line's bytes after an embedded NUL and the line
+  count cannot see it; the same held for the sed before it. Closed next: when the snapshot
+  holds a NUL, the copy runs only after the same awk program carries a NUL through on a
+  probe; otherwise `torn=<n> nul-unsafe-awk` and the ledger stays as it was. The cost, plainly:
+  on a host whose only awk truncates at NUL, one NUL-bearing torn line stalls that ledger's
+  WHOLE prune at every sweep, one trace row each, until a sweep runs with a NUL-safe awk
+  (mawk, gawk) on PATH. Chosen over the silent short copy the old code wrote.) And jq's decode replaced invalid UTF-8
+  with U+FFFD in the "byte-exact" copy; the copy is taken from the snapshot by line number.
+
+### the prune's two named residuals, built
+
+On John's "go" (2026-09-27 18:50Z), the two residuals the prune fix left named.
+
+- **A capture no longer disappears into a prune.** Undo captures append under the prune's
+  own lock, waiting at most a second (a prune takes ~100 ms); busy past that they fall back
+  to the bare append so a capture never blocks the tool call it guards. The prune now reads
+  a snapshot of the first n0 bytes and, before installing its rewrite, carries every byte
+  appended past n0 onto it (`_maude_undo_install`), the heal the same way. The window left
+  is the carry itself, not the whole jq pass.
+- **A wait-0 busy no longer silences the next lock.** The process-wide busy latch fires only
+  when a real wait was spent. The prune runs wait 0 at every session start; its busy used to
+  make every later lock in the same hook wait 0 too.
+- Test honesty: the old jq stand-in re-read the LIVE ledger after its pause, so a capture
+  appended during the pause rode into the rewrite and the capture test passed on the old
+  code; my first replacement read stdin, which was empty, and passed it over an empty
+  rewrite. The stand-in now snapshots the real argument before it pauses, as jq does, and
+  a fixture check fails the file if that snapshot is ever empty.
+- Lens (0 BLOCKING, 0 MAJOR): two more busy exits in `maude_locked` (an unopenable lock
+  path, a lock dir that cannot be made) still latched on a wait-0 call (folded: every busy
+  exit latches only after a real wait); a heal whose `wc -c` failed logged `healed` while
+  changing nothing (folded: a size that is not a number stops the heal and the prune, each
+  naming itself in the trace). Residual, named (built in the next entry): a torn last line
+  still made every later prune log `jq=5` until someone repaired the line by hand.
+  RED with the final tests: 3 assertions on the previous main, 26 on the pre-fix code.
+
+### the prune that wrote one temp name from five lanes
+
+- **The undo ledger's prune runs under a lock, with per-process temp names, and heals a
+  zero-filled head.** Found 2026-09-27 on the live closet: the ledger's first 999,424 bytes
+  were NUL (244 pages exactly), a torn line after them, 3,957 survivors from 08-24 on, and
+  jq had failed on it in silence at every wake since. Five lanes share one closet and every
+  SessionStart ran the sweep unlocked, each writing the same `ledger.jsonl.tmp`: a peer's
+  `>` truncated the file a live jq was still writing, the peer died at its hook budget, and
+  the survivor's mv installed the hole. Now: `_maude_undo_prune` runs under
+  `undo/.prune.lock` with wait 0 (busy = another lane is pruning, skip), its temp and blob
+  listing carry the pid, a NUL head is stripped with the damaged bytes kept as
+  `ledger.jsonl.hole-<utc>`, and a skip, a heal or a jq failure is an `undo-prune` trace
+  row. Test: a jq stand-in caught mid-write while a peer is killed shell-first reproduces
+  the exact shape (4096 NULs, 38 lines gone) on the old code. Lens (0 BLOCKING): a heal
+  whose copy could not be written was logged "busy" and left a partial copy (folded: each
+  heal failure names itself, the partial copy is removed); a ledger that heals to nothing
+  logged `jq=0` (folded: nothing left is not a failure). Lens round 2 on the fold: the hole
+  copy's name was second-granular, so a second heal in the same second overwrote the first's
+  bytes and a failed one `rm -f`'d them (folded: the name is taken only if free, `-2`, `-3`…
+  after it, a dangling symlink counts as taken, and only this call's copy is ever removed); the empty check lived inside the heal
+  branch, so a ledger holding one bare newline logged `jq=0` on every later sweep (folded: the
+  check runs on every sweep). **Residuals, named (both built in the next entry):** the
+  process-wide `_MAUDE_LOCK_BUSY_SEEN` latch means a busy prune drops the wait of any lock
+  taken LATER in the same hook (none is today; the sweep runs last); an undo capture's
+  `>>` that lands between the prune's read and its `mv` is lost (an index line for a blob
+  that survives; the smallest honest fix is the capture taking the prune lock with a
+  short wait, falling back to the bare append on busy).
+
+### her mark on the wake
+
+- **The wake brief opens with her mark.** John: "i want ascii art for maude" → "wake brief
+  banner, hers to draw" → "Maude for Claude" → "go back to your original MAUDE then put in
+  txt for Claude below align right" (2026-09-26). MAUDE in four lines of plain 7-bit ASCII,
+  "for Claude" in text under it flush to the art's right edge, 145 bytes, printed inside the
+  brief so the whole-brief budget counts it and the spend line bills it. `MAUDE_BANNER=off`
+  hides it.
+
+### the lock had no bound, and every lane heard one eye
+
+Found 2026-09-25 from "hook timer errors in the wild" (John). Five sessions on one box
+share one `.maude/plugin` store.
+
+- **The shared lock waits a bounded time.** `maude_locked` blocked with no bound, so the
+  only bound was the harness's 5 s hook timer: an eye tick behind a held lock died at
+  5003 ms (rc 124), a "hook timed out" on the person's screen. A waiter now gives up
+  after `MAUDE_LOCK_WAIT` seconds (default 2), does not run its command, and returns 75.
+  Each caller fails in its safe direction: a lost eye tick; a care write reported as not
+  landed; a token read or consume as `none`; a reservation as `busy`, which the gate
+  refuses with "Retry the same command" instead of sending the person for a clear he
+  may already hold. The no-flock fallback is bounded the same way and still never steals
+  a live holder's lock. Folded from the adversarial lens the same day: a busy consume
+  (the command RAN) leaves a spent marker beside the store and says the spend is queued,
+  and every locked token read drains it first, so a one-shot never passes twice (it did,
+  a RED force-push included); the infra gate reads and spends its RED token as one locked
+  step and passes only on a spend that landed; the bound is per hook, not per call (after
+  one busy, later waits in the same process are a single try); the wait is read base 10
+  and capped at 60. A second lens round the same day: a spent marker now spends ONLY the
+  reservation it names (a stale one, left from an earlier command, ate John's next,
+  unrelated clear, RED ones included; it failed closed, but it threw away his consent),
+  is never read as naming a call when its fp is empty, and is kept when the store cannot
+  be read. A third round: the session is part of a call's identity in both the consume and
+  the marker (two lanes running the same bytes share a fingerprint; one's late marker ate
+  the other's reservation); "default", the gate's name for an envelope with no session id,
+  still spends on the bytes. Kept on purpose, a named residual: an UNRESERVED live token is
+  still spent by the command that ran (the gate that should have reserved it may never have
+  run, and a one-shot left open passes a second command), so a clear John gives while a
+  command runs is spent by it and has to be given again; that fails closed.
+- **The eye is per session.** Its counter, spawn lock and whisper were one set of files
+  for every lane, so a whisper born from one session's transcript reached whichever
+  session prompted next (a fresh session with zero tool calls was told "the last two bash
+  calls appear identical"). They are now keyed by the envelope's `session_id`
+  (`eye-state.<sid>`, `eye-whisper.<sid>.txt`), and lanes no longer wait on each other's
+  lock. An event without a safe id (or one past 64 characters) keeps the old unkeyed
+  files, and the retention sweep removes a session's eye files after a week untouched.
+- **The wake carries this lane's handoff, whole.** `.remember/remember.md` holds every
+  lane's handoffs, append-only. The wake gave one 200-char line from the last `## Next`
+  anywhere: another lane's, and when the newest block had no `## Next`, the block before
+  it, whose Next that block's own later trap said not to do. Now it picks the last block
+  whose header names this lane (the tmux session name), else the newest, labelled "none
+  yet for <lane>"; carries it from its State through its Next and Traps, capped at
+  `MAUDE_HANDOFF_CAP` bytes (default 1200) with a line pointer to the full block; and
+  dates it from the block's header, not the shared file's mtime. The cap keeps the whole
+  brief under 3.5 KB, the largest SessionStart output measured landing inline; past it
+  the harness parks the brief in a file unread. The second lens round: the cap now counts
+  every printed byte (indent and newline too; 400 short lines had printed 2.5 KB) and the
+  header is capped; a cut drops only a trailing partial UTF-8 sequence (a line of em
+  dashes had vanished whole); CRs are dropped; the age is the header's LAST date; the
+  lane is read once into a namespaced variable (an ambient `LANE` relabelled the line);
+  and the left-off parser uses no awk interval expressions, which mawk before 20200717
+  (Debian 11/12, Ubuntu 22.04) lacks, silently matching nothing. A third round: the WHOLE
+  brief has a budget (`MAUDE_BRIEF_MAX`, default 3300; with every other line at its cap it
+  had measured 3,858 bytes), met by re-cutting the handoff in one exact pass from the
+  handoff body's actual size, down to a 150-byte floor, with an overrun at the floor
+  written to the trace; both caps are read base 10 ("08" had aborted the budget); and
+  both parsers run under `LC_ALL=C`, so gawk counts bytes as mawk does. A fifth round:
+  the budget also re-cuts the older, headerless file shape (it was gated on the header
+  parse, so on that shape it never ran); the lane is read whole from the header's
+  parentheses, so "ma.ude+" and "my lane" match their own blocks (a charset regex read
+  them as "ude" and "my" and said "none yet"); a header dated in another shape
+  ("09/20/2026") reads "undated", never the shared file's mtime; and the re-cut lands at
+  or under the budget, not exactly on it.
+- **The tests run under a HOME of their own.** The new handoff test wrote fixtures into
+  the real `~/.claude/maude/` and `rm -f`'d them: a baseline run of the suite destroyed the
+  live `patterns.md` and `letter-from-maude.md` on the sole-copy box (lens 5). Three test
+  files pinned HOME by hand and one forgot; `tests/lib.sh` pins it for every test now, and a
+  control asserts it.
+- **A one-shot cannot pass twice past a directory at the marker path.** `mv -f` onto a
+  directory moves the spent marker INTO it and reports success; the drain's `-f` test then
+  never saw a marker and the same bytes rode the token again (lens 5, proven with a repro).
+  Anything that is not a regular file at the marker path is moved aside, never deleted, and
+  the mark lands; the write is checked to have landed as a regular file.
+- **The RED infra token is reserved at PreToolUse and spent at PostToolUse**, the split the
+  YELLOW gate has had since 09-06: the run-governor (no matcher) can refuse the same
+  `mcp__*` call, and a read-and-spend at Pre burned John's one hand-typed RED clear on a
+  call that never ran (lens 5). `maude-infra-gate.sh consume` is the new PostToolUse leg on
+  `mcp__.*`; the same call retried rides its reservation, any other call waits for it.
+- Smaller, from the same round: the no-flock fallback answers "busy" (rc 75) when a stray
+  file sits at the lock path, where a bare 1 fell past every caller's case arms and printed
+  nothing; the gate keys a call's session by the whole id (it cut it to 8 characters; the
+  eye never did).
+- **The tool is part of the call.** A sixth round, on the fold: the fingerprint hashed the
+  arguments alone, so a DIFFERENT destructive tool with the same bytes (`delete_thing` on
+  another server, or any two tools called with no arguments) rode a reservation as "the
+  same call retried" and spent the RED clear given for the first. The tool name is in the
+  hash now; the formula changed, so reservations are v3 and a v2 one names no call. Also:
+  a lock path that cannot be opened (a directory where the file should be, a missing
+  parent) is "busy" on the flock branch too, where the redirect had failed with rc 1 and
+  every caller printed nothing. On the wake: the lane is the LAST comma item before
+  " lane" ("(Opus 5, sur lane)" is sur; the fifth round's read took "opus 5, sur" and five
+  live headers went invisible to their own lanes), and "undated" needs a four-digit year
+  in the header ("v1.2.34" is a version, not a date). A seventh round, on that fold: a
+  version with a four-digit segment ("v2026.1.2") is still a version; the bare header
+  form reads a lane of several words whole ("pierce county lane", live on 09-15, had read
+  "county"); a bare lock name locks in the current directory instead of being busy
+  forever; and a symlink at the lock path is busy, never opened through. Named, not
+  changed: a reservation written by an older formula (v2) names no call, so across the
+  upgrade a live token reserved by one call can be re-reserved by another; that is the
+  26th lens's trade-off (a session's own retry must not be refused by a format change),
+  and both live stores were empty at the flip.
+- **"Where you left off" is this lane's.** Every entry in remember's live buffer read
+  `## HH:MM | unknown`, so the wake greeted one lane with another's line. New
+  `scripts/maude-lane` resolves a session to its lane (the tmux session name, else the
+  session id's first 8) for remember's `REMEMBER_BRANCH_CMD`, so new entries carry it;
+  the wake takes the newest entry labelled with this lane, else the newest, saying whose
+  it is and "none yet for <lane>". Wiring is one env line in settings:
+  `"REMEMBER_BRANCH_CMD": "<maude plugin root>/scripts/maude-lane"`.
+- **The tape's wake fits where it is read.** It printed every live canon row, 31 KB here;
+  past the harness's inline size a hook's output is parked in a file with a ~2 KB preview,
+  so the tape was cut to its first screen every wake. It now keeps a byte budget
+  (`MAUDE_TAPE_WAKE_BUDGET`, default 3000): NEVER RENDER and WHO I AM first and whole;
+  then his deliberately seeded words (any source that is not a session capture), then the
+  newest session captures; then Claude's approved wording; whole rows only, never a quote
+  cut under "use verbatim"; an identity row plays once; a footer counts what stayed on the
+  tape and names `wake --full`. Live: 31 KB to 2.9 KB, the horse and the vision first.
+  Folded from its lens the same day: rows are handled by id, never by text (keying by text
+  printed an identity inference as a bare bullet, with no label saying it was Claude's, and
+  hid a verbatim row that shared an identity row's text); WHO I AM carries each row's
+  authority label, date and unverified tag; the same text stored twice plays once; NEVER
+  RENDER is bounded to half the budget with the rest counted (the gate still refuses every
+  one); the seeded tier takes at most two thirds of what is left; a section's header is
+  paid by its first row. A second round: room the session words leave goes back to held
+  seeded rows before any of Claude's wording plays (the cap had held six of his seeded rows
+  while nine of Claude's lines played); duplicates are one per (text, authority), the
+  newest copy whatever its tier; a first rejection too big for its half is counted, not
+  forced in; and a fixed block that alone overruns the budget says so. Round 4 (2026-09-28):
+  that overrun line was decided on a reservation (the widest footer, which does not print
+  when nothing is held) and never counted its own bytes, so a 2,903-byte wake said it was
+  over 3,000; it is now decided on the rendered bytes and states the wake's true size, note
+  included (swept across the window in the tests). WHO I AM plays one copy per (text, authority), the newest (round 5: keyed on text alone and keeping the oldest, it had dropped his later verbatim ratification of a line Claude inferred first). On a
+  copy of the live tape the output is byte-identical to before at budgets 1,500 / 3,000 /
+  6,000.
+
+- **Recall pages what the question is about, not whatever shares a word.** One OR of
+  every prompt word with no floor paged five notes on every prompt ("fix" is in 72% of
+  this vault's notes). With 100+ pageable notes: letters, dailies and archives are not
+  paged (`MAUDE_PAGE_SKIP_PREFIXES`); instruction words ("again", "try", "tell") are not a
+  subject; a word in more than 30% of the pageable notes counts only where a note's name
+  carries it; a rare word counts anywhere; a hit needs evidence in its name or description
+  and half the rare words (never fewer than two); a lone rare word must be in the name
+  (or the head, if very rare), and a very rare word in a note's name is its subject by
+  itself; at least one rare word must be among the evidence; common words alone need a
+  note named for all of them, and a lone common word ("fix it") pages nothing. Every
+  judgement goes through the FTS index, its stemming and tokenizer. Smaller vaults rank
+  exactly as before. On 2026-09-25 it was measured against labelled probe sets (topic
+  probes 21/25 to 23/25 and 15/19 to 17/19, instruction prompts 65 hits to 11; a lone common
+  word such as "gates" no longer pages, by decision); those sets were not kept and the test
+  file's docstring quoted different figures, so the numbers cannot be re-derived. Lens round
+  3 (2026-09-28): a very rare word in a note's name now stands alone only if it is the
+  question's rarest word (note names are sentences: "the coffee maker doesnt turn on" paged
+  "john-doesnt-do-git"); replayed on a copy of the live vault, six of the lens's seven
+  everyday sentences page nothing, "gaslighting after a demo", "is gitea canon", "doesnt
+  john do git" and "why isnt simplify simple" still page their notes. Named residuals (lens
+  round 4): a prompt that reduces to ONE live rare word still pages a note whose name
+  carries it, through the older lone-word rule ("he doesnt know" pages
+  "john-doesnt-do-git"; main paged five unrelated notes for the same prompt); and "bump the
+  buffer size on the socket read" pages six notes through ordinary word evidence, none of
+  its words being very rare.
+  Four tests that assert a note is NOT paged now look at 25 results: at 5 they passed on the
+  unfloored code by the cutoff alone.
 
 ---
 

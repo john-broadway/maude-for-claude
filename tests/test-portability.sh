@@ -334,6 +334,16 @@ test_start "product: no GNU sed word-boundary escape (BSD sed rejects it)"
 V="$(lint_product '\\b')"
 assert_eq "$V" "" "sed backslash-b leaked: $V"
 
+test_start "product: no back-reference in an ERE pattern (BSD sed -E has none)"
+# `s/(['"])(word)\1/\2/` matched nothing on macOS, so the gate blanked a quoted
+# `'bash'` and passed `cat <<EOF | docker exec -i c 'bash'` (PR #80, 2026-10-04).
+BACKREF_RE='[)]\\[1-9]'
+V="$(lint_product "$BACKREF_RE")"
+assert_eq "$V" "" "ERE back-reference leaked: $V"
+test_start "control: the back-reference lint catches the shape that shipped"
+CTL="$(printf '%s\n' "  local blank=\"s/(['\\\"])(w)\\1/\\2/g\"" | grep -E "$BACKREF_RE")"
+assert_ne "$CTL" "" "lint pattern matches the old gate line"
+
 test_start "product: no GNU sed -i (use sed -i.bak)"
 V="$(lint_product 'sed [-]i([^.]|$)')"
 assert_eq "$V" "" "GNU sed -i leaked: $V"

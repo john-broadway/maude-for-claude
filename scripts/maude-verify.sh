@@ -157,54 +157,152 @@ if [ -f README.md ] && grep -q '^## What.s new' README.md; then
   fi
 fi
 
-# ─── Check 4: Header Revised dates within 14 days ────────────────────
+# ─── Check 4: Header Revised dates tell the truth ────────────────────
 printf '\n## Header revised dates\n'
-# Env seam (tests): MAUDE_VERIFY_TODAY. Check 4 is otherwise untestable at THIS callsite.
-# The old raw-seconds formula and the midnight-anchored one are byte-identical for every
-# input in every zone EXCEPT inside a daylight-saving window, and the only integration test
-# of this check runs under TZ=UTC, which has no such window. So reverting this callsite left
-# all 61 test files green while the helper's own tests stayed happy. A fixed "today" lets a
-# test put a real DST transition inside the span and read the day count back.
+# `Revised: D` is a claim: this file last changed on D. The check reads the claim against
+# the file's history, never against the calendar. Until 2026-09-29 it was "older than 14
+# days is stale", which reddened main on 09-28 with no commit between the green run and the
+# red one, named eight stamps (seven honest), and its only cure was to restamp files nobody had
+# touched: a gate whose fix is a lie. The same run passed the one stamp that WAS behind its
+# file (CHANGELOG stamped 09-28, committed 09-29). A doc nobody edits does not go stale;
+# a doc edited after its stamp is lying about when.
 #
-# Colon-guarded on purpose. The first version was not, so an ambient empty value became an
-# unresolvable anchor, which made `make verify` exit 2 and took ship.sh's gate down with it:
-# any environment exporting the name empty could not release. Empty now means "use today".
+# Anchor = the file's last change: the working tree's today if the file is modified or
+# untracked, else the date of the last commit that touched it. Stamp before anchor = finding.
+# Stamp after today = finding (a typo'd year passes the first test and is still a lie).
+#
+# Env seam (tests): MAUDE_VERIFY_TODAY. Colon-guarded on purpose. The first version was not,
+# so an ambient empty value became an unresolvable anchor, which made `make verify` exit 2
+# and took ship.sh's gate down with it. Empty means "use today".
 TODAY=${MAUDE_VERIFY_TODAY:-$(date +%Y-%m-%d)}
 # Because it is ambient, the value can be anything. An anchor this script cannot resolve
-# makes maude_days_between fail for EVERY file, so every file is skipped and the run prints
-# a clean bill for a check that examined nothing. Measured: MAUDE_VERIFY_TODAY=banana turned
-# a 247-day-stale file into 0 findings and exit 0.
+# silences the dirty-file and future-date reads for EVERY file, and the run prints a clean
+# bill for a check that examined nothing. Measured: MAUDE_VERIFY_TODAY=banana turned a
+# stale file into 0 findings and exit 0.
 if [ -z "$STAMPLIB_MISSING" ] && [ -z "$(maude_date_epoch "$TODAY" 2>/dev/null)" ]; then
   emit "cannot resolve today's date \"$TODAY\" (MAUDE_VERIFY_TODAY?) — revised dates NOT checked"
 fi
-# A parseable but WRONG date cannot be told from a test's, and a past pin silences this
-# check completely: MAUDE_VERIFY_TODAY=2020-01-01 turns a 247-day-stale file into nothing.
-# This was a printf first, which was no mitigation at all — release.sh pipes verify through
-# `tail -3` and both CI workflows gate on the exit code, so the one line saying the check
-# had been switched off was truncated away in the only place it mattered. A FINDING travels:
-# non-zero exit, pipefail carries it, the release gate stops.
-[ -z "${MAUDE_VERIFY_TODAY:-}" ] || emit "today is pinned to $TODAY by MAUDE_VERIFY_TODAY — staleness measured from a supplied date, not the clock"
-STALE_LIMIT_DAYS=14
+# A parseable but WRONG date cannot be told from a test's, and a past pin can hide a dirty
+# file's lie. This was a printf first, which was no mitigation at all — release.sh pipes
+# verify through `tail -3` and both CI workflows gate on the exit code, so the one line
+# saying the check had been switched off was truncated away in the only place it mattered.
+# A FINDING travels: non-zero exit, pipefail carries it, the release gate stops.
+[ -z "${MAUDE_VERIFY_TODAY:-}" ] || emit "today is pinned to $TODAY by MAUDE_VERIFY_TODAY — dirty files and future dates measured from a supplied date, not the clock"
 HDRS=$([ -n "$STAMPLIB_MISSING" ] || grep -rln "Revised:" . --include="*.md" --exclude-dir=.git --exclude-dir=.maude --exclude-dir=.pytest_cache --exclude-dir=worktrees 2>/dev/null)
+# The history is asked once, and only when a header will be read against it. A tree with
+# no Revised headers has nothing to anchor and says nothing (a mktemp fixture with a bare
+# version header must still read 0 findings). A tree WITH one and no usable history is a
+# finding, not a skip: in a shallow clone the boundary commit is a root that "adds" every
+# file, so every stamp older than the boundary reads as behind it, and outside git there
+# is no last change to read at all. Either way the check examined nothing and must say so.
+GIT_ANCHOR=""   # "" until proven usable; then "ok"
+GIT_ANCHOR_WHY=""
+_anchor_ready() {
+  [ -z "$GIT_ANCHOR$GIT_ANCHOR_WHY" ] || return 0
+  if ! command -v git >/dev/null 2>&1; then GIT_ANCHOR_WHY="git is not installed"
+  elif [ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" != "true" ]; then GIT_ANCHOR_WHY="not a git work tree"
+  # Two spellings of shallow: the flag (git >= 2.15; an older git echoes the flag back, which
+  # is not "true" and would read as deep) and the marker file every shallow clone carries.
+  elif [ "$(git rev-parse --is-shallow-repository 2>/dev/null)" = "true" ] \
+    || [ -f "$(git rev-parse --git-path shallow 2>/dev/null)" ]; then GIT_ANCHOR_WHY="shallow clone, a file's last change may lie past the boundary"
+  else GIT_ANCHOR="ok"; fi
+  [ -z "$GIT_ANCHOR_WHY" ] || emit "cannot anchor Revised dates on the file history ($GIT_ANCHOR_WHY) — revised dates NOT checked"
+}
 if [ -n "$HDRS" ]; then
   while IFS= read -r f; do
-    # Extract date in YYYY-MM-DD form from the first Revised: line
     # Header block only, for the same reason as the version check above: a date quoted in
     # prose is not this document's Revised date, and reading one as if it were would age a
     # historical plan into a finding on every run.
     REVDATE=$(head -n "$MAUDE_HEADER_LINES" "$f" 2>/dev/null \
               | grep -m1 -oE 'Revised:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')
-    if [ -n "$REVDATE" ]; then
-      # 2>/dev/null: if common wasn't sourced (guarded above) this fails open
-      # exactly like the old raw-date parse did — empty DAYS, no noise.
-      # Midnight to midnight, never "now" minus a stored midnight: the latter is short by
-      # an hour across a spring-forward and under-reports the age by a day.
-      DAYS=$(maude_days_between "$REVDATE" "$TODAY" 2>/dev/null)
-      if [ -n "$DAYS" ]; then
-        if [ "$DAYS" -gt "$STALE_LIMIT_DAYS" ]; then
-          emit "$f Revised: $REVDATE (${DAYS} days ago — stale)"
-        fi
-      fi
+    [ -n "$REVDATE" ] || continue
+    # Days the stamp sits AHEAD of today. Empty = the shape passed the regex and is still not
+    # a date (2026-13-45). One day ahead is allowed: a writer east of the checker's clock
+    # stamps a date the checker has not reached yet, and CI runs on UTC. Two is a typo.
+    AHEAD=$(maude_days_between "$TODAY" "$REVDATE" 2>/dev/null)
+    if [ -z "$AHEAD" ]; then
+      emit "$f Revised: $REVDATE is not a date this clock can place"; continue
+    elif [ "$AHEAD" -gt 1 ]; then
+      emit "$f Revised: $REVDATE is after today ($TODAY) — a date the file cannot have"
+    fi
+    _anchor_ready
+    [ "$GIT_ANCHOR" = "ok" ] || continue
+    # An ignored file is not this tree's document (a vendored README, a build output).
+    # check-ignore takes a pathname, not a pathspec, and refuses the literal flag; the calls
+    # below take pathspecs, where a `[`, `*` or `?` in a name is otherwise a glob and
+    # `a[1].md` reads its neighbour a1.md's history and diff, so they run literal.
+    git check-ignore -q -- "$f" 2>/dev/null && continue
+    # --untracked-files=normal: a user config of status.showUntrackedFiles=no would make a
+    # new file read as clean, and clean-with-no-history is a refusal, not the finding it is.
+    if [ -n "$(git --literal-pathspecs status --porcelain --untracked-files=normal -- "$f" 2>/dev/null)" ]; then
+      ANCHOR="$TODAY"; ANCHOR_WHY="modified in the working tree"
+    else
+      # The file's history, newest first, following renames: each record is a commit that
+      # added (A), modified (M) or renamed (R<similarity>) it, with the path(s) it had THEN.
+      # The AUTHOR date, not the committer's: rebase, cherry-pick and amend re-date the
+      # committer and would put every honest stamp on a rebased branch behind its file.
+      # quotePath=false so a non-ASCII name comes back as itself, not as "caf\303\251.md";
+      # a name carrying a tab, a quote or a backslash is still quoted and cannot be asked
+      # about below, which fails toward a finding, never a pass.
+      HIST="$(git --literal-pathspecs -c core.quotePath=false log --follow --diff-filter=AMR --format='%x01%H %as' --name-status -- "$f" 2>/dev/null)"
+      SHA=""; ANCHOR=""; STATUS=""; PATHS=""; REC=""
+      while IFS= read -r line; do
+        case "$line" in
+          $'\x01'*) REC="${line#?}" ;;
+          '') ;;
+          # An exact move is not a revision: walk past it to the change before it. A move
+          # that also edits (R<100) IS one, and is read below with both of its paths.
+          R100$'\t'*) ;;
+          *) SHA="${REC%% *}"; ANCHOR="${REC#* }"; STATUS="${line%%$'\t'*}"; PATHS="${line#*$'\t'}"; break ;;
+        esac
+      done <<< "$HIST"
+      ANCHOR_WHY="last changed"
+      # A tracked, clean file always has such a commit; if git gives no date, or an old git
+      # echoes the format back, the anchor is unknown and unknown is a finding, never a pass.
+      case "$ANCHOR" in
+        [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+        *) if git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then WHY="git gave no date for its last commit"
+           else WHY="not tracked by this repository: a nested repository or a submodule"; fi
+           emit "$f Revised: $REVDATE could not be anchored ($WHY) — NOT checked"; continue ;;
+      esac
+      case "$STATUS" in
+        # A new file's stamp is taken at its word once committed: the add commit carries
+        # whatever the writer wrote, and a squash merge re-dates it to the merge day, so a
+        # date test here would red every new doc that came in on a branch. The copied-header
+        # lie is caught while the file is untracked (the dirty rule above).
+        A) continue ;;
+        # A commit that moved the stamp FORWARD along with the file is honest whatever its
+        # date: the writer restamped when they changed it. This is what survives a squash
+        # merge (one re-dated commit carrying weeks of a branch). Header-shaped lines only,
+        # both halves, forward: a body line that mentions the word, a stamp moved backwards
+        # or a whitespace-only change to the stamp line is not a restamp. The paths are the
+        # repo-root paths git printed, so they are asked for from the top, literally
+        # (`:(top,literal)`), which is what makes this right when the project is a
+        # subdirectory of its repo and when the name carries a glob character. No colour:
+        # a color.ui=always in the user's config would paint the `+` and hide the line.
+        # --text: a `-diff` attribute on the file would print "Binary files differ" instead.
+        # Header window only: the awk walks the hunks and keeps a `-`/`+` line only while
+        # its line number in its own side of the file is within MAUDE_HEADER_LINES. A doc
+        # that quotes the header format at column 0 in a fenced example, and a commit that
+        # edits only that example, otherwise reads as a restamp (lens round 5).
+        M|R*) P1="${PATHS%%$'\t'*}"; P2="${PATHS#*$'\t'}"
+           STAMPS="$(git show --format= --no-color --text "$SHA" -- ":(top,literal)$P1" ":(top,literal)$P2" 2>/dev/null \
+             | awk -v N="$MAUDE_HEADER_LINES" '
+                 /^diff --git / { inh=0; next }
+                 /^@@ / { o=$2; n=$3; sub(/^-/,"",o); sub(/^\+/,"",n); sub(/,.*/,"",o); sub(/,.*/,"",n); ol=o+0; nl=n+0; inh=1; next }
+                 !inh || /^\\/ { next }
+                 /^-/ { if (ol<=N) print; ol++; next }
+                 /^\+/ { if (nl<=N) print; nl++; next }
+                 { ol++; nl++ }' \
+             | grep -oE '^[-+]<!-- Revised:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}')"
+           OLD="$(printf '%s\n' "$STAMPS" | grep -m1 '^-' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')"
+           NEW="$(printf '%s\n' "$STAMPS" | grep -m1 '^+' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}')"
+           if [ -n "$OLD" ] && [ -n "$NEW" ] && [ "$NEW" \> "$OLD" ]; then continue; fi ;;
+        *) emit "$f Revised: $REVDATE could not be anchored (git reported '$STATUS' for its last change) — NOT checked"; continue ;;
+      esac
+    fi
+    if [ "$REVDATE" \< "$ANCHOR" ]; then
+      emit "$f Revised: $REVDATE but $ANCHOR_WHY $ANCHOR — the stamp is behind the file"
     fi
   done <<< "$HDRS"
 fi

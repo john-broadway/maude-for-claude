@@ -252,117 +252,401 @@ cd "$MAUDE_ROOT" || exit 1
 test_start "control: the same version IN the header block is still flagged"
 assert_contains "$OUT_W" "real.md says Version: 1.0.1 (expected 2.0.0)" "header still checked"
 
-test_start "control: the same date IN the header block is still flagged"
-# Named the file only, once — which the VERSION finding one assertion above already
-# puts in this same output. Killing Check 4 outright left this "control" green.
-assert_contains "$OUT_W" "real.md Revised: 2020-01-01 (" "the stale-date finding names the file and its date"
+# ── CHECK 4 READS THE FILE'S HISTORY, NEVER THE CALENDAR ─────────────
+# `Revised: D` claims the file last changed on D. Until 2026-09-29 the check was "older
+# than 14 days is stale": main went red on 09-28 with no commit between the green run and
+# the red, eight stamps were named (seven honest), the one stamp that WAS behind its file passed,
+# and the only cure was to restamp files nobody had touched. A gate whose fix is a lie.
+# Now the stamp is read against the last change: the last commit touching the file, or
+# today if the file is dirty. Outside git there is nothing to read against, and a check
+# that examined nothing must say so and red, never print a clean bill.
+test_start "outside a git tree a Revised header is a finding that says NOT checked"
+assert_contains "$OUT_W" "cannot anchor Revised dates on the file history (not a git work tree) — revised dates NOT checked" "the check names why it could not run"
 
-test_start "the stale-date finding says why it is stale"
-assert_contains "$OUT_W" "days ago — stale" "the staleness reason is named"
-
-# The other direction. The assertions above die when the check is dead, but they cannot
-# see it inverted to always-emit: a fixture that is only ever stale cannot tell a real
-# threshold from an unconditional finding.
-HFRESH="$(mktemp -d)"
-mkdir -p "$HFRESH/.claude-plugin"
-printf '{"name":"x","version":"2.0.0"}\n' > "$HFRESH/.claude-plugin/plugin.json"
-printf '<!-- Version: 2.0.0 -->\n<!-- Revised: %s -->\n\n# fresh header\n' "$(date +%Y-%m-%d)" > "$HFRESH/fresh.md"
-OUT_F="$(bash "$VERIFY" "$HFRESH" 2>&1)"
+# On its own fixture, where nothing else is wrong. $HWIN's version mismatch already makes
+# the exit non-zero, so asserting RC there proved nothing: a refusal demoted to a printf
+# survived it (mutation M5, 2026-09-29). Here the refusal is the only finding there is.
+HNOGIT="$(mktemp -d)"
+mkdir -p "$HNOGIT/.claude-plugin"
+printf '{"name":"x","version":"2.0.0"}\n' > "$HNOGIT/.claude-plugin/plugin.json"
+printf '<!-- Version: 2.0.0 -->\n<!-- Revised: 2020-01-01 -->\n\n# nothing else wrong\n' > "$HNOGIT/only.md"
+OUT_NG="$(bash "$VERIFY" "$HNOGIT" 2>&1)"; RC_NG=$?
 cd "$MAUDE_ROOT" || exit 1
+rm -rf "$HNOGIT"
 
-test_start "a Revised date inside the window is not a finding"
-assert_not_contains "$OUT_F" "days ago — stale" "a date inside the window is not stale"
-rm -rf "$HFRESH"
+test_start "and that refusal is a FINDING that reaches the exit code"
+assert_eq "$(printf '%s\n' "$OUT_NG" | grep -cE '^1 findings$')" "1" "exactly one finding, the refusal itself"
 
-# The window's VALUE, from both sides. Everything above pins only the comparison's
-# DIRECTION: with the fixtures above alone, STALE_LIMIT_DAYS could be set to 0, or to 13,
-# or to anything up to the age of the 2020-01-01 control, and no assertion moved. A file
-# AT the limit must stay silent and one a day PAST it must speak, which is the only pair
-# that admits 14 and no other number.
-# Both sides pinned to UTC: the fixture dates AND the run that reads them. The first
-# version of this subtracted N*86400 from LOCAL midnight and claimed that made the
-# boundary exact in any zone. It made it wrong in every zone that keeps DST: a
-# spring-forward inside the window leaves a 23-hour day, so the arithmetic lands one
-# calendar day early and the AT-limit file reads as fifteen days old. That is a spurious
-# red for about two weeks after every spring-forward, in Central, which is where this is
-# read from. A zone with no transitions has no such day. What Check 4 makes of a DST
-# boundary in its own arithmetic is a separate question and not what this pair is for.
-_ymd_back() {  # $1 = whole days before today, computed in UTC
-  ( export TZ=UTC
-    source_common
-    a="$(maude_date_epoch "$(date +%Y-%m-%d)")"
-    # Without this, a missing anchor fell through to a negative epoch and rendered a
-    # 1969 date, which looks like a plausible fixture and quietly voids the pair.
-    case "$a" in (''|*[!0-9]*) echo "_ymd_back: no epoch for today" >&2; return 1 ;; esac
-    e=$(( a - $1 * 86400 ))
-    s="$(date -d "@$e" +%Y-%m-%d 2>/dev/null)"                # portability-shim (GNU)
-    [ -n "$s" ] || s="$(date -r "$e" +%Y-%m-%d 2>/dev/null)"  # portability-shim (BSD)
-    [ -n "$s" ] || { echo "_ymd_back: no date for epoch $e" >&2; return 1; }
-    printf '%s' "$s" )
+test_start "so an unexamined stamp cannot pass"
+assert_exit "$RC_NG" "1" "an unexamined stamp must not pass"
+
+# A repo whose commit dates are PLANTED, so every assertion below is clock-free and
+# zone-free: the pair that admits exactly the rule is a stamp ON the day of the change
+# (silent) and one a day BEHIND it (a finding). The old boundary pair needed `_ymd_back`, a
+# UTC pin on both sides and a DST essay to say the same thing about a number that is gone.
+# `-c` on every commit: the runners may have no identity, and a user's global gpgsign or
+# hooksPath must not reach into a fixture.
+_git_fixture() {  # $1 = dir
+  git -C "$1" init -q
+  # Two hostile user configs, on every fixture: colour would paint the `+` the restamp
+  # rule greps for, and hidden untracked files would make a new file read as clean.
+  git -C "$1" config color.ui always
+  git -C "$1" config status.showUntrackedFiles no
 }
-HEDGE="$(mktemp -d)"
-mkdir -p "$HEDGE/.claude-plugin"
-printf '{"name":"x","version":"2.0.0"}\n' > "$HEDGE/.claude-plugin/plugin.json"
-# The AT-limit file carries a deliberate version MISMATCH so the version check names it.
-# That is the only way this pair can prove the file was READ: a healthy file at 14 days
-# is silent in every check, and silence is what a fixture that was never created looks
-# like too. A typo'd path or a dead run passed the bare absence check happily.
-AT_D="$(_ymd_back 14)"; PAST_D="$(_ymd_back 15)"
-printf '<!-- Version: 1.0.0 -->\n<!-- Revised: %s -->\n\n# at the limit\n' "$AT_D" > "$HEDGE/at-limit.md"
-printf '<!-- Version: 2.0.0 -->\n<!-- Revised: %s -->\n\n# past the limit\n' "$PAST_D" > "$HEDGE/past-limit.md"
-OUT_E="$(TZ=UTC bash "$VERIFY" "$HEDGE" 2>&1)"
-OUT_EE="$(TZ=UTC MAUDE_VERIFY_TODAY="" bash "$VERIFY" "$HEDGE" 2>&1)"
+_git_commit_on() {  # $1 = dir, $2 = author YYYY-MM-DD, $3 = message, [$4 = committer YYYY-MM-DD, default $2]
+  git -C "$1" add -A
+  GIT_AUTHOR_DATE="${2}T12:00:00Z" GIT_COMMITTER_DATE="${4:-$2}T12:00:00Z" \
+    git -C "$1" -c user.name=x -c user.email=x@y -c commit.gpgsign=false -c core.hooksPath=/dev/null \
+    commit -q -m "$3"
+}
+_doc() {  # $1 = path, $2 = version, $3 = revised, $4 = body line
+  printf '<!-- Version: %s -->\n<!-- Revised: %s -->\n\n# %s\n' "$2" "$3" "$4" > "$1"
+}
+HGIT="$(mktemp -d)"
+mkdir -p "$HGIT/.claude-plugin"
+_git_fixture "$HGIT"
+printf '{"name":"x","version":"2.0.0"}\n' > "$HGIT/.claude-plugin/plugin.json"
+printf 'ignored.md\n' > "$HGIT/.gitignore"
+# The ON-day file carries a deliberate version MISMATCH so the version check names it.
+# That is the only way this pair can prove the file was READ: a truthful stamp is silent in
+# every check, and silence is what a fixture that was never created looks like too.
+_doc "$HGIT/even.md"      1.0.0 2026-01-10 "stamped on its commit day"
+_doc "$HGIT/behind.md"    2.0.0 2026-01-10 "edited two days later, never restamped"
+_doc "$HGIT/ahead.md"     2.0.0 2026-01-13 "edited two days later, stamp already past it"
+_doc "$HGIT/restamped.md" 2.0.0 2026-01-09 "edited and restamped in one re-dated commit"
+_doc "$HGIT/moved.md"     2.0.0 2026-01-10 "renamed later, untouched"
+_doc "$HGIT/movedlie.md"  2.0.0 2026-01-10 "edited without a restamp, then renamed"
+_doc "$HGIT/mention.md"   2.0.0 2026-01-10 "edited later; the edit only mentions the word"
+printf 'note: Revised: 2026-01-05 was the old convention\ny-<!-- Revised: 2026-01-05 -->\n' >> "$HGIT/mention.md"
+_doc "$HGIT/rs-old.md"    2.0.0 2026-01-09 "restamped forward under this name, then renamed"
+_doc "$HGIT/backward.md"  2.0.0 2026-01-12 "edited later; the stamp moved BACKWARDS"
+_doc "$HGIT/space.md"     2.0.0 2026-01-10 "edited later; the stamp line changed by a space"
+_doc "$HGIT/copied.md"    2.0.0 2020-01-01 "a new file carrying a copied, ancient header"
+_doc "$HGIT/me-old.md"    2.0.0 2026-01-10 "moved AND edited in one commit, never restamped"
+_doc "$HGIT/mr-old.md"    2.0.0 2026-01-09 "moved, edited AND restamped forward in one commit"
+_doc "$HGIT/naïve.md"     2.0.0 2026-01-10 "a non-ASCII name edited later, never restamped"
+_doc "$HGIT/a[1].md"      2.0.0 2026-01-09 "a glob in the name; restamped forward later"
+_doc "$HGIT/a1.md"        2.0.0 2026-01-09 "the glob's neighbour; edited later, never restamped"
+_doc "$HGIT/c[1].md"      2.0.0 2026-01-09 "a glob in the name; edited later, never restamped"
+_doc "$HGIT/c1.md"        2.0.0 2026-01-09 "the glob's neighbour; restamped forward later"
+_doc "$HGIT/b*.md"        2.0.0 2026-01-10 "a star in the name; edited later, never restamped"
+_doc "$HGIT/bx.md"        2.0.0 2026-01-09 "the star's neighbour; restamped forward later"
+_doc "$HGIT/d[1].md"      2.0.0 2026-01-10 "a glob in the name; clean beside a dirty neighbour"
+_doc "$HGIT/d1.md"        2.0.0 2026-01-10 "the glob's neighbour; made dirty later"
+printf 'restamped.md -diff\n' > "$HGIT/.gitattributes"
+_doc "$HGIT/café.md"      2.0.0 2026-01-09 "a name git would print as caf\\303\\251.md"
+printf '<!-- Version: 2.0.0 -->\n\n# born without a stamp\n' > "$HGIT/late.md"
+_doc "$HGIT/rebased.md"   2.0.0 2026-01-10 "edited on its stamp day, committed ten days later"
+_doc "$HGIT/future.md"    2.0.0 2999-01-01 "a year nobody has reached"
+_doc "$HGIT/bad.md"       2.0.0 2026-00-99 "the shape of a date and not one; edited later so an anchor would call it behind"
+_doc "$HGIT/fence.md"     2.0.0 2026-01-10 "quotes the header format at column 0 in a fenced example"
+# Past the header window: MAUDE_HEADER_LINES lines of body first, or the example IS header.
+for _i in 1 2 3 4 5 6 7 8 9 10 11 12; do printf 'body line %s\n' "$_i" >> "$HGIT/fence.md"; done
+printf '```\n<!-- Revised: 2026-01-01 -->\n```\n' >> "$HGIT/fence.md"
+_git_commit_on "$HGIT" 2026-01-10 "first"
+# The second commit edits two files WITHOUT touching their stamps: one stamp is now behind
+# its change, the other was already past it. It also gives the shallow clone below a
+# boundary that is NOT the commit that last changed even.md.
+printf 'an edit\n' >> "$HGIT/behind.md"
+printf 'an edit\n' >> "$HGIT/ahead.md"
+printf 'an edit\n' >> "$HGIT/movedlie.md"
+# The body line carries a date-shaped mention that moves FORWARD, the exact shape an
+# unanchored restamp regex would take for a restamp. Only the header line counts.
+printf '<!-- Version: 2.0.0 -->\n<!-- Revised: 2026-01-10 -->\n\n# edited later; the edit only mentions the word\nnote: Revised: 2026-01-11 is the new convention\n- the Revised: header is mandatory\nx+<!-- Revised: 2026-01-11 -->\n' > "$HGIT/mention.md"
+printf 'an edit\n' >> "$HGIT/naïve.md"
+printf 'an edit\n' >> "$HGIT/bad.md"
+# The commit changes ONLY the fenced example, forward: the shape of a restamp, in the body.
+sed 's/^<!-- Revised: 2026-01-01 -->$/<!-- Revised: 2026-01-05 -->/' "$HGIT/fence.md" > "$HGIT/fence.md.new" && mv "$HGIT/fence.md.new" "$HGIT/fence.md"
+printf 'an edit\n' >> "$HGIT/a1.md"
+printf 'an edit\n' >> "$HGIT/c[1].md"
+printf 'an edit\n' >> "$HGIT/b*.md"
+_doc "$HGIT/a[1].md"      2.0.0 2026-01-12 "a glob in the name; restamped forward later, again"
+_doc "$HGIT/c1.md"        2.0.0 2026-01-12 "the glob's neighbour; restamped forward later, again"
+_doc "$HGIT/bx.md"        2.0.0 2026-01-12 "the star's neighbour; restamped forward later, again"
+_doc "$HGIT/backward.md"  2.0.0 2026-01-01 "edited later; the stamp moved BACKWARDS, and the body changed"
+printf '<!-- Version: 2.0.0 -->\n<!-- Revised: 2026-01-10 --> \n\n# edited later; the stamp line changed by a space, and the body changed\n' > "$HGIT/space.md"
+_doc "$HGIT/later.md"     2.0.0 2026-01-12 "touched later"
+_git_commit_on "$HGIT" 2026-01-12 "second"
+# The third is dated ten days after the stamp it writes: the shape of a squash merge, one
+# re-dated commit carrying a branch's restamp. It also moves a file without changing it.
+_doc "$HGIT/restamped.md" 2.0.0 2026-01-12 "edited and restamped in one re-dated commit, again"
+_doc "$HGIT/rs-old.md"    2.0.0 2026-01-12 "restamped forward under this name, then renamed, again"
+git -C "$HGIT" mv moved.md renamed.md
+git -C "$HGIT" mv movedlie.md renamedlie.md
+git -C "$HGIT" mv me-old.md me-new.md
+printf 'an edit\n' >> "$HGIT/me-new.md"
+# A small edit plus the restamp, so git calls it a rename with a similarity, not D+A: a
+# rewrite below 50% is an add and would be taken at its word for the wrong reason.
+git -C "$HGIT" mv mr-old.md mr-new.md
+sed 's/^<!-- Revised: 2026-01-09 -->/<!-- Revised: 2026-01-12 -->/' "$HGIT/mr-new.md" > "$HGIT/mr-new.md.new" && mv "$HGIT/mr-new.md.new" "$HGIT/mr-new.md"
+printf 'an edit\n' >> "$HGIT/mr-new.md"
+_doc "$HGIT/café.md"      1.0.0 2026-01-12 "a name git would print as caf\\303\\251.md, restamped; version mismatched so the walk names it"
+printf '<!-- Version: 2.0.0 -->\n<!-- Revised: 2020-01-01 -->\n\n# born without a stamp, given an ancient one later\n' > "$HGIT/late.md"
+_git_commit_on "$HGIT" 2026-01-20 "third"
+# The fourth is a rebase: authored on the stamp day, committed ten days later.
+printf 'an edit\n' >> "$HGIT/rebased.md"
+git -C "$HGIT" mv rs-old.md rs-new.md
+_git_commit_on "$HGIT" 2026-01-10 "fourth" 2026-01-20
+# An ignored file with an ancient stamp, written after the commits so it is never in one.
+_doc "$HGIT/ignored.md"   2.0.0 2020-01-01 "not this tree's document"
+OUT_G="$(TZ=UTC bash "$VERIFY" "$HGIT" 2>&1)"; RC_G=$?
 cd "$MAUDE_ROOT" || exit 1
 
-# Named first, because without it a dead date helper writes `Revised:` with no digits,
-# Check 4 skips the file for having no date at all, and "AT limit is not a finding" goes
-# green for the wrong reason. The suite still reddened on the neighbours, but neither of
-# the two assertions below could tell you which failure it was looking at.
-test_start "the boundary fixture dates were computable"
-assert_eq "$([ -n "$AT_D" ] && [ -n "$PAST_D" ] && echo ok)" "ok" "both dates resolved"
+test_start "the planted fixture was actually read"
+assert_contains "$OUT_G" "even.md says Version:" "a different check names the file, so it exists and was walked"
 
-test_start "the AT-limit fixture was actually read"
-assert_contains "$OUT_E" "at-limit.md says Version:" "a different check names the file, so it exists and was walked"
+test_start "a stamp ON the day of its last change is not a finding"
+assert_not_contains "$OUT_G" "even.md Revised:" "the file says 01-10 and last changed 01-10"
 
-# `at-limit.md Revised:` can only come from Check 4's own emit, never from the version
-# finding above — which is the exact confusion that made the old date control vacuous.
-test_start "a file AT the stale limit is not a finding"
-assert_not_contains "$OUT_E" "at-limit.md Revised:" "14 days is inside the window"
+test_start "a stamp BEHIND a later edit is a finding that names both dates"
+assert_contains "$OUT_G" "behind.md Revised: 2026-01-10 but last changed 2026-01-12 — the stamp is behind the file" "the lie and the truth, side by side"
 
-test_start "a file one day PAST the stale limit is a finding"
-assert_contains "$OUT_E" "past-limit.md Revised:" "15 days is outside the window"
+test_start "a stamp already PAST a later edit is not a finding"
+assert_not_contains "$OUT_G" "ahead.md Revised:" "01-13 covers a change on 01-12"
 
-test_start "exactly one of the boundary pair is stale"
-assert_eq "$(printf '%s\n' "$OUT_E" | grep -c 'days ago — stale')" "1" "one stale finding, not none and not both"
+test_start "a commit that restamps the file it changes is honest whatever its date"
+assert_not_contains "$OUT_G" "restamped.md Revised:" "the squash-merge shape: stamp 01-12 in a commit dated 01-20"
 
-# The empty seam must anchor on the same day as no seam. The two empty-seam fixtures below sit
-# far from the boundary (today, 2020), so an anchor moved by a day on the empty path only was
-# invisible to them (seventeenth pass). Here a day either way makes none or both stale.
-test_start "and under an empty seam the boundary pair reads the same"
-assert_eq "$(printf '%s\n' "$OUT_EE" | grep -c 'days ago — stale')" "1" "one stale finding under an empty seam, not none and not both"
-rm -rf "$HEDGE"
+# The first cut of this fixture ran `git mv -q`, which does not exist; the move never
+# happened and the assertion below could not fail (lens round 2). The file is proven first.
+test_start "the rename fixture really renamed"
+assert_eq "$([ -f "$HGIT/renamed.md" ] && [ ! -f "$HGIT/moved.md" ] && echo ok)" "ok" "moved.md is now renamed.md"
 
-# Check 4 AT THE PRODUCTION CALLSITE, with a real DST transition inside the span. The
-# boundary pair above cannot do this: it runs under TZ=UTC, and the old raw-seconds formula
-# and the midnight-anchored one agree for every input in every zone OUTSIDE a daylight-saving
-# window. Reverting the callsite alone, helper untouched, left all 61 test files green.
-# 2026-03-08 springs forward in US Central, so 03-04 to 03-20 is 16 calendar days but only
-# 15*86400+82800 real seconds. Correct reads 16. A naive midnight-to-midnight seconds count
-# reads 15. The pre-fix callsite ignores this seam and reads the real clock, so it reads 184
-# and climbs by one a day. One assertion separates all three.
-# Without this the whole block is theatre: on a box with missing or stale zoneinfo,
-# America/Chicago collapses to UTC, the span has no short day, and the assertion below
-# reads 16 whether the rounding fix is present or not. Measured under an empty TZDIR.
-# ── The seam's own behaviour. None of this depends on a timezone, so none of it sits
-# inside the DST guard below: on a box with broken tzdata these still have to run.
+test_start "a renamed file keeps its stamp"
+assert_not_contains "$OUT_G" "renamed.md Revised:" "a move is not a revision"
+
+# The restamp happened under the OLD name; `git show` has to be asked about the path the
+# file had at that commit, or the diff comes back empty and the honest file is named.
+test_start "a forward restamp under a file's old name still counts after the rename"
+assert_not_contains "$OUT_G" "rs-new.md Revised:" "the diff is read at the historical path"
+
+test_start "a rename does not launder a stamp left behind by an earlier edit"
+assert_contains "$OUT_G" "renamedlie.md Revised: 2026-01-10 but last changed 2026-01-12" "the anchor follows the rename back to the edit"
+
+test_start "an edit that only MENTIONS the word is not a restamp"
+assert_contains "$OUT_G" "mention.md Revised: 2026-01-10 but last changed 2026-01-12" "a body line, a bullet, a context line: none is the header"
+
+test_start "a stamp moved BACKWARDS is not a restamp"
+assert_contains "$OUT_G" "backward.md Revised: 2026-01-01 but last changed 2026-01-12" "forward or nothing"
+
+test_start "a whitespace change to the stamp line is not a restamp"
+assert_contains "$OUT_G" "space.md Revised: 2026-01-10 but last changed 2026-01-12" "same date, same lie"
+
+# By choice, and named as one: the add commit carries whatever the writer wrote, and a
+# squash merge re-dates it to the merge day, so a date test on adds would red every new
+# doc that came in on a branch. The copied header is caught while the file is untracked.
+test_start "a move that also edits is a revision, not an add"
+assert_contains "$OUT_G" "me-new.md Revised: 2026-01-10 but last changed 2026-01-20" "git mv plus an edit in one commit does not launder the stamp"
+
+test_start "the non-ASCII fixture was actually read"
+assert_contains "$OUT_G" "café.md says Version:" "a different check names it, so it exists and was walked"
+
+test_start "a non-ASCII name is asked about as itself"
+assert_not_contains "$OUT_G" "café.md Revised:" "restamped forward under a name git quotes by default"
+
+test_start "and a lying non-ASCII name is still named (the control for the line above)"
+assert_contains "$OUT_G" "naïve.md Revised: 2026-01-10 but last changed 2026-01-12" "non-ASCII names are read, not skipped"
+
+test_start "the move-with-edit fixture really is a rename to git"
+assert_eq "$(git -C "$HGIT" log -1 --follow --format= --name-status -- mr-new.md | cut -c1)" "R" "R<100, not D+A"
+
+test_start "a move that edits AND restamps forward in one commit is honest"
+assert_not_contains "$OUT_G" "mr-new.md Revised:" "both paths of the move are asked about"
+
+# A `[` in a name is a glob to git: `a[1].md` matched its neighbour a1.md too, whose diff
+# came first, and its stamp lines were read as this file's (lens round 4): a false GREEN
+# when the neighbour restamped and this file lied, a false RED the other way round.
+test_start "a glob-named lie does not borrow its neighbour's restamp"
+assert_contains "$OUT_G" "c[1].md Revised: 2026-01-09 but last changed 2026-01-12" "the false GREEN direction"
+
+test_start "and a glob-named honest file is not blamed for its neighbour's lie"
+assert_not_contains "$OUT_G" "a[1].md Revised:" "the false RED direction"
+
+test_start "the neighbours keep their own truths"
+assert_contains "$OUT_G" "a1.md Revised: 2026-01-09 but last changed 2026-01-12" "a1 lied"
+assert_not_contains "$OUT_G" "c1.md Revised:" "c1 did not"
+
+test_start "a star in the name is a star, not a pattern"
+assert_contains "$OUT_G" "b*.md Revised: 2026-01-10 but last changed 2026-01-12" "the lie under the star is named"
+assert_not_contains "$OUT_G" "bx.md Revised:" "the honest neighbour is not"
+
+test_start "a file marked -diff in .gitattributes is still read as text"
+assert_not_contains "$OUT_G" "restamped.md Revised:" "Binary files differ carries no stamp lines"
+
+test_start "a stamp ADDED late with an ancient date is behind the file"
+assert_contains "$OUT_G" "late.md Revised: 2020-01-01 but last changed 2026-01-20" "no old stamp to move forward from"
+
+test_start "a committed new file's stamp is taken at its word"
+assert_not_contains "$OUT_G" "copied.md Revised:" "caught untracked, not once committed"
+
+test_start "a rebased commit anchors on its AUTHOR date"
+assert_not_contains "$OUT_G" "rebased.md Revised:" "authored 01-10, committed 01-20: the stamp says 01-10"
+
+test_start "a stamp in the future is a finding"
+assert_contains "$OUT_G" "future.md Revised: 2999-01-01 is after today" "a date the file cannot have"
+
+test_start "a stamp that is not a date is a finding"
+assert_contains "$OUT_G" "bad.md Revised: 2026-00-99 is not a date this clock can place" "the regex admits it; the calendar does not"
+
+test_start "and it is reported once, not anchored as well"
+assert_eq "$(printf '%s\n' "$OUT_G" | grep -c 'bad.md Revised:')" "1" "an unplaceable date does not fall through to the date test"
+
+test_start "a fenced example of the header, edited forward, is not a restamp"
+assert_contains "$OUT_G" "fence.md Revised: 2026-01-10 but last changed 2026-01-12" "only the header window counts"
+
+test_start "a file touched by a later commit anchors on THAT commit"
+assert_not_contains "$OUT_G" "later.md Revised:" "01-12 stamp, 01-12 commit"
+
+test_start "an ignored file is nobody's finding"
+assert_not_contains "$OUT_G" "ignored.md" "not tracked, not dirty, not this tree's document"
+
+test_start "exactly twelve stamps in the planted history are behind their files"
+assert_eq "$(printf '%s\n' "$OUT_G" | grep -c 'the stamp is behind the file')" "12" "behind, renamedlie, mention, backward, space, me-new, late, naïve, a1, c[1], b*, fence: not the honest twelve"
+
+test_start "and it reaches the exit code"
+assert_exit "$RC_G" "1" "a lying stamp must make verify exit non-zero"
+
+# An old git echoes an unknown placeholder back, so `%as` comes out as the text "%as" and
+# a string compare against it passes every stamp. A shim git does what that git would.
+SHIM="$(_mk_shim_dir)"
+REALGIT="$(command -v git)"
+printf '#!/usr/bin/env bash\nfor a in "$@"; do [ "$a" = log ] && { echo "0000 %%as"; exit 0; }; done\nexec %s "$@"\n' "$REALGIT" > "$SHIM/git"
+chmod +x "$SHIM/git"
+test_start "the shim git exists"
+assert_eq "$([ -x "$SHIM/git" ] && echo ok)" "ok" "a dead shim dir leaves the real git on PATH and the assertion below proving nothing"
+OUT_OLD="$(PATH="$SHIM:$PATH" TZ=UTC bash "$VERIFY" "$HGIT" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+rm -rf "$SHIM"
+
+test_start "a git that gives no date for the last commit is a finding, not a pass"
+assert_contains "$OUT_OLD" "behind.md Revised: 2026-01-10 could not be anchored (git gave no date for its last commit) — NOT checked" "unknown is never a pass"
+
+# The working tree. A file edited after its stamp has not been committed yet, and that is
+# exactly when the stamp should be caught: before the commit carries the lie.
+printf 'an edit after the stamp\n' >> "$HGIT/even.md"
+printf 'an edit\n' >> "$HGIT/d1.md"
+_doc "$HGIT/untracked.md" 2.0.0 2020-01-01 "new file, old stamp"
+OUT_D="$(TZ=UTC bash "$VERIFY" "$HGIT" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+
+test_start "a file modified in the working tree anchors on today"
+assert_contains "$OUT_D" "even.md Revised: 2026-01-10 but modified in the working tree $(TZ=UTC date +%Y-%m-%d) — the stamp is behind the file" "dirty means changed now"
+
+test_start "an untracked file with an old stamp is a finding too"
+assert_contains "$OUT_D" "untracked.md Revised: 2020-01-01 but modified in the working tree" "a new file did not last change in 2020"
+
+test_start "a clean file beside a dirty one keeps its commit anchor"
+assert_not_contains "$OUT_D" "ahead.md Revised:" "one dirty file does not make every file dirty"
+
+# A vendored repository inside the tree: its doc is neither tracked here, nor dirty here,
+# nor in this history. Fail toward a finding, and say the true reason (lens round 5).
+mkdir -p "$HGIT/nested" && git -C "$HGIT/nested" init -q
+_doc "$HGIT/nested/n.md" 2.0.0 2020-01-10 "a doc inside a nested repository"
+OUT_N="$(TZ=UTC bash "$VERIFY" "$HGIT" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+rm -rf "$HGIT/nested"
+
+test_start "a doc inside a nested repository is a finding that names the reason"
+assert_contains "$OUT_N" "nested/n.md Revised: 2020-01-10 could not be anchored (not tracked by this repository: a nested repository or a submodule) — NOT checked" "not a lie about a date git never gave"
+
+test_start "a glob-named clean file is not dirtied by its neighbour"
+assert_not_contains "$OUT_D" "d[1].md Revised:" "git status asked literally"
+assert_contains "$OUT_D" "d1.md Revised: 2026-01-10 but modified in the working tree" "the neighbour is the dirty one"
+
+# The control for the dirty path: restamp the edited file to today and it goes quiet.
+# Without this a mutation that flags EVERY dirty file passes the assertions above.
+sed "s/^<!-- Revised: 2026-01-10 -->/<!-- Revised: $(TZ=UTC date +%Y-%m-%d) -->/" "$HGIT/even.md" > "$HGIT/even.md.new" && mv "$HGIT/even.md.new" "$HGIT/even.md"
+OUT_D2="$(TZ=UTC bash "$VERIFY" "$HGIT" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+
+test_start "a dirty file restamped to today is not a finding"
+assert_not_contains "$OUT_D2" "even.md Revised:" "the stamp now matches the change"
+
+# The shallow clone. Its boundary commit is a root that "adds" every file, so `git log -1`
+# on even.md returns the boundary and an honest 01-10 stamp reads as behind. The guard
+# must refuse to measure rather than accuse the innocent file. This is the control that
+# has to go red FIRST: with the guard deleted, even.md is named below.
+git -C "$HGIT" -c core.hooksPath=/dev/null checkout -q -- even.md
+rm -f "$HGIT/untracked.md" "$HGIT/ignored.md"
+HSHALLOW="$(mktemp -d)"
+git clone -q --depth 1 "file://$HGIT" "$HSHALLOW/clone" 2>/dev/null
+OUT_S="$(TZ=UTC bash "$VERIFY" "$HSHALLOW/clone" 2>&1)"; RC_S=$?
+cd "$MAUDE_ROOT" || exit 1
+
+test_start "the shallow fixture is really shallow"
+assert_eq "$(git -C "$HSHALLOW/clone" rev-parse --is-shallow-repository)" "true" "otherwise the next three assertions test nothing"
+
+test_start "a shallow clone is a finding that says NOT checked"
+assert_contains "$OUT_S" "cannot anchor Revised dates on the file history (shallow clone" "the check names why it could not run"
+
+test_start "and it does not accuse the file whose history lies past the boundary"
+assert_not_contains "$OUT_S" "even.md Revised:" "an honest stamp is not named for a history the clone cannot see"
+
+test_start "and the refusal is counted as a finding"
+# Five, exactly: even.md's and café.md's planted version mismatches, future.md's date,
+# bad.md's non-date, and the refusal. A refusal demoted to a printf leaves four and the
+# exit code cannot tell.
+assert_eq "$(printf '%s\n' "$OUT_S" | grep -cE '^5 findings$')" "1" "two mismatches + future + non-date + refusal"
+assert_exit "$RC_S" "1" "unexamined stamps must not pass"
+
+# A git older than 2.15 does not know the flag and echoes it back, which is not "true";
+# the clone is then read as deep and even.md accused. The marker file every shallow clone
+# carries is the second spelling. A shim git does what that git would.
+SHIM2="$(_mk_shim_dir)"
+printf '#!/usr/bin/env bash\nfor a in "$@"; do [ "$a" = --is-shallow-repository ] && { touch %s/used; echo "--is-shallow-repository"; exit 0; }; done\nexec %s "$@"\n' "$SHIM2" "$REALGIT" > "$SHIM2/git"
+chmod +x "$SHIM2/git"
+test_start "the second shim git exists"
+assert_eq "$([ -x "$SHIM2/git" ] && echo ok)" "ok" "a dead shim dir leaves the real git on PATH and the assertion below proving nothing"
+OUT_S2="$(PATH="$SHIM2:$PATH" TZ=UTC bash "$VERIFY" "$HSHALLOW/clone" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+SHIM2_USED="$([ -f "$SHIM2/used" ] && echo yes)"
+rm -rf "$SHIM2"
+
+# Present is not used: with the interception deleted the real clone is shallow by the flag
+# and the assertion below passes for the wrong reason (lens round 3).
+test_start "and the shim really answered the shallow question"
+assert_eq "$SHIM2_USED" "yes" "the interception ran"
+
+test_start "a git that echoes the shallow flag back is still caught by the marker file"
+assert_contains "$OUT_S2" "cannot anchor Revised dates on the file history (shallow clone" "two spellings of shallow, either one refuses"
+rm -rf "$HSHALLOW" "$HGIT"
+
+# A project that is a SUBDIRECTORY of its repo: git prints history paths from the repo
+# root, and `git show` run from the subdirectory must be asked from the top or the honest
+# restamp comes back as an empty diff and is named (lens round 3).
+HSUB="$(mktemp -d)"
+mkdir -p "$HSUB/sub/.claude-plugin"
+_git_fixture "$HSUB"
+printf '{"name":"x","version":"2.0.0"}\n' > "$HSUB/sub/.claude-plugin/plugin.json"
+_doc "$HSUB/sub/ok.md"   2.0.0 2026-01-09 "restamped forward from a subdirectory"
+_doc "$HSUB/sub/lie.md"  2.0.0 2026-01-09 "edited from a subdirectory, never restamped"
+_git_commit_on "$HSUB" 2026-01-09 "first"
+_doc "$HSUB/sub/ok.md"   2.0.0 2026-01-12 "restamped forward from a subdirectory, again"
+printf 'an edit\n' >> "$HSUB/sub/lie.md"
+_git_commit_on "$HSUB" 2026-01-20 "second"
+OUT_SUB="$(TZ=UTC bash "$VERIFY" "$HSUB/sub" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+rm -rf "$HSUB"
+
+test_start "a subdirectory project reads its history at all"
+assert_contains "$OUT_SUB" "lie.md Revised: 2026-01-09 but last changed 2026-01-20" "the control: a real lie is still named from a subdirectory"
+
+test_start "a forward restamp is honest when the project is a subdirectory of its repo"
+assert_not_contains "$OUT_SUB" "ok.md Revised:" "the diff is asked for from the repo top"
+
+# ── The seam's own behaviour, on a planted history so the pin is the ONLY finding. ──
 HSEAM="$(mktemp -d)"
 mkdir -p "$HSEAM/.claude-plugin"
+_git_fixture "$HSEAM"
 printf '{"name":"x","version":"2.0.0"}\n' > "$HSEAM/.claude-plugin/plugin.json"
-printf '<!-- Version: 2.0.0 -->\n<!-- Revised: 2026-03-19 -->\n\n# one day before the pin\n' > "$HSEAM/near.md"
+_doc "$HSEAM/near.md" 2.0.0 2026-03-19 "one day before the pin"
+# A writer east of the checker's clock has already reached tomorrow. One day ahead is
+# theirs; two is a typo.
+_doc "$HSEAM/skew.md" 2.0.0 2026-03-21 "one day past the pin"
+_git_commit_on "$HSEAM" 2026-03-19 "stamped and committed the same day"
 
-# Pinned, against a file that is NOT stale relative to the pin, so the pin is the only
-# finding and the exit code carries it alone.
 OUT_PIN="$(TZ=UTC MAUDE_VERIFY_TODAY=2026-03-20 bash "$VERIFY" "$HSEAM" 2>&1)"; RC_PIN=$?
+OUT_PIN2="$(TZ=UTC MAUDE_VERIFY_TODAY=2026-03-17 bash "$VERIFY" "$HSEAM" 2>&1)"
 cd "$MAUDE_ROOT" || exit 1
 
 test_start "a pinned today is announced"
@@ -377,12 +661,16 @@ assert_exit "$RC_PIN" "1" "a pinned today must make verify exit non-zero"
 
 test_start "the pin is the only finding on an otherwise clean tree"
 # Anchored: "1 findings" as a substring also matches "11 findings" and "21 findings".
+# skew.md is one day past the pin and must be inside that count of one.
 assert_eq "$(printf '%s\n' "$OUT_PIN" | grep -cE '^1 findings$')" "1" "exactly one finding, the pin itself"
 
-# An anchor it cannot resolve must SAY so. Without this the helper fails for every file,
-# every file is skipped, and the run prints a clean bill for a check that examined nothing:
-# the shape the seventh pass found in this very script. Measured before the guard existed:
-# MAUDE_VERIFY_TODAY=banana turned a 247-day-stale file into 0 findings, exit 0.
+test_start "two days past today is after today"
+assert_contains "$OUT_PIN2" "near.md Revised: 2026-03-19 is after today (2026-03-17)" "the allowance is one day, not two"
+
+# An anchor it cannot resolve must SAY so. Without this the dirty-file and future-date
+# reads fail for every file and the run prints a clean bill for a check that examined
+# nothing. Measured before the guard existed: MAUDE_VERIFY_TODAY=banana turned a stale
+# file into 0 findings, exit 0.
 OUT_NT="$(TZ=UTC MAUDE_VERIFY_TODAY=banana bash "$VERIFY" "$HSEAM" 2>&1)"; RC_NT=$?
 cd "$MAUDE_ROOT" || exit 1
 
@@ -393,15 +681,10 @@ test_start "and it too reaches the exit code"
 assert_exit "$RC_NT" "1" "an unresolvable anchor must make verify exit non-zero"
 
 # And an empty value must NOT be one: an ambient empty used to make this exit 2, which took
-# make verify and ship.sh's release gate down with it. Its own fixture, dated by the real
-# clock: $HSEAM is fresh only relative to the PIN, and reads ~170 days stale without it —
-# which is a true finding, and would have made this assertion fail for the right reason
-# about the wrong thing.
-HEMPTY="$(mktemp -d)"
-mkdir -p "$HEMPTY/.claude-plugin"
-printf '{"name":"x","version":"2.0.0"}\n' > "$HEMPTY/.claude-plugin/plugin.json"
-printf '<!-- Version: 2.0.0 -->\n<!-- Revised: %s -->\n\n# fresh by the real clock\n' "$(date +%Y-%m-%d)" > "$HEMPTY/fresh.md"
-OUT_EMPTY="$(TZ=UTC MAUDE_VERIFY_TODAY="" bash "$VERIFY" "$HEMPTY" 2>&1)"; RC_EMPTY=$?
+# make verify and ship.sh's release gate down with it. The seam-less run of the same clean
+# fixture is the reference: empty must be indistinguishable from unset, byte for byte.
+OUT_EMPTY="$(TZ=UTC MAUDE_VERIFY_TODAY="" bash "$VERIFY" "$HSEAM" 2>&1)"; RC_EMPTY=$?
+OUT_UNSET="$(TZ=UTC bash "$VERIFY" "$HSEAM" 2>&1)"
 cd "$MAUDE_ROOT" || exit 1
 
 test_start "an empty seam falls back to today rather than blocking the gate"
@@ -410,61 +693,30 @@ assert_not_contains "$OUT_EMPTY" "cannot resolve today's date" "empty means use 
 test_start "and an empty seam leaves the gate passable"
 assert_exit "$RC_EMPTY" "0" "empty must never block a release"
 
-# The other half of "empty means today", stated as the property rather than as one phrase.
 # The first version of this asserted the output lacked the literal "today is pinned", which
 # a mutation that pins an empty seam under ANY other wording walks straight past. "Empty
 # means today" is exactly "empty is indistinguishable from unset", so compare the two runs.
-OUT_UNSET="$(TZ=UTC bash "$VERIFY" "$HEMPTY" 2>&1)"
-cd "$MAUDE_ROOT" || exit 1
-
 test_start "an empty seam is indistinguishable from an unset one"
 assert_eq "$OUT_EMPTY" "$OUT_UNSET" "empty must behave exactly as unset, byte for byte"
-rm -rf "$HEMPTY"
-rm -rf "$HSEAM"
 
-# The equality above runs on a FRESH file, and Check 4 prints nothing for a fresh file: a
+# The equality above runs on a clean tree, and Check 4 prints nothing for a clean tree: a
 # scan that ran and a scan that never ran leave the same bytes. So a mutation that switched
 # Check 4 off for an empty-but-set seam passed every assertion in this file and the whole
-# gate (sixteenth pass). A file stale on any clock makes the scan observable. The unset path
-# is proven on such files above ($HWIN, $HEDGE); this is the empty path. Not an equality
-# against an unset run here: the finding carries a day count read from the clock, and a
-# midnight between two runs would redden that for the clock and not the code.
-HSTALE="$(mktemp -d)"
-mkdir -p "$HSTALE/.claude-plugin"
-printf '{"name":"x","version":"2.0.0"}\n' > "$HSTALE/.claude-plugin/plugin.json"
-printf '<!-- Version: 2.0.0 -->\n<!-- Revised: 2020-01-01 -->\n\n# stale by any clock\n' > "$HSTALE/stale.md"
-OUT_EMPTY_STALE="$(TZ=UTC MAUDE_VERIFY_TODAY="" bash "$VERIFY" "$HSTALE" 2>&1)"; RC_EMPTY_STALE=$?
+# gate (sixteenth pass). A lying stamp makes the scan observable: created with an ancient
+# stamp, then edited without one.
+_doc "$HSEAM/stale.md" 2.0.0 2020-01-01 "behind by any history"
+_git_commit_on "$HSEAM" 2026-03-19 "a stamp six years behind its commit"
+printf 'an edit\n' >> "$HSEAM/stale.md"
+_git_commit_on "$HSEAM" 2026-03-19 "edited, not restamped"
+OUT_EMPTY_STALE="$(TZ=UTC MAUDE_VERIFY_TODAY="" bash "$VERIFY" "$HSEAM" 2>&1)"; RC_EMPTY_STALE=$?
+cd "$MAUDE_ROOT" || exit 1
 
 test_start "an empty seam still examines the files"
-assert_contains "$OUT_EMPTY_STALE" "stale.md Revised: 2020-01-01" "the scan ran on the empty path"
+assert_contains "$OUT_EMPTY_STALE" "stale.md Revised: 2020-01-01 but last changed 2026-03-19" "the scan ran on the empty path"
 
 test_start "and its finding reaches the exit code"
-assert_exit "$RC_EMPTY_STALE" "1" "a stale file under an empty seam must still block"
-rm -rf "$HSTALE"
-
-# ── DST-dependent, and only this. Guarded, not merely preceded: a failing precondition
-# beside a passing assertion still leaves a green line that proved nothing, and under an
-# empty TZDIR the count below reads 16 either way.
-# GNU `date -d` first, BSD `date -j -f` second: with only the GNU form the guard read two
-# empty strings on macOS, called them equal, and failed the suite for a zone database that
-# was fine (2026-09-13, PR #68).
-_chi_off() { TZ=America/Chicago date -d "$1" +%z 2>/dev/null || TZ=America/Chicago date -j -f '%Y-%m-%dT%H:%M:%S' "$1" +%z 2>/dev/null; }   # portability-shim
-if [ "$(_chi_off 2026-03-08T00:30:00)" = "$(_chi_off 2026-03-08T23:30:00)" ]; then
-  test_start "this box's zone database really has the 2026 spring-forward"
-  _fail "no 2026 spring-forward in tzdata: the DST assertion cannot discriminate here and was NOT run"
-else
-  HDST="$(mktemp -d)"
-  mkdir -p "$HDST/.claude-plugin"
-  printf '{"name":"x","version":"2.0.0"}\n' > "$HDST/.claude-plugin/plugin.json"
-  printf '<!-- Version: 2.0.0 -->\n<!-- Revised: 2026-03-04 -->\n\n# across a spring-forward\n' > "$HDST/dst.md"
-  OUT_DST="$(TZ=America/Chicago MAUDE_VERIFY_TODAY=2026-03-20 bash "$VERIFY" "$HDST" 2>&1)"
-  cd "$MAUDE_ROOT" || exit 1
-
-  test_start "Check 4 counts calendar days across a spring-forward, at the callsite"
-  assert_contains "$OUT_DST" "dst.md Revised: 2026-03-04 (16 days ago" "16 calendar days, not 15 and not the real clock"
-  # Inside the branch that creates it: outside the fi this crashed the whole file under bash -u.
-  rm -rf "$HDST"
-fi
+assert_exit "$RC_EMPTY_STALE" "1" "a lying stamp under an empty seam must still block"
+rm -rf "$HSEAM"
 
 rm -rf "$HSYNC"
 

@@ -129,7 +129,7 @@ test_start "an ORPHANED reservation for ANOTHER call does not put the gate's pat
 rm -f "$TEST_TMP/.maude/plugin/care.json"; : > "$SED_CALLS"
 printf '%s' "$ORPHAN_INPUT" | PATH="$SEDCOUNT:$PATH" bash "$TRACE_HOOK" >/dev/null 2>&1
 BASE_SED="$(sed_forks)"
-printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d,"fp":"999999999","head":"git push origin other","v":2}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 400)) > "$TEST_TMP/.maude/plugin/care.json"
+printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d,"fp":"999999999","head":"git push origin other","v":3}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 400)) > "$TEST_TMP/.maude/plugin/care.json"
 maude_gate_spendable_here "$ORPHAN_INPUT" "ls -la /tmp" "$TEST_TMP/.maude/plugin/care.json"
 assert_exit "$?" "1" "an unrelated completion is NOT spendable here"
 : > "$SED_CALLS"

@@ -31,3 +31,6 @@ credentials.yaml
 # audit of the author's home (shorthand octets .90/.173/.32, a CT id) that the pre-push guard's
 # full-IP regex can't catch. Structural block against an accidental add; scrub before it ships.
 docs/specs/2026-07-17-maude-memory-the-tape.md
+
+# stray stderr captures (an err.log carrying a scratch path reached a ship branch, 2026-10-04)
+*.log
