@@ -9,8 +9,14 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 CMD="${1:-}"
 SELF="$(maude_self_dir)"
 mkdir -p "$SELF" 2>/dev/null
-STATE="$SELF/eye-state"
-WHISPER_FILE="$SELF/eye-whisper.txt"
+# Both commands read the envelope: every eye file is keyed to the session it watches.
+INPUT=""; [ -t 0 ] || INPUT="$(cat 2>/dev/null)"
+SID=""
+command -v jq >/dev/null 2>&1 && SID="$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)"
+SFX="$(maude_eye_suffix "$SID")"
+STATE="$SELF/eye-state$SFX"
+WHISPER_FILE="$SELF/eye-whisper$SFX.txt"
+BORN_FILE="$SELF/eye-whisper$SFX.born"
 
 # The tick's read-modify-write of eye-state, run under a lock: every tool call in every
 # subagent ticks this file, and unlocked, 60 parallel ticks landed 4 (the lens, 2026-09-14).
@@ -33,7 +39,7 @@ _eye_tick() {
     NOW="$(date +%s)"
     EVERY="${MAUDE_EYE_EVERY:-25}"
     MIN="${MAUDE_EYE_MIN_INTERVAL:-180}"
-    LOCK="$SELF/.eye-blink.lock"
+    LOCK="$SELF/.eye-blink$SFX.lock"
     if [ "$COUNT" -ge "$EVERY" ] && [ $((NOW - LAST)) -ge "$MIN" ] \
        && [ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ]; then
       # Reclaim a stale lock: the worker that created it died (killed,
@@ -53,10 +59,10 @@ _eye_tick() {
       if mkdir "$LOCK" 2>/dev/null; then
         printf '0\n%s\n%s\n' "$NOW" "$TOTAL" > "$STATE" 2>/dev/null
         # The whisper this blink may produce is born at this tick.
-        printf '%s' "$TOTAL" > "$SELF/eye-whisper.born" 2>/dev/null
+        printf '%s' "$TOTAL" > "$BORN_FILE" 2>/dev/null
         # 9>&-: the blink must not inherit the lock's fd, or it would hold the tick
         # lock for as long as it runs.
-        nohup bash "$DIR/maude-eye-blink.sh" "$TRANSCRIPT" >/dev/null 2>&1 9>&- &
+        nohup bash "$DIR/maude-eye-blink.sh" "$TRANSCRIPT" "$SID" >/dev/null 2>&1 9>&- &
         disown 2>/dev/null
       else
         printf '%s\n%s\n%s\n' "$COUNT" "$LAST" "$TOTAL" > "$STATE" 2>/dev/null
@@ -68,12 +74,13 @@ _eye_tick() {
 
 case "$CMD" in
   tick)
-    INPUT="$(cat 2>/dev/null)"
     TRANSCRIPT=""
     if command -v jq >/dev/null 2>&1; then
       TRANSCRIPT="$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)"
     fi
-    maude_locked "$SELF/.eye-state.lock" _eye_tick
+    # Per session, so lanes never wait on each other; a tick that still finds the lock
+    # held past its bound is dropped (a lost tick is cheap, a hook timer error is not).
+    maude_locked "$SELF/.eye-state$SFX.lock" _eye_tick
     ;;
   whisper)
     if [ -s "$WHISPER_FILE" ]; then
@@ -89,7 +96,7 @@ case "$CMD" in
       # opt-in wall-clock ceiling for a site that wants one; default off.
       TTL_A="${MAUDE_EYE_WHISPER_TTL_ACTIONS:-40}"
       TTL="${MAUDE_EYE_WHISPER_TTL:-0}"
-      TOTAL="$(sed -n 3p "$STATE" 2>/dev/null)"; BORN_T="$(cat "$SELF/eye-whisper.born" 2>/dev/null)"
+      TOTAL="$(sed -n 3p "$STATE" 2>/dev/null)"; BORN_T="$(cat "$BORN_FILE" 2>/dev/null)"
       case "$TOTAL"  in ''|*[!0-9]*) TOTAL=0;;  esac
       case "$BORN_T" in ''|*[!0-9]*) BORN_T=0;; esac
       BORN="$(maude_mtime "$WHISPER_FILE")"

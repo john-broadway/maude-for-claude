@@ -74,6 +74,11 @@ Greet by the user's **local** time of day. The box clock is often UTC (servers, 
 ## Format
 
 ```
+  __  __                _
+ |  \/  | __ _ _  _ __| |___
+ | |\/| |/ _` | || / _` / -_)
+ |_|  |_|\__,_|\_,_\__,_\___|
+                   for Claude
 <greeting per the rule above> Maude here.    ← just "Maude here." if the timezone is unknown
 
 What's pending:

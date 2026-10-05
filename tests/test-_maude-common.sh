@@ -34,6 +34,13 @@ assert_eq "$(maude_self_dir)" "$TEST_TMP/.maude/plugin" "self_dir"
 # ── maude_user_dir ────────────────────────────────────────────────────
 test_start "user_dir is HOME/.claude/maude"
 assert_eq "$(maude_user_dir)" "$HOME/.claude/maude" "user_dir"
+# lens 5 (BLOCKING): a test wrote fixtures into the REAL $HOME/.claude/maude and rm -f'd
+# them; the live patterns.md and letter-from-maude.md died in a baseline run. Every test
+# runs under a HOME of its own now, and this is the control that keeps it so.
+test_start "the suite's HOME is the test's own, never the person's"
+case "$HOME" in "$TEST_TMP"/*) _pass ;; *) _fail "HOME=$HOME is not under TEST_TMP=$TEST_TMP" ;; esac
+assert_ne "$HOME" "${TEST_REAL_HOME:-}" "the real HOME is remembered apart"
+assert_eq "$(maude_user_dir)" "$TEST_TMP/home/.claude/maude" "user_dir points into the sandbox"
 
 # ── maude_log_trace ───────────────────────────────────────────────────
 test_start "log_trace writes a JSONL line"
@@ -730,12 +737,20 @@ wait
 assert_eq "$(jq -c '[.a, .b]' "$LOCK_CARE")" "[1,1]" "both writes present under the fallback"
 assert_file_absent "$LOCK_CARE.lock.d" "the fallback's lock dir is released"
 
-test_start "a FRESH lock dir (a live holder) is not stolen by the fallback: the waiter waits"
+# The wait is BOUNDED since 2026-09-25 (MAUDE_LOCK_WAIT, default 2 s): the waiter used to
+# wait forever and this test asserted it was still waiting at 3 s. What it protects is
+# unchanged: a live holder's lock is never stolen. The waiter now gives up (75), writes
+# nothing, and leaves the holder's dir in place.
+test_start "a FRESH lock dir (a live holder) is not stolen by the fallback: the waiter gives up"
 printf '{"keep":true}\n' > "$LOCK_CARE"
 mkdir -p "$LOCK_CARE.lock.d"
-( PATH="$NOFLOCK_PATH" maude_timeout 3 bash -c ". \"$HOOKS_DIR/_maude-common.sh\"; maude_care_set \"$LOCK_CARE\" '.x = 1'" ) >/dev/null 2>&1; NF_RC=$?
-assert_eq "$NF_RC" "124" "still waiting after three seconds"
+# The outer bound only catches a waiter that never gives up (124). It was five seconds, and a
+# loaded macOS runner spent more than that starting bash and sourcing the common file on top
+# of the two-second wait (PR #80, 2026-10-04: got 124). Fifteen keeps a forever-waiter red.
+( PATH="$NOFLOCK_PATH" maude_timeout 15 bash -c ". \"$HOOKS_DIR/_maude-common.sh\"; maude_care_set \"$LOCK_CARE\" '.x = 1'" ) >/dev/null 2>&1; NF_RC=$?
+assert_eq "$NF_RC" "75" "gave up at its bound, inside the outer fifteen seconds"
 assert_eq "$(jq -c '.' "$LOCK_CARE")" '{"keep":true}' "and the file is untouched"
+[ -d "$LOCK_CARE.lock.d" ] || _fail "the holder's lock dir was taken"
 rmdir "$LOCK_CARE.lock.d" 2>/dev/null
 
 test_start "a STALE lock dir (a dead holder, older than 30 s) is reclaimed by the fallback"
@@ -749,7 +764,47 @@ test_start "the fallback REFUSES, promptly, when the lock dir cannot be made at 
 ( PATH="$NOFLOCK_PATH" maude_timeout 5 bash -c ". \"$HOOKS_DIR/_maude-common.sh\"; maude_care_set \"$TEST_TMP/no/such/dir/care.json\" '.x = 1'" ) >/dev/null 2>&1; NF_RC=$?
 assert_ne "$NF_RC" "124" "did not spin until the timeout"
 assert_ne "$NF_RC" "0" "and did not claim a write"
+# lens 5: a stray FILE at the lock path returned a bare 1, which no caller's case arms
+# name, so reserve/take/consume printed nothing. The store is not lockable: that is "busy".
+test_start "the fallback says BUSY, not nothing, when a stray file sits at the lock path"
+printf '{"gate_cleared":{"git-push":{"until":%d}}}\n' $(($(date +%s)+600)) > "$LOCK_CARE"
+rm -rf "$LOCK_CARE.lock.d"; : > "$LOCK_CARE.lock.d"
+NF_OUT="$( PATH="$NOFLOCK_PATH" maude_timeout 5 bash -c ". \"$HOOKS_DIR/_maude-common.sh\"; maude_care_reserve_token \"$LOCK_CARE\" git-push s1 $(date +%s) F1 h1" 2>/dev/null )"
+assert_eq "$NF_OUT" "busy" "a store that cannot be locked is busy to its callers"
+rm -f "$LOCK_CARE.lock.d"
 rm -rf "$NOFLOCK_SHIM"
+# lens 6 (MAJOR): the same condition on the FLOCK branch (the one every Linux box runs)
+# failed the redirect with rc 1 and every caller printed nothing.
+# macOS ships no flock: the fallback's equivalent (a stray file at its lock path) is the
+# test above. Skip by name there; a red that only says "this box has no flock" tests nothing.
+test_start "with flock, a DIRECTORY at the lock path is busy too, not silence"
+if command -v flock >/dev/null 2>&1; then
+  rm -rf "$LOCK_CARE.lock"; mkdir -p "$LOCK_CARE.lock"
+  FL_OUT="$(maude_care_reserve_token "$LOCK_CARE" git-push s1 "$(date +%s)" F1 h1 2>/dev/null)"
+  assert_eq "$FL_OUT" "busy" "a store whose lock cannot be opened is busy"
+  rmdir "$LOCK_CARE.lock"
+else
+  printf '  skip  no flock on this box: the fallback branch is covered by the stray-file test above\n'; _pass
+fi
+# lens 7: a bare lock name has "." for a directory, and a symlink at the lock path is busy.
+test_start "a bare lock name (no directory part) locks in the current directory"
+( cd "$TEST_TMP" && maude_locked bare.lock true ); assert_eq "$?" "0" "not busy forever"
+# flock leaves its lock FILE here; the mkdir fallback (macOS) makes bare.lock.d here and
+# removes it, so there the proof is that nothing is left held.
+if command -v flock >/dev/null 2>&1; then
+  assert_file_exists "$TEST_TMP/bare.lock" "the lock file was made here"
+else
+  assert_file_absent "$TEST_TMP/bare.lock.d" "the fallback's lock dir was released here"
+fi
+test_start "a symlink at the lock path is busy, never opened through"
+ln -s "$TEST_TMP/never-made.txt" "$LOCK_CARE.lock"
+FL_OUT="$(maude_care_reserve_token "$LOCK_CARE" git-push s1 "$(date +%s)" F1 h1 2>/dev/null)"
+assert_eq "$FL_OUT" "busy" "busy"
+assert_file_absent "$TEST_TMP/never-made.txt" "nothing was created through the link"
+rm -f "$LOCK_CARE.lock"
+test_start "with flock, a lock path whose parent is missing is busy, not silence"
+FL_OUT="$(maude_care_reserve_token "$TEST_TMP/no/such/dir/care.json" git-push s1 "$(date +%s)" F1 h1 2>/dev/null)"
+assert_eq "$FL_OUT" "busy" "busy"
 
 test_start "care_set reports failure when what landed is not what it wrote (read-back)"
 printf '{"keep":true}\n' > "$LOCK_CARE"

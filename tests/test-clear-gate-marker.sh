@@ -76,7 +76,15 @@ test_start "red key with no chain and no --john is still refused"
 OUT="$(bash "$CLEARRED" "$RED_KEY" 2>&1)"; RC=$?
 assert_exit "$RC" "1" "red without john"
 
-test_start "red key with no chain and --john still clears (fallback preserved)"
+test_start "the refusal hands the --owner line and names no person"
+assert_contains "$OUT" "--owner" "refusal shows --owner"
+assert_not_contains "$OUT" "John" "refusal carries no maintainer name"
+
+test_start "red key with no chain and --owner clears (the documented flag)"
+OUT="$(bash "$CLEARRED" "$RED_KEY" --owner 2>&1)"; RC=$?
+assert_exit "$RC" "0" "red owner fallback"
+
+test_start "red key with no chain and --john still clears (alias preserved)"
 OUT="$(bash "$CLEARRED" "$RED_KEY" --john 2>&1)"; RC=$?
 assert_exit "$RC" "0" "red john fallback"
 
@@ -101,6 +109,10 @@ assert_not_contains "$BLOB" "${LINKS[3]}" "head only"
 test_start "with a chain configured, --john ALONE is refused"
 OUT="$(bash "$CLEARRED" "$RED_KEY" --john 2>&1)"; RC=$?
 assert_exit "$RC" "1" "john alone refused"
+
+test_start "with a chain configured, --owner ALONE is refused too"
+OUT="$(bash "$CLEARRED" "$RED_KEY" --owner 2>&1)"; RC=$?
+assert_exit "$RC" "1" "owner alone refused"
 
 test_start "the refusal names the marker as what is missing"
 assert_contains "$OUT" "marker" "refusal mentions marker"

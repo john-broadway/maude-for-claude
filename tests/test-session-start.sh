@@ -86,14 +86,16 @@ assert_not_contains "$OUT" "OLDERMARKER" "stale buffer entry not surfaced"
 # workspace-wide so they can't masquerade as THIS session's state; a labeled
 # entry (REMEMBER_BRANCH set per fleet session) shows its label.
 test_start "leftoff from an unlabeled entry is marked workspace-wide"
-assert_contains "$OUT" "Where you left off (workspace-wide):" "scope declared"
+# Since 2026-09-25 an unlabelled entry also says this lane has none of its own (the lane
+# is the environment's: tmux name here, "solo" in CI), so assert the lane-free part.
+assert_contains "$OUT" "Where you left off (workspace-wide; none yet for " "scope declared"
 
 cat > "$TEST_TMP/.remember/now.md" <<'EOF'
 ## 07:30 | pacioli
 LABELEDMARKER the labeled thing
 EOF
 test_start "leftoff from a labeled entry carries its session label"
-run_start
+OUT="$(printf '{}' | MAUDE_SESSION_LABEL=pacioli bash "$START" 2>/dev/null)"
 assert_contains "$OUT" "Where you left off (pacioli): LABELEDMARKER" "label surfaced"
 
 # ── #49: the brief logs its own bill (hook + bytes, metadata only) ──
@@ -600,6 +602,47 @@ run_start
 assert_contains "$OUT" "unnamed subject" "null refs names no subject either"
 assert_not_contains "$OUT" "stamp on ? is" "not a second spelling of the same fact"
 printf '{}\n' > "$(care_path)"
+
+
+# ── her mark (John 2026-09-26: "wake brief banner, hers to draw", "Maude for Claude",
+# "go back to your original MAUDE then put in txt for Claude below align right") ──────
+test_start "the brief opens with her mark: MAUDE in ASCII, 'for Claude' under it, flush right"
+run_start
+assert_contains "$OUT" '|  \/  | __ _ _  _ __| |___' "the Maude line"
+BANNER="$(printf '%s\n' "$OUT" | head -5)"
+assert_eq "$(printf '%s\n' "$BANNER" | sed -n '5p')" "$(printf '%19sfor Claude' '')" "for Claude, right-aligned to the art's edge"
+assert_eq "$(printf '%s\n' "$BANNER" | LC_ALL=C grep -c '[^ -~]')" "0" "7-bit ASCII only"
+assert_eq "$(printf '%s\n' "$BANNER" | sed -n '4p;5p' | awk '{ print length($0) }' | uniq | wc -l | tr -d ' ')" "1" "the text ends on the art's last column"
+case "$(printf '%s\n' "$OUT" | sed -n '6p')" in "Maude here."*) _pass ;; *) _fail "line 6 is not the greeting: $(printf '%s\n' "$OUT" | sed -n '6p')" ;; esac
+test_start "MAUDE_BANNER=off hides the mark and nothing else moves"
+# The first run of a session prints the one-time catch-digest line; compare two runs AFTER
+# it, so the only difference between them is the mark.
+ON2="$(printf '{}' | bash "$START" 2>/dev/null)"
+OFF="$(printf '{}' | MAUDE_BANNER=off bash "$START" 2>/dev/null)"
+assert_not_contains "$OFF" '|  \/  |' "no mark"
+case "$(printf '%s\n' "$OFF" | sed -n '1p')" in "Maude here."*) _pass ;; *) _fail "line 1 is not the greeting" ;; esac
+assert_eq "$(printf '%s\n' "$ON2" | tail -n +6)" "$OFF" "below the mark the brief is byte-identical"
+assert_eq "$(( $(printf '%s\n' "$ON2" | wc -c) - $(printf '%s\n' "$OFF" | wc -c) ))" "145" "the mark is exactly its 145 bytes, counted in the brief"
+test_start "the mark is billed: the spend line of THAT run counts it"
+# The trace is shared by every scenario in this file, so the spend line is read by POSITION:
+# the one appended by a run, not the largest ever written (the lens on this commit found the
+# max-of-all read could not fail with the mark deleted).
+TR="$TEST_TMP/.maude/plugin/trace/today-$(date -u +%Y-%m-%d).jsonl"
+spend_after() {  # <lines-before> → the spend bytes of the first session-start spend line appended after
+  tail -n +"$(( $1 + 1 ))" "$TR" | grep -o 'hook=session-start bytes=[0-9]*' | head -1 | grep -oE '[0-9]+$'
+}
+N0="$(wc -l < "$TR" | tr -d ' ')"; ON3="$(printf '{}' | bash "$START" 2>/dev/null)"; ON_B="$(spend_after "$N0")"
+N1="$(wc -l < "$TR" | tr -d ' ')"; OFF3="$(printf '{}' | MAUDE_BANNER=off bash "$START" 2>/dev/null)"; OFF_B="$(spend_after "$N1")"
+assert_eq "$ON_B" "$(printf '%s' "$ON3" | wc -c | tr -d ' ')" "the on-run's spend line is the on-brief's bytes"
+assert_eq "$OFF_B" "$(printf '%s' "$OFF3" | wc -c | tr -d ' ')" "the off-run's spend line is the off-brief's bytes"
+assert_eq "$(( ON_B - OFF_B ))" "145" "the bill differs by exactly the mark"
+test_start "the off switch takes the spellings the file's other toggle takes"
+for v in off OFF 0 false FALSE no NO; do
+  O="$(printf '{}' | MAUDE_BANNER=$v bash "$START" 2>/dev/null)"
+  case "$(printf '%s\n' "$O" | sed -n '1p')" in "Maude here."*) _pass ;; *) _fail "MAUDE_BANNER=$v did not hide the mark" ;; esac
+done
+O="$(printf '{}' | MAUDE_BANNER='' bash "$START" 2>/dev/null)"
+assert_contains "$O" '|  \/  |' "an EMPTY value is the default: on"
 
 print_summary
 teardown_test_env

@@ -28,4 +28,4 @@ Hand the named laws to the adversarial lens as its brief. The rail knows a law w
 
 - "Six of the thirty apply here. Name them, then the lens gets that list."
 - "orders has no key. That is Codd 2, not taste."
-- The memory rulebook is a DRAFT until John cuts it: say so when you print it.
+- The memory rulebook is a DRAFT until the user cuts it: say so when you print it.

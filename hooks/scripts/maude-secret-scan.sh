@@ -150,7 +150,7 @@ if [ "$MODE" = "tool-output" ]; then
 "[MAUDE SECRET GUARD] A tool just returned a credential-shaped string: ${HITS}." \
 "This hook runs AFTER the tool, so the value is ALREADY IN THE TRANSCRIPT and cannot be recalled." \
 "Treat it as COMPROMISED. Claude: do NOT echo, quote, or reuse it — refer to it by name only." \
-"Tell John NOW, in this reply, which credential it is and that it needs ROTATING. Do not put the" \
+"Tell the user NOW, in this reply, which credential it is and that it needs ROTATING. Do not put the" \
 "rotation on a list for later: the last one found this way sat unrotated for 22 days."
 else
   printf '%s\n' \

@@ -31,7 +31,7 @@ Capture the full output. Read the findings, then:
 | 1 | JSON validity | Any `*.json` file that won't parse |
 | 2 | Version consistency | `plugin.json` ↔ `marketplace.json` mismatch; all distinct `vX.Y.Z` refs in the repo; missing `## v$CANONICAL` section in CHANGELOG |
 | 3 | README "What's new" freshness | Whether the canonical version appears in the section |
-| 4 | Header `Revised:` dates | Markdown files with `<!-- Revised: -->` lines older than 14 days |
+| 4 | Header `Revised:` dates | A `<!-- Revised: -->` stamp behind the file's last change (the author date of the last commit that added, modified or moved-and-edited it; today if the file is dirty) unless that commit moved the stamp forward; a stamp more than a day after today, or one the clock cannot place; a tree the stamp cannot be anchored in (no git, shallow clone) is a finding, not a skip |
 | 5 | README markdown link integrity | Relative links that don't resolve to a real file |
 | 6 | House-map watch-list paths | Paths listed under `## Watch list` in the house-map that no longer exist |
 | 7 | Worn-framing scan | If `.maude/plugin/worn-framings.txt` exists, scan all source files for those phrases |

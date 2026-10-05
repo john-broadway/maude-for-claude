@@ -110,7 +110,7 @@ done < <(grep -rlE '> [*][*]Version:[*][*] [0-9]' --include='*.md' . \
   --exclude-dir=worktrees 2>/dev/null)
 
 # 3. stamp Revised dates to today (release-wide refresh; the convention is "current
-#    as of this release", which also keeps verify's <=14-day check green)
+#    as of this release"; verify reads each stamp against the file's last change)
 while IFS= read -r f; do
   [ -n "$f" ] || continue
   stamp_header "$f" '<!-- Revised: [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][^>]*-->' "<!-- Revised: $TODAY -->" || STAMP_FAILED="$STAMP_FAILED $f"

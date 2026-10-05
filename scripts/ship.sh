@@ -98,6 +98,9 @@ audit_staged() {
   # one file and passed two more in the SAME file, then reported it clean.
   # A guard that catches most instances of a shape is not a guard for that shape.
   local p_paths='/ro'; p_paths="${p_paths}ot(/|[^a-zA-Z0-9_-]|$)|/ho"; p_paths="${p_paths}me/[a-z]|/Us"; p_paths="${p_paths}ers/[A-Za-z]"
+  # The session scratch dir carries the workspace slug and a session id. An err.log
+  # holding one reached a public ship branch on 2026-10-04: no pattern above sees it.
+  p_paths="${p_paths}|claude-scr"; p_paths="${p_paths}atch"
   local p_infra='\.bf'; p_infra="${p_infra}f\.lan|gite"; p_infra="${p_infra}a@"
   local p_key='BEGIN[A-Z ]*PRIVATE KEY'
   local p_cred='(sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[abprs]-|AKIA|AIza)[A-Za-z0-9_-]{8,}'
@@ -111,7 +114,7 @@ audit_staged() {
     # Binary blobs expand to no diff text at all — un-auditable, so they
     # don't ship through this rail. (numstat prints "-<TAB>-" for binaries.)
     if git diff --cached "$PUB/main" --numstat -- "$f" 2>/dev/null | grep -q '^-'; then
-      printf 'ship: BINARY — %s: cannot be leak-audited; ship it by hand with John or add to .publishignore\n' "$f" >&2
+      printf 'ship: BINARY — %s: cannot be leak-audited; ship it by hand with the maintainer or add to .publishignore\n' "$f" >&2
       bad=1
       continue
     fi
@@ -188,7 +191,7 @@ cmd_build() {
 
   printf '\nship: branch %s built, audited%s, committed.\n' \
     "$branch" "$([ -n "${SHIP_SKIP_GATES:-}" ] && printf ' (gates SKIPPED)')"
-  printf 'ship: John'\''s hand — paste this line:\n\n'
+  printf 'ship: the maintainer'\''s hand — paste this line:\n\n'
   printf '  ! cd %s && git push -u %s %s\n\n' "$ROOT" "$PUB" "$branch"
   printf 'ship: then run: scripts/ship.sh open --review "<one-line second-lens reference>"\n'
   # RETURN to the source branch. A warning was tried first and was not enough: on

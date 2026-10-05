@@ -74,3 +74,25 @@ def test_page_log_no_hits_writes_nothing(tmp_path):
     log = tmp_path / "recall-log.jsonl"
     cli.main(["page", "qqqzz", "--db", str(dbp), "--log", str(log)])
     assert not log.exists()
+
+
+def test_page_seen_file_never_repeats_a_note(tmp_path):
+    # 2026-10-04 (John): the same three notes paged on almost every short prompt of a 17h
+    # session, adding nothing after the first time. --seen holds what this session was shown.
+    db = tmp_path / "v.db"
+    seen = tmp_path / "seen"
+    assert _run("build", "--mem-dir", str(FIX), "--db", str(db)).returncode == 0
+    q = ("page", "how do I handle johns metaphors", "--db", str(db), "--seen", str(seen))
+    first = _run(*q)
+    assert "user-visual-mind" in first.stdout
+    assert "user-visual-mind" in seen.read_text()
+    assert "user-visual-mind" not in _run(*q).stdout
+
+
+def test_page_snippets_flag_adds_the_snippet_line_for_the_eye(tmp_path):
+    db = tmp_path / "v.db"
+    assert _run("build", "--mem-dir", str(FIX), "--db", str(db)).returncode == 0
+    plain = _run("page", "how do I handle johns metaphors", "--db", str(db)).stdout
+    full = _run("page", "how do I handle johns metaphors", "--db", str(db), "--snippets").stdout
+    assert not any(l.startswith("    ") for l in plain.splitlines())
+    assert any(l.startswith("    ") for l in full.splitlines())

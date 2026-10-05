@@ -103,17 +103,26 @@ maude_undo_is_secret_path() {
 }
 
 # Append one ledger line. Built with jq so a path containing quotes, spaces or a
-# newline cannot corrupt the ledger.
+# newline cannot corrupt the ledger. Appended under the prune's lock, waiting at most a
+# second (a prune takes ~100 ms): a line written while the prune rewrote the ledger was
+# lost at its mv. Busy past that falls back to the bare append, which the prune's carry
+# picks up, so a capture never blocks the tool call it guards.
+_maude_undo_append() { printf '%s\n' "$1" >> "$LEDGER" 2>/dev/null; }
 maude_undo_record() {  # path tool tier blob bytes existed skip
+  local line
   mkdir -p "$UNDO_DIR" 2>/dev/null
   maude_undo_register_store
-  jq -nc --arg p "$1" --arg tool "$2" --arg tier "$3" --arg blob "$4" \
+  line="$(jq -nc --arg p "$1" --arg tool "$2" --arg tier "$3" --arg blob "$4" \
         --arg bytes "$5" --arg existed "$6" --arg skip "$7" \
         --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{ts:$ts, tool:$tool, path:$p, tier:($tier|tonumber),
       existed:($existed=="true"), bytes:(if $bytes=="" then 0 else ($bytes|tonumber) end)}
      + (if $blob == "" then {} else {blob:$blob} end)
-     + (if $skip == "" then {} else {skip:$skip} end)' >> "$LEDGER" 2>/dev/null
+     + (if $skip == "" then {} else {skip:$skip} end)' 2>/dev/null)" || return 0
+  [ -n "$line" ] || return 0
+  MAUDE_LOCK_WAIT=1 maude_locked "$UNDO_DIR/.prune.lock" _maude_undo_append "$line"
+  [ "$?" -eq "$MAUDE_LOCK_BUSY" ] && _maude_undo_append "$line"
+  return 0
 }
 
 # Snapshot ONE path. Every capture route funnels through here so the skip rules and
