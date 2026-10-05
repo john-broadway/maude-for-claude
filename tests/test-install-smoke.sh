@@ -7,6 +7,8 @@ set -u
 # Recursion guard: inside an install-smoke run, this test self-skips —
 # the smoke runs the archive's fleet, which contains this very file.
 [ "${MAUDE_INSTALL_SMOKE:-}" = "1" ] && { echo "  ok    (self-skip inside install-smoke)"; exit 0; }
+# Read before setup_test_env: its hermetic guard unsets every MAUDE_* variable.
+SMOKE_SEPARATE="${MAUDE_SMOKE_SEPARATE:-}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/lib.sh"
 setup_test_env
@@ -14,6 +16,12 @@ setup_test_env
 SMOKE="$(cd "$DIR/../scripts" && pwd)/install-smoke.sh"
 ROOT="$(cd "$DIR/.." && pwd)"
 
+# The real smoke on HEAD re-runs the whole fleet inside an archive, which doubled every CI
+# leg (ubuntu 6 -> 10 min by v0.33.0). CI runs it ONCE as its own job (`make smoke`) and sets
+# MAUDE_SMOKE_SEPARATE=1 here; everywhere else (make test, ship.sh) it still runs.
+if [ "$SMOKE_SEPARATE" = "1" ]; then
+  printf '  skip  smoke on HEAD: MAUDE_SMOKE_SEPARATE=1, CI runs it as its own job\n'
+else
 test_start "smoke gate passes on the current HEAD"
 OUT="$(bash "$SMOKE" "$ROOT" 2>&1)"; RC=$?
 assert_exit "$RC" "0" "smoke green on HEAD"
@@ -21,6 +29,7 @@ assert_contains "$OUT" "SMOKE GREEN" "verdict line printed"
 
 test_start "smoke proves the ARCHIVE, not the working tree"
 assert_contains "$OUT" "archive" "runs from a git-archive of HEAD"
+fi
 
 test_start "a commit missing its parts fails the gate loud"
 BROKEN="$TEST_TMP/broken-repo"

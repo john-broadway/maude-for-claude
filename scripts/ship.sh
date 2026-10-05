@@ -12,7 +12,7 @@
 #
 # Env seams (tests): SHIP_BRANCH (branch name), SHIP_SOURCE_REF (default main),
 #   SHIP_PUBLIC_REMOTE (which remote is public; normally resolved by URL),
-# SHIP_SKIP_GATES=1 (skip make test/lint/verify — test fixtures only).
+# SHIP_SKIP_GATES=1 (skip make test/mac-shape/lint/verify — test fixtures only).
 set -u
 
 die() { printf 'ship: %s\n' "$1" >&2; exit 1; }
@@ -179,6 +179,9 @@ cmd_build() {
 
   if [ -z "${SHIP_SKIP_GATES:-}" ]; then
     make test  || die "gate failed: make test"
+    # The macOS shape, here: v0.33.0 went red on the public macOS leg twice for things this
+    # box could show (PRs #80, #81). A ship never reaches the public leg without it.
+    make mac-shape || die "gate failed: make mac-shape (the macOS-shaped suite)"
     make lint  || die "gate failed: make lint"
     make verify || die "gate failed: make verify"
   fi

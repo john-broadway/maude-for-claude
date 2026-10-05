@@ -1,4 +1,4 @@
-.PHONY: test test-py verify lint release smoke
+.PHONY: test test-py verify lint release smoke mac-shape
 
 test-py:
 	@if command -v pytest >/dev/null 2>&1; then PYTHONPATH=. pytest tests/vault tests/eye tests/tape tests/marker tests/rules -q; \
@@ -20,6 +20,12 @@ verify:
 # installs) and prove it validates, passes its own fleet, and greets cold.
 smoke:
 	bash scripts/install-smoke.sh
+
+# The full suite in a macOS-shaped userland (no flock, BSD awk, slow forks, macOS TMPDIR).
+# The public macOS leg only runs on a public PR; this runs it here first. --check proves
+# the shape without running anything.
+mac-shape:
+	bash scripts/mac-shape.sh
 
 # Lint all shell with shellcheck, gated at warning severity (see .shellcheckrc
 # for the source-following + the one intentional test-idiom disable).

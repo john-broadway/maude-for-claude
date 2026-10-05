@@ -778,6 +778,17 @@ assert_eq "$NF_RC" "0" "the write waited through the churn and landed"
 assert_eq "$(jq -c '.churn' "$LOCK_CARE")" "1" "the value is in the file"
 assert_eq "$(cat "$CHURN_SHIM/n")" "3" "control: the shim refused twice, then made the dir"
 rm -rf "$CHURN_SHIM" "$LOCK_CARE.lock.d"
+test_start "a lock dir that never appears (disk full) is busy promptly, not at the end of the bound"
+NEVER_SHIM="$(mktemp -d "${TMPDIR:-/tmp}/maude-never.XXXXXX")"
+printf '#!/usr/bin/env bash\ncase "${@: -1}" in *.lock.d) exit 1 ;; esac\nexec %q "$@"\n' "$REAL_MKDIR" > "$NEVER_SHIM/mkdir"; chmod +x "$NEVER_SHIM/mkdir"
+printf '{"keep":true}\n' > "$LOCK_CARE"
+NV_T0="$(date +%s)"
+( PATH="$NEVER_SHIM:$NOFLOCK_PATH" MAUDE_LOCK_WAIT=5 maude_timeout 15 bash -c ". \"$HOOKS_DIR/_maude-common.sh\"; maude_care_set \"$LOCK_CARE\" '.x = 1'" ) >/dev/null 2>&1; NF_RC=$?
+NV_EL=$(( $(date +%s) - NV_T0 ))
+assert_eq "$NF_RC" "75" "busy"
+[ "$NV_EL" -le 2 ] || _fail "took ${NV_EL}s against a 5 s bound (it should give up after five looks)"
+assert_eq "$(jq -c '.' "$LOCK_CARE")" '{"keep":true}' "nothing written"
+rm -rf "$NEVER_SHIM"
 # lens 5: a stray FILE at the lock path returned a bare 1, which no caller's case arms
 # name, so reserve/take/consume printed nothing. The store is not lockable: that is "busy".
 test_start "the fallback says BUSY, not nothing, when a stray file sits at the lock path"
