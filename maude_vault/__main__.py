@@ -25,6 +25,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--db", required=True)
     p.add_argument("--k", type=int, default=5)
     p.add_argument("--log", default=None)
+    p.add_argument("--seen", default=None,
+                   help="a file of note names this session was already shown; they are skipped and the new hits appended")
+    p.add_argument("--snippets", action="store_true",
+                   help="add each note's matched snippet under it (the eye reads them)")
     p.add_argument("--mem", default=None,
                    help="the markdown dir the index mirrors; with it, a hit whose file is newer than the index is marked stale")
 
@@ -35,8 +39,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "page":
         query = args.query if args.query is not None else sys.stdin.read()
-        hits = page.page(args.db, query, args.k, mem_dir=args.mem)
-        out = page.format_hits(hits)
+        seen: set[str] = set()
+        if args.seen:
+            try:
+                with open(args.seen, encoding="utf-8") as f:
+                    seen = {line.strip() for line in f if line.strip()}
+            except OSError:
+                pass
+        hits = page.page(args.db, query, args.k, mem_dir=args.mem, exclude=seen)
+        if hits and args.seen:
+            try:
+                with open(args.seen, "a", encoding="utf-8") as f:
+                    f.write("".join(h["name"] + "\n" for h in hits))
+            except OSError:
+                pass
+        out = page.format_hits(hits, snippets=args.snippets)
         if out:
             print(out)
         if hits and args.log:

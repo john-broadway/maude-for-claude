@@ -28,9 +28,11 @@ CMD=""
 SID=""
 if command -v jq >/dev/null 2>&1; then
   CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
-  SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null | cut -c1-8)"
+  SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null)"
 fi
-[ -n "$SID" ] || SID="default"
+# The whole id, as the eye keys by it: an 8-character prefix narrowed the session half of a
+# call's identity to 32 bits for no reason (lens 5). Unsafe or over-long ids are "default".
+{ maude_is_ascii_token "$SID" && [ "${#SID}" -le 64 ]; } 2>/dev/null || SID="default"
 # Fail-OPEN by design: without jq there's no trustworthy way to parse the command
 # out of the tool-input JSON (a hand-rolled parse reintroduces the v0.1.6
 # quote-stripping self-block risk), so the gate provides NO protection here. The
@@ -79,6 +81,31 @@ FLAG_AFTER='([[:space:]]|[;&|)`]|$)'
 # prefix is still seen at a boundary. Matches empty (so unprefixed commands are
 # unaffected). Closes #7 (command) and #8 (env-assign, for ALL patterns).
 PREFIX='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|command[[:space:]]+)*'
+# The rest of ONE simple command: a flag belongs to the verb only if no separator stands
+# between them. `.*` ran past `&&`, so `git push … && git worktree remove --force x` was
+# blocked RED as a force-push (2026-09-28). Newlines already split the match (grep is
+# line-wise); `;` `&` `|` end a command.
+SAME_CMD='[^;&|]*'
+# The only characters a command may hold for SAME_CMD to apply (see maude_gate_eval).
+PLAIN_CMD_RE='^[A-Za-z0-9 ./:=@+,%_~-]*([;&|]+[A-Za-z0-9 ./:=@+,%_~-]*)*$'
+# A segment whose command word is `git` or an inert tool. CMD_START/PREFIX know
+# env-assignments and `command `, nothing else, so `sudo git push -f` is invisible on its
+# own; on a plain command the old greedy `.*` carried an EARLIER `git push` across the
+# separator into it, and that accident was the only cover. The narrow match must not
+# take it away (lens round 3 on 1da5501: `git push a; sudo git push -f` fell RED→YELLOW).
+# A LIST OF WRAPPERS was the first answer, and lens round 4 ran 95 wrapper words through
+# it: 48 were not on the list (`pct exec`, `docker exec`, `eval`, `.`, `FOO=1 sudo`, …)
+# and every one lost the cover again. So, as with PLAIN_CMD_RE, an allowlist: the narrow
+# match runs only when EVERY segment's command word is one of these. Anything else, a
+# wrapper, an env-assignment, a tool this list does not know, keeps the greedy match.
+# `git` counts only with a listed subcommand right after it: a global option GIT does not
+# know (`git --no-pager push -f`, `git -c alias.x=push x -f`) hides the verb from the
+# gate, and the earlier greedy carry was its only cover too (lens round 5); and some
+# subcommands RUN their arguments (`git submodule foreach git push -f`, `git bisect run`,
+# `git rebase -x`, `git for-each-repo`, difftool, mergetool, filter-branch), so "any
+# plain subcommand" was a wrapper again (lens round 6). A user-config alias (`git p -f`)
+# is not on this list and keeps the greedy match.
+INERT_CMD_RE='^[[:space:]]*(git[[:space:]]+(add|am|apply|archive|blame|branch|checkout|cherry-pick|clean|clone|commit|describe|diff|fetch|grep|init|log|ls-files|ls-remote|merge|mv|notes|pull|push|reflog|remote|reset|restore|rev-list|rev-parse|revert|rm|shortlog|show|stash|status|switch|tag|worktree)([[:space:]]|$)|(echo|ls|rm|cd|true|false|tee|cat|grep|head|tail|sleep|test|mkdir|cp|mv|touch|wc|sort|date|pwd|printf)([[:space:]]|$))'
 # ARGS = other arguments of the SAME simple command, so a dangerous target is
 # caught in any argument position (`rm -rf /tmp/ok /srv/app`).
 # The token class MUST exclude the shell separators ; & | (and only those — see
@@ -304,17 +331,17 @@ maude_target_verb_in_command_position() {
 # (strip_quotes: content ERASED). This preserves all canaries — a commit message
 # containing "git push" as literal text must not self-block the commit.
 CMD_PATTERNS=(
-  "${CMD_START}${PREFIX}${GIT}push[[:space:]].*--force-with-lease ||| force-push ||| force-push-with-lease detected. Still public-rewriting. Run /maude:conscience force-push if verified."
-  "${CMD_START}${PREFIX}${GIT}push[[:space:]].*--force ||| force-push ||| force-push detected. Public, irreversible. Run /maude:conscience force-push if you have verified."
-  "${CMD_START}${PREFIX}${GIT}push[[:space:]].*-f${FLAG_AFTER} ||| force-push ||| force-push (-f). Run /maude:conscience force-push if verified."
+  "${CMD_START}${PREFIX}${GIT}push[[:space:]]${SAME_CMD}--force-with-lease ||| force-push ||| force-push-with-lease detected. Still public-rewriting. Run /maude:conscience force-push if verified."
+  "${CMD_START}${PREFIX}${GIT}push[[:space:]]${SAME_CMD}--force ||| force-push ||| force-push detected. Public, irreversible. Run /maude:conscience force-push if you have verified."
+  "${CMD_START}${PREFIX}${GIT}push[[:space:]]${SAME_CMD}-f${FLAG_AFTER} ||| force-push ||| force-push (-f). Run /maude:conscience force-push if verified."
   "${CMD_START}${PREFIX}${GIT}push${FLAG_AFTER} ||| git-push ||| git push detected. Public, irreversible. Run /maude:conscience git-push to override."
   "${FLAG_BEFORE}--no-verify${FLAG_AFTER} ||| no-verify ||| --no-verify skips hooks. Run /maude:conscience no-verify if intentional."
   "${FLAG_BEFORE}--no-gpg-sign${FLAG_AFTER} ||| no-gpg-sign ||| --no-gpg-sign skips signing. Run /maude:conscience no-gpg-sign if intentional."
-  "${CMD_START}${PREFIX}${GIT}reset[[:space:]].*--hard ||| reset-hard ||| git reset --hard loses local work. Run /maude:conscience reset-hard once you have stashed."
+  "${CMD_START}${PREFIX}${GIT}reset[[:space:]]${SAME_CMD}--hard ||| reset-hard ||| git reset --hard loses local work. Run /maude:conscience reset-hard once you have stashed."
   "${CMD_START}${PREFIX}${GIT}filter-repo${FLAG_AFTER} ||| filter-repo ||| git filter-repo rewrites history. Run /maude:conscience filter-repo to override."
   "${CMD_START}${PREFIX}${GIT}filter-branch${FLAG_AFTER} ||| filter-branch ||| git filter-branch rewrites history. Run /maude:conscience filter-branch to override."
-  "${CMD_START}${PREFIX}${GIT}commit[[:space:]].*--amend ||| commit-amend ||| git commit --amend rewrites the last commit. If pushed, this needs force-push. Run /maude:conscience commit-amend."
-  "${CMD_START}${PREFIX}$(maude_public_publish_re) ||| public-publish ||| public-facing publish (gh release / twine / uv publish / hf upload), only after the pre-public-push checklist and John's go. Run /maude:conscience public-publish."
+  "${CMD_START}${PREFIX}${GIT}commit[[:space:]]${SAME_CMD}--amend ||| commit-amend ||| git commit --amend rewrites the last commit. If pushed, this needs force-push. Run /maude:conscience commit-amend."
+  "${CMD_START}${PREFIX}$(maude_public_publish_re) ||| public-publish ||| public-facing publish (gh release / twine / uv publish / hf upload), only after the pre-public-push checklist and the account owner's go. Run /maude:conscience public-publish."
   # NOTE: DROP TABLE is NOT a CMD_PATTERN — matching the quote-ERASED skeleton
   # made it exactly backwards (missed quoted real SQL, fired on prose). It is
   # handled by the context-aware block below (content-kept view + SQL client).
@@ -340,8 +367,25 @@ maude_gate_eval() {
       if printf '%s' "$uq" | grep -qE -- "$pat"; then printf '%s ||| %s' "$key" "$msg"; return 0; fi
     done
   fi
+  # The narrow SAME_CMD match is sound only where every `;` `&` `|` is a real command
+  # boundary. A list of constructs that hide one (`$( )`, backticks, escapes) missed
+  # `${x//|/z}`, bracket globs, `2>&1` / `&>` / `>|` and a backslash line continuation
+  # (lens round 2 on bf22c9d: 61 commands the old gate blocked, passed or fell to YELLOW).
+  # So it is an ALLOWLIST, twice: the narrow match runs only on a command made of the
+  # plain class (`A-Za-z0-9`, space, `./:=@+,%_~-`) and the separators themselves, and
+  # only when every segment's command word is on INERT_CMD_RE; anything else keeps the
+  # old greedy match, so the gate never blocks less than it did.
+  local subst=1 seg
+  if [[ "$cmd" =~ $PLAIN_CMD_RE ]]; then
+    subst=""
+    while IFS= read -r seg; do
+      [ -n "${seg//[[:space:]]/}" ] || continue
+      [[ "$seg" =~ $INERT_CMD_RE ]] || { subst=1; break; }
+    done < <(printf '%s\n' "$cmd" | tr ';&|' '\n\n\n')
+  fi
   for entry in "${CMD_PATTERNS[@]}"; do
     pat="${entry%% ||| *}"; rest="${entry#* ||| }"; key="${rest%% ||| *}"; msg="${rest#* ||| }"
+    [ -n "$subst" ] && pat="${pat//"$SAME_CMD"/.*}"
     if maude_match_gate_pattern "$cmd" "$pat"; then printf '%s ||| %s' "$key" "$msg"; return 0; fi
   done
   return 1
@@ -390,7 +434,7 @@ if [ -z "$MATCHED_KEY" ]; then
     if printf '%s' "$UNQUOTED" | grep -qE -- "maude-clear-(gate|red)\.sh([[:space:]]+[^[:space:]]+)*[[:space:]]+${_rk}([[:space:]]|$)"; then
       MATCHED_KEY="red-self-clear"
       MATCHED_RED_KEY="$_rk"
-      MATCHED_MSG="self-clearing a red key from the tool gate is blocked; this is John's hand. "
+      MATCHED_MSG="self-clearing a red key from the tool gate is blocked; this is the account owner's hand. "
       break
     fi
   done
@@ -422,7 +466,7 @@ if [ -z "$MATCHED_KEY" ]; then
      printf '%s' "$UNQUOTED" | grep -qE -- '(^|[[:space:];&|(`])(chattr|chmod|chown|mv|cp|dd|install|truncate|ln)[[:space:]][^;&|]*care-redclear\.json'; then
     MATCHED_KEY="redclear-write"
     MATCHED_TIER="red"
-    MATCHED_MSG="writes to the red-clear token file are blocked: the human's hand only, by a ! line pasted in their own shell (John's hand here). /maude:conscience shows the line to paste."
+    MATCHED_MSG="writes to the red-clear token file are blocked: the account owner's hand only, by a ! line pasted in their own shell. /maude:conscience shows the line to paste."
   fi
 fi
 
@@ -445,13 +489,86 @@ if [ -z "$MATCHED_KEY" ]; then
   fi
 fi
 
+# Is any heredoc in this (body-stripped) command fed to something that RUNS the body?
+# From the first opener line to the end of the command, blank what strip_heredocs blanks
+# (herestrings, $((…)), quoted spans), split on `;` `|` `&`, and look for: a shell word
+# standing alone (`bash`, `/bin/sh`, `sudo bash`, `docker exec -i c sh`, `pct exec 1 --
+# bash`, `ssh host` whose remote shell reads stdin, `su`, `chroot`, `eval`, `screen`),
+# `source` or `.` in command position, or `sudo` with a login/shell option. `x.sh`,
+# `bash-tips.md` and `bash"` are not shell words; `bash<<EOF` is. Everything AFTER the
+# opener counts, not one segment: `cat <<EOF > x.sh; chmod +x x.sh; bash x.sh`, `cat
+# <<EOF | tee x | bash`, and a `bash x.sh` on a later line all run the body (lens round
+# 2). The price is a text heredoc followed later by an unrelated shell word, which keeps
+# the old reading; the commit-message shape `git add . && git commit -m "$(cat <<'EOF'`
+# has nothing after it and `.` is not in command position. An interpreter (`python3 -`,
+# `perl -`, `node -`, `make -f -`) is not on the list: a python body that quotes
+# "bash -c '…'" is the incident this exists to pass, and one that runs it is
+# indistinguishable from it; the plain patterns never read those bodies either.
+maude_heredoc_shell_fed() {
+  local stripped="$1" line scan tail="" seen="" target="" rest
+  # The same blanking the stripper does, so the two agree on what an opener line is;
+  # plus a quoted single word is that word (`exec -i c 'bash'` runs bash). One pass over an
+  # alternation, never a back-reference: BSD sed -E has none, so on macOS `(['"])…\1`
+  # matched nothing, the next rule erased `'bash'` as a quoted span, and the shell went
+  # unseen. One pass, not one rule per quote: two rules cascade, unwrapping `"'bash'"` twice.
+  local blank="s/'([A-Za-z_\$][A-Za-z0-9_{}]*)'|\"([A-Za-z_\$][A-Za-z0-9_{}]*)\"/\1\2/g; s/('[^']*'|\"[^\"]*\")//g; s/(^|[[:space:]])#.*$//"
+  local shellw='(^|[[:space:]/({`])(bash|sh|dash|zsh|ksh|fish|ash|csh|tcsh|rbash|mksh|pwsh|ssh|su|chroot|eval|screen|\$0|\$\{?SHELL\}?|\$\{?BASH\}?|proc/self/exe)([[:space:]);}<>`]|$)'
+  local cmdw='^[[:space:]]*(source|\.)[[:space:]]'
+  local sudow='(^|[[:space:]])sudo[[:space:]].*(-[A-Za-z]*[is]|--login|--shell)([[:space:]]|$)'
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ -z "$seen" ]; then
+      case "$line" in *'<<'*) ;; *) continue ;; esac
+      scan="${line//<<</ }"; scan="${scan//\\<</  }"
+      scan="$(printf '%s' "$scan" | sed -E \
+        -e 's/\$\(\([^)]*\)\)//g' \
+        -e "s/<<(-?)[[:space:]]*'([A-Za-z_][A-Za-z0-9_]*)'/<<\1\2/g" \
+        -e 's/<<(-?)[[:space:]]*"([A-Za-z_][A-Za-z0-9_]*)"/<<\1\2/g' \
+        -e "$blank")"
+      case "$scan" in *'<<'*) seen=1 ;; *) continue ;; esac
+      # The body written to a FILE that something later runs by path: `cat <<EOF > r.sh;
+      # chmod +x r.sh; ./r.sh`, or `/tmp/r` on a later line, or `at -f r now`. Remember the
+      # redirect target; if its name recurs as a word after the opener, the body runs.
+      if [[ "$scan" =~ \>\>?[[:space:]]*([^[:space:]\;\|\&\<\>]+) ]]; then
+        target="${BASH_REMATCH[1]}"
+        rest="${scan#*"${BASH_REMATCH[0]}"}"
+        scan="${scan%%"${BASH_REMATCH[0]}"*} $rest"
+      fi
+    else
+      scan="$(printf '%s' "$line" | sed -E -e "$blank")"
+    fi
+    tail+="$scan"$'\n'
+  done <<< "$stripped"
+  [ -n "$seen" ] || return 1
+  if [ -n "$target" ]; then
+    local t b
+    t="$(printf '%s' "$target" | sed 's/[][\.*^$/+?(){}|]/\\&/g')"
+    b="$(printf '%s' "${target##*/}" | sed 's/[][\.*^$/+?(){}|]/\\&/g')"
+    # Recurs as a word: `./r.sh;echo`, `(./r.sh)`, `./r.sh>/dev/null` count (lens round 4);
+    # `r.sh.bak` and `r.sh-old` do not.
+    printf '%s' "$tail" | grep -qE "(^|[[:space:]/(])($t|$b)([^[:alnum:]_.-]|$)" && return 0
+  fi
+  printf '%s' "$tail" | tr ';|&' '\n\n\n' | grep -qE "$shellw|$cmdw|$sudow"
+}
+
 # ── #3 shell wrapping ────────────────────────────────────────────────────────
 # Nothing matched the live command directly: inspect literal wrapped payloads
 # (bash -c 'rm -rf /', eval 'git push --force', nested). Block with the inner
 # key. A wrapper whose payload we CAN'T read (variable / interpolated) → whisper
 # and pass (consistent with #4 var-indirection: noticed, not gated).
 if [ -z "$MATCHED_KEY" ]; then
-  if WM="$(maude_wrapped_match "$CMD" 3)"; then
+  # A heredoc body is text unless a shell reads it. The plain patterns excise bodies
+  # already (v0.27.0); this scan did not, so a python heredoc carrying the string
+  # "bash -c '... --amend'" was blocked (2026-09-28, live). A heredoc fed to a shell
+  # keeps EVERY body in the scan: that body runs, and the gate must not read less of it
+  # than it did. The first cut grepped the whole command for a shell word before a `<<`,
+  # so `git add . && …`, a `cat > x.sh <<EOF`, and a body that mentioned `bash <<EOF`
+  # all read as shell-fed and kept blocking, while `cat <<EOF | bash` (the shell AFTER
+  # the heredoc) read as text (lens round 1). The decision is made per opener line, on
+  # the stripped command, with quotes blanked, in the segment that carries the `<<` and
+  # the one after it.
+  WCMD="$(maude_strip_heredocs "$CMD")"
+  maude_heredoc_shell_fed "$WCMD" && WCMD="$CMD"
+  if WM="$(maude_wrapped_match "$WCMD" 3)"; then
     MATCHED_KEY="${WM%% ||| *}"
     MATCHED_MSG="${WM#* ||| }"
   elif maude_has_opaque_wrap "$CMD"; then
@@ -484,10 +601,14 @@ if [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
   if [ "$MODE" = "consume" ]; then
     # PostToolUse: the command RAN. Spend the token this call reserved (or an
     # unreserved one). Never blocks; silent when there is nothing to spend.
-    if [ "$(maude_care_consume_token "$CARE" "$MATCHED_KEY" "$FP" "$HEAD")" = "spent" ]; then
-      maude_log_trace "gate" "spent=$MATCHED_KEY"
-      printf 'Maude: %s is spent; the gate is closed again.\n' "$MATCHED_KEY" >&2
-    fi
+    case "$(maude_care_consume_token "$CARE" "$MATCHED_KEY" "$FP" "$HEAD" "$SID")" in
+      spent)
+        maude_log_trace "gate" "spent=$MATCHED_KEY"
+        printf 'Maude: %s is spent; the gate is closed again.\n' "$MATCHED_KEY" >&2 ;;
+      queued)
+        maude_log_trace "gate" "spent-queued=$MATCHED_KEY"
+        printf 'Maude: %s ran; the token store was busy, so its spend is queued and lands on the next gate read. It will not pass again.\n' "$MATCHED_KEY" >&2 ;;
+    esac
     exit 0
   fi
   # PreToolUse: RESERVE, do not spend. PreToolUse hooks run in parallel and a sibling
@@ -522,6 +643,13 @@ EOF
       # a token he already has (the 23rd lens, IMPORTANT-2): say what actually failed.
       maude_log_trace "gate" "blocked=$MATCHED_KEY unwritable"
       printf 'Maude: %s has a live token, but the gate could not record its use; nothing passes until %s is writable.\n' "$MATCHED_KEY" "$CARE" >&2
+      exit 2 ;;
+    busy)
+      # Another hook held the token store past the lock's bound; nothing was read. The
+      # "no token" refusal below would send him for a clear he may already hold.
+      maude_log_trace "gate" "blocked=$MATCHED_KEY busy"
+      printf 'Maude: the token store is busy (another hook holds its lock); nothing was checked for %s. Retry the same command.\n' "$MATCHED_KEY" >&2
+      printf '       (looked in: %s)\n' "$CARE" >&2
       exit 2 ;;
   esac
 fi

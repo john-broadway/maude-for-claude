@@ -108,6 +108,17 @@ setup_test_env() {
   # label exists to stop. Tests that exercise labeling set MAUDE_SESSION_LABEL
   # (or pass a session_id) explicitly.
   unset TMUX CLAUDE_CODE_SESSION_ID
+  # HOME is the person's. Every test runs under a HOME of its own: the user-global
+  # dir ($HOME/.claude/maude: patterns.md, the letter, identity.md, undo-stores.txt)
+  # is real, un-versioned, and on a sole-copy box irreplaceable. One test on this
+  # branch wrote fixtures there and rm -f'd them (lens 5, 2026-09-25): the live
+  # patterns.md and letter-from-maude.md were destroyed by a baseline run. Pinning
+  # per test file was a habit three files kept and one forgot; the pin lives here now.
+  # (not MAUDE_*: the unset loop above would eat it on the second setup and the
+  # "real" home would become the previous test's temp one.)
+  [ -n "${TEST_REAL_HOME:-}" ] || export TEST_REAL_HOME="$HOME"
+  export HOME="$TEST_TMP/home"
+  mkdir -p "$HOME"
   export CLAUDE_PROJECT_DIR="$TEST_TMP"
   export MAUDE_GATE_CONFIG="$TEST_TMP/gate-config.json"
   mkdir -p "$TEST_TMP/.maude/plugin/trace"
@@ -118,6 +129,7 @@ teardown_test_env() {
   if [ -n "${TEST_TMP:-}" ] && [ -d "$TEST_TMP" ]; then
     rm -rf "$TEST_TMP"
   fi
+  [ -z "${TEST_REAL_HOME:-}" ] || export HOME="$TEST_REAL_HOME"
   unset CLAUDE_PROJECT_DIR TEST_TMP MAUDE_GATE_CONFIG
 }
 

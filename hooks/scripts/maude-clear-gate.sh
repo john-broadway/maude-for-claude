@@ -136,14 +136,14 @@ fi
 # still self-clear git-push and friends without John's hand on every push.
 if maude_is_red_key "$KEY"; then
   cat <<EOF >&2
-Maude: "$KEY" is a RED key — John's hand only, and this script no longer clears
-them at all. Claude must NOT self-clear a red key.
+Maude: "$KEY" is a RED key — the account owner's hand only, and this script no
+longer clears them at all. Claude must NOT self-clear a red key.
 
 RED clears live in their own script so the permission layer can deny that one path:
 
   ! bash "$DIR/maude-clear-red.sh" "$KEY" --marker <link>
 
-(or --john if no marker chain is provisioned for it yet)
+(or --owner if no marker chain is provisioned for it yet)
 EOF
   maude_log_trace "gate-clear-refused" "key=$KEY reason=red-wrong-script"
   exit 1

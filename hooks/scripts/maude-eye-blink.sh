@@ -10,13 +10,16 @@ maude_python3_ok || exit 0
 
 SELF="$(maude_self_dir)"
 mkdir -p "$SELF" 2>/dev/null
+# The session this blink watches (arg 2): its whisper and its spawn lock are that
+# session's alone, through the same helper the tick used to name them.
+SFX="$(maude_eye_suffix "${2:-}")"
 
 # Release the spawn lock (see maude-eye.sh tick) whenever this worker exits,
 # by any path — normal completion, an early `exit 0`, or a signal. A worker
 # that never releases its lock would starve every future blink; tick's
 # stale-lock reclaim (120s) is the second line of defense if this trap itself
 # can't fire (e.g. SIGKILL).
-trap 'rmdir "$SELF/.eye-blink.lock" 2>/dev/null' EXIT
+trap 'rmdir "$SELF/.eye-blink$SFX.lock" 2>/dev/null' EXIT
 
 # 1) the window: transcript tail
 DIGEST="$(PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -c "
@@ -38,7 +41,7 @@ NOTES=""
 if [ -f "$SELF/vault.db" ]; then
   NOTES="$(printf '%s' "$DIGEST" | tail -c 800 | \
     PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m maude_vault page \
-      --db "$SELF/vault.db" --k 3 2>/dev/null | head -c 1200)"
+      --db "$SELF/vault.db" --k 3 --snippets 2>/dev/null | head -c 1200)"
 fi
 
 # 4) the runner: override -> claude -> dark
@@ -96,5 +99,5 @@ print(verdict.whisper_from(sys.stdin.read()))" <<<"$RAW" 2>/dev/null)"
 [ -n "$WHISPER" ] || exit 0
 
 TMP="$SELF/.eye-whisper.tmp.$$"
-printf '%s\n' "$WHISPER" > "$TMP" 2>/dev/null && mv -f "$TMP" "$SELF/eye-whisper.txt" 2>/dev/null
+printf '%s\n' "$WHISPER" > "$TMP" 2>/dev/null && mv -f "$TMP" "$SELF/eye-whisper$SFX.txt" 2>/dev/null
 exit 0

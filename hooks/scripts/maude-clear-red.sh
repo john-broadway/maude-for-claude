@@ -15,11 +15,11 @@
 # Writes a duration-scoped token to care-redclear.json that allows ONE matching
 # irreversible command to pass maude-gate.sh.
 #
-# Usage: maude-clear-red.sh <red-key> [duration_seconds=300] [--marker <link>] [--john]
+# Usage: maude-clear-red.sh <red-key> [duration_seconds=300] [--marker <link>] [--owner]
 #
 # A provisioned marker chain makes --marker the ONLY thing that opens the key;
-# --john alone is then refused. Without a chain, --john still works and says out loud
-# that it is the weak path.
+# --owner alone is then refused. Without a chain, --owner still works and says out loud
+# that it is the weak path. --john is the original spelling, kept as an alias.
 #
 # RED keys (must match maude_red_keys in _maude-common.sh):
 #   rm-rf-root, rm-rf-glob, sudo-rm-rf, rm-rf-sole-copy, sole-copy-target,
@@ -31,17 +31,17 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
-# Parse args: KEY and optional DURATION are positional; --john may appear
+# Parse args: KEY and optional DURATION are positional; --owner may appear
 # anywhere and marks a human-hand authorization for a RED key.
 KEY=""
 DURATION=""
-JOHN=0
+OWNER=0
 MARKER=""
 _want_marker=0
 for _a in "$@"; do
   if [ "$_want_marker" -eq 1 ]; then MARKER="$_a"; _want_marker=0; continue; fi
   case "$_a" in
-    --john)   JOHN=1 ;;
+    --owner|--john) OWNER=1 ;;
     --marker) _want_marker=1 ;;
     -*)       ;;   # ignore other flags
     *)        if [ -z "$KEY" ]; then KEY="$_a"; elif [ -z "$DURATION" ]; then DURATION="$_a"; fi ;;
@@ -159,10 +159,10 @@ if true; then
     if [ -z "$MARKER" ]; then
       cat <<EOF >&2
 Maude: "$KEY" is a RED key with a marker chain provisioned — it needs a one-time
-marker link. --john alone will not open it, and neither will anything Claude can
+marker link. --owner alone will not open it, and neither will anything Claude can
 compute from what is on this disk.
 
-John, paste your next unspent link (the leading ! runs it as your hand):
+Account owner, paste your next unspent link (the leading ! runs it as your hand):
 
   ! bash "$DIR/maude-clear-red.sh" "$KEY" --marker <link>
 
@@ -184,7 +184,7 @@ EOF
       cat <<EOF >&2
 Maude: "$KEY" is a RED key and this house is marker-managed, but no readable chain
 was found for it. Refusing rather than falling back — an unreadable chain used to
-downgrade to --john, which a redteam turned into a one-command forgery.
+downgrade to --owner, which a redteam turned into a one-command forgery.
 
 If you genuinely have no chain for this key, provision one:
   ! bash "$DIR/maude-marker.sh" gen $KEY 20
@@ -205,28 +205,28 @@ EOF
       maude_log_trace "gate-clear-refused" "key=$KEY reason=marker-required-no-chain"
       exit 1
     fi
-    if [ "$JOHN" -ne 1 ]; then
+    if [ "$OWNER" -ne 1 ]; then
       cat <<EOF >&2
-Maude: "$KEY" is a RED key — John's hand only. Claude must NOT self-clear it.
+Maude: "$KEY" is a RED key — the account owner's hand only. Claude must NOT self-clear it.
 
-John, to authorize ONE matching command, paste this line (the leading ! runs it
+Account owner, to authorize ONE matching command, paste this line (the leading ! runs it
 as your hand, outside Claude's tool-gate):
 
-  ! bash "$DIR/maude-clear-red.sh" "$KEY" --john
+  ! bash "$DIR/maude-clear-red.sh" "$KEY" --owner
 
 (SOFT rail: removes the reflex, not a determined bypass. Real enforcement is the
 harness deny-rules — see .scratch/maude-spine-deny.json.)
 
-Stronger: provision a marker chain for this key and --john stops being enough.
+Stronger: provision a marker chain for this key and --owner stops being enough.
 
   ! bash "$DIR/maude-marker.sh" gen $KEY 20
 EOF
-      maude_log_trace "gate-clear-refused" "key=$KEY reason=red-needs-john"
+      maude_log_trace "gate-clear-refused" "key=$KEY reason=red-needs-owner"
       exit 1
     fi
-    printf 'Maude: WEAK PATH — no marker chain for "%s", so this cleared on --john alone,\n' "$KEY" >&2
+    printf 'Maude: WEAK PATH — no marker chain for "%s", so this cleared on --owner alone,\n' "$KEY" >&2
     printf '       which a copied script can forge. Close it:\n         ! bash "%s/maude-marker.sh" gen %s 20\n' "$DIR" "$KEY" >&2
-    maude_log_trace "gate-clear-weak-path" "key=$KEY reason=no-chain-john-only"
+    maude_log_trace "gate-clear-weak-path" "key=$KEY reason=no-chain-owner-only"
   fi
 fi
 

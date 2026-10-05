@@ -117,12 +117,13 @@ assert_exit "$RC" "1" "red without --john exits 1"
 test_start "RED key without --john writes NO token"
 assert_eq "$until_val" "absent" "no red token without --john"
 
-test_start "RED refusal names John's hand and the --john ! line"
+test_start "RED refusal names the owner's hand and the --owner ! line"
 ERR="$(bash "$CLEAR" rm-rf-sole-copy 2>&1 >/dev/null)"
-assert_contains "$ERR" "--john" "refusal shows the --john line"
+assert_contains "$ERR" "--owner" "refusal shows the --owner line"
 
-test_start "RED refusal calls it John's hand"
-assert_contains "$ERR" "John" "refusal names John"
+test_start "RED refusal calls it the account owner's hand, never a person's name"
+assert_contains "$ERR" "account owner" "refusal names the account owner"
+assert_not_contains "$ERR" "John" "refusal carries no maintainer name"
 
 test_start "RED key WITH --john writes the token"
 rm -f "$(care_path)"

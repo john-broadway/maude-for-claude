@@ -1,6 +1,6 @@
-<!-- Version: 0.32.0 -->
+<!-- Version: 0.33.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-09-14 -->
+<!-- Revised: 2026-10-05 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -104,6 +104,8 @@ And on demand, when you ask:
 
 <!-- Each entry's date is the UTC day of the version's release commit on canon (the day
      scripts/release.sh stamped it), never the day it reached the public repository. -->
+**v0.33.0 (2026-10-04) - the gate learned whose house it is in.** A user hit a RED-gate refusal that told them to ask the maintainer by name. Whoever installed Maude owns the account, so every line she speaks now says so, and the red-clear flag is `--owner` (`--john` still works). A test now fails the build if a person's name reaches a user again. Also in this release: the gate reads a heredoc body as text and a flag against its own command. A torn line in a store is set aside instead of breaking the hook, and the undo ledger's prune is safe with five sessions at once. The vault recall pages each note once per session, in one line. The wake opens with her mark.
+
 **v0.32.0 (2026-09-14) - the fleet was one counter, and the whisper died by the clock.** A second site wrote down what Maude costs them, and two of the lines were defects in the plugin. The run governor kept one counter per project, so an overnight fleet of subagents pooled its calls into one ceiling and every worker was blocked together; each agent is now governed on its own count and its own clock, and a stopped agent drops its own slot. The eye's whisper expired after five wall-clock minutes but can only be delivered at your next prompt, so its age is now counted in tool calls (forty by default, `MAUDE_EYE_WHISPER_TTL_ACTIONS`) and the seconds ceiling is opt-in.
 
 **v0.31.0 (2026-09-03) - the law arrives at the moment the work touches its class.** Three rulebooks ship as static data: the thirty Laws of UX, Codd's thirteen rules with third normal form as the floor, and the laws of memory, human and machine (the last one a draft until John cuts it). A rail on hooks that already fire says the law once on the first write of a class, lints a schema on the spot for the shapes its own text can break, and asks once at the commit if no design named its laws. Kill switch `MAUDE_RULES=off`; `/maude:rules` prints the checklist.

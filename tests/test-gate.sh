@@ -24,9 +24,10 @@ run_gate() {
 #   seed_reserved <token-file> <key> <sid> <age-seconds> <command>
 # Exactly as maude_call_fp hashes: keys SORTED, and NO trailing newline (jq prints one;
 # the lib's command substitution drops it, so a seeded fp must drop it too).
-fp_of() { printf '%s' "$(make_bash_tool_input "$1" | jq -Sc '.tool_input // {}')" | cksum | awk '{print $1}'; }
+# … and the tool NAME with them (lens 6): the same bytes under another tool are another call.
+fp_of() { printf '%s' "$(make_bash_tool_input "$1" | jq -Sc '{n: (.tool_name // ""), i: (.tool_input // {})}')" | cksum | awk '{print $1}'; }
 seed_reserved() {
-  printf '{"gate_cleared":{"%s":{"until":%d,"reserved":{"sid":"%s","at":%d,"fp":"%s","head":"%.60s","v":2}}}}\n' \
+  printf '{"gate_cleared":{"%s":{"until":%d,"reserved":{"sid":"%s","at":%d,"fp":"%s","head":"%.60s","v":3}}}}\n' \
     "$2" $(($(date +%s) + 600)) "$3" $(($(date +%s) - $4)) "$(fp_of "$5")" "$5" > "$1"
 }
 
@@ -539,10 +540,10 @@ assert_ne "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" 
 rm -f "$(care_path)"
 
 test_start "a version written as a STRING is read the same by the fast path and the slow one (27th lens, MINOR-4)"
-printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d,"fp":"999999999","head":"git push origin other","v":"2"}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 60)) > "$(care_path)"
+printf '{"gate_cleared":{"git-push":{"until":%d,"reserved":{"sid":"other000","at":%d,"fp":"999999999","head":"git push origin other","v":"3"}}}}\n' $(($(date +%s) + 600)) $(($(date +%s) - 60)) > "$(care_path)"
 SPENDABLE=0; . "$HOOKS_DIR/_maude-common.sh"
 maude_gate_spendable_here '{"tool_input":{"command":"git push origin main"}}' "git push origin main" "$(care_path)" && SPENDABLE=1
-assert_eq "$SPENDABLE" "0" "the fast path agrees with the slow one: a v2 reservation of another call is not spendable"
+assert_eq "$SPENDABLE" "0" "the fast path agrees with the slow one: a v3 reservation of another call is not spendable"
 rm -f "$(care_path)"
 
 test_start "a reservation written BEFORE the fingerprint existed names no call: re-reservable, and spent by the run (the upgrade path)"
@@ -797,8 +798,9 @@ test_start "gate BLOCKS Claude-Bash invoking the red clear-script"
 run_gate 'bash /x/hooks/scripts/maude-clear-gate.sh rm-rf-sole-copy --john'
 assert_exit "$RC" "2" "red self-clear via Bash blocked"
 
-test_start "red-self-clear block names it John's hand"
-assert_contains "$ERR" "John" "block message names John"
+test_start "red-self-clear block names it the account owner's hand, never a person's name"
+assert_contains "$ERR" "account owner" "block message names the account owner"
+assert_not_contains "$ERR" "John" "block message carries no maintainer name"
 
 test_start "gate BLOCKS red clear-script even with a quoted script path"
 run_gate 'bash "/x/hooks/scripts/maude-clear-gate.sh" force-push --john'
@@ -1043,6 +1045,346 @@ ERR="$(make_bash_tool_input "git push origin main" | PATH="$BADJQ:$PATH" bash "$
 assert_exit "$RC" "2" "fail closed"
 assert_contains "$ERR" "could not record" "says the write failed"
 assert_not_contains "$ERR" "Run /maude:conscience" "does not send him for a token he holds"
+# ── a heredoc body is text, for the wrapped-payload scan too (2026-09-28) ──
+# The plain patterns already excised heredoc bodies (v0.27.0); the bash -c / eval payload
+# scan did not, so a python heredoc that merely carried the string
+# "bash -c 'git commit -m m --amend'" was blocked (found live, on an edit to this file).
+# A heredoc FED TO A SHELL runs its body, so there the scan still reads it.
+rm -f "$(care_path)"
+HD1=$'python3 - <<\x27PY\x27\nx = "bash -c \x27git commit -m m --amend\x27"\nPY'
+HD2=$'cat > f.txt <<EOF\nrun: bash -c \x27git reset x --hard\x27\nEOF'
+test_start "a wrapped gated command inside a python heredoc body is text, not a command"
+run_gate "$HD1"; assert_exit "$RC" "0" "passes"
+test_start "a wrapped gated command inside a cat heredoc body is text, not a command"
+run_gate "$HD2"; assert_exit "$RC" "0" "passes"
+HS1=$'bash <<EOF\nbash -c \x27git commit -m m --amend\x27\nEOF'
+HS2=$'sh -s <<\x27EOF\x27\nbash -c \x27git reset x --hard\x27\nEOF'
+test_start "control: a heredoc fed to bash still has its wrapped payload read"
+run_gate "$HS1"; assert_exit "$RC" "2" "blocked"
+test_start "control: a heredoc fed to sh -s still has its wrapped payload read"
+run_gate "$HS2"; assert_exit "$RC" "2" "blocked"
+test_start "control: a real bash -c after a heredoc still blocks"
+run_gate $'cat > f <<EOF\nhello\nEOF\nbash -c \x27git commit -m m --amend\x27'
+assert_exit "$RC" "2" "blocked"
+
+# ── the shell-fed decision is per opener line, on the stripped command (lens round 1) ──
+# The first cut grepped the WHOLE command for a shell word before a `<<`: the standard
+# commit shape (`git add . && git commit -m "$(cat <<'EOF'`) read the standalone `.` as
+# `source`, a `cat > x.sh <<EOF` read `.sh` as `sh`, and a body that merely mentioned
+# `bash <<EOF` flipped the verdict; meanwhile `cat <<EOF | bash` read as text because the
+# shell came AFTER the heredoc. Each shape below is a text body that must PASS or an
+# executing body that must BLOCK; the payload is the same wrapped amend in every one.
+rm -f "$(care_path)"
+WRAP="bash -c 'git commit -m m --amend'"
+test_start "the standard commit shape with a wrapped command quoted in its message is text"
+run_gate $'git add . && git commit -m "$(cat <<\'EOF\'\nnote: '"$WRAP"$' is caught\nEOF\n)"'
+assert_exit "$RC" "0" "passes"
+test_start "a heredoc written to a .sh file is text (\`.sh\` is not the shell word \`sh\`)"
+run_gate $'cat >> tests/test-gate.sh <<\'EOF\'\nrun_gate "'"$WRAP"$'"\nEOF'
+assert_exit "$RC" "0" "passes"
+test_start "a heredoc written to a .bash file is text"
+run_gate $'cat > hooks/x.bash <<\'EOF\'\n'"$WRAP"$'\nEOF'
+assert_exit "$RC" "0" "passes"
+test_start "a path containing a shell word is not a shell word (notes/bash-tips.md)"
+run_gate $'cat > notes/bash-tips.md <<EOF\n'"$WRAP"$'\nEOF'
+assert_exit "$RC" "0" "passes"
+test_start "a python body that MENTIONS bash <<EOF does not flip the verdict"
+run_gate $'python3 - <<PY\ndoc = """\nrun it with bash <<EOF\n"""\nx = "'"$WRAP"$'"\nPY'
+assert_exit "$RC" "0" "passes"
+test_start "a standalone dot in an EARLIER segment is not source"
+run_gate $'cd . && python3 - <<PY\nx = "'"$WRAP"$'"\nPY'
+assert_exit "$RC" "0" "passes"
+# The other direction: the body RUNS, so the wrapped payload in it must still block.
+for shape in \
+  $'cat <<EOF | bash\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | sh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF > x.sh && bash x.sh\n'"$WRAP"$'\nEOF' \
+  $'tee x.sh <<EOF && bash x.sh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | ssh host bash\n'"$WRAP"$'\nEOF' \
+  $'ssh host <<EOF\n'"$WRAP"$'\nEOF' \
+  $'ssh -T host <<\'EOF\'\n'"$WRAP"$'\nEOF' \
+  $'su root <<EOF\n'"$WRAP"$'\nEOF' \
+  $'sudo -i <<EOF\n'"$WRAP"$'\nEOF' \
+  $'sudo bash <<EOF\n'"$WRAP"$'\nEOF' \
+  $'/bin/bash <<EOF\n'"$WRAP"$'\nEOF' \
+  $'/usr/bin/env bash <<EOF\n'"$WRAP"$'\nEOF' \
+  $'docker exec -i c sh <<EOF\n'"$WRAP"$'\nEOF' \
+  $'pct exec 100 -- bash <<EOF\n'"$WRAP"$'\nEOF' \
+  $'chroot /x <<EOF\n'"$WRAP"$'\nEOF' \
+  $'zsh <<EOF\n'"$WRAP"$'\nEOF' \
+  $'dash <<EOF\n'"$WRAP"$'\nEOF' \
+  $'ksh <<EOF\n'"$WRAP"$'\nEOF' \
+  $'bash -s <<EOF\n'"$WRAP"$'\nEOF' \
+  $'bash <<-EOF\n'"$WRAP"$'\nEOF' \
+  $'(bash) <<EOF\n'"$WRAP"$'\nEOF' \
+  $'. /dev/stdin <<EOF\n'"$WRAP"$'\nEOF' \
+  $'source /dev/stdin <<EOF\n'"$WRAP"$'\nEOF' \
+  $'echo x; bash <<EOF\n'"$WRAP"$'\nEOF' \
+  ; do
+  test_start "an executing body still blocks: ${shape%%$'\n'*}"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"
+done
+# The control for the direction: with the SAME opener and no wrapped payload, nothing to
+# block, so a block above comes from the payload and not from the opener itself.
+test_start "control: an executing opener with a harmless body passes"
+run_gate $'cat <<EOF | bash\necho hi\nEOF'
+assert_exit "$RC" "0" "passes"
+
+# ── everything AFTER the opener counts (lens round 2) ──────────────────────────────
+# "The segment after" was one segment too few: write, chmod, run; a pipe through tee; a
+# run on a later line. And the shell list was short, `bash<<EOF` hid the word behind `<`,
+# `eval` had dropped off, and `sudo` only knew `-i`/`-s` as its first option.
+for shape in \
+  $'cat <<EOF > x.sh; chmod +x x.sh; bash x.sh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | tee x | bash\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | grep . | sh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF > x.sh\n'"$WRAP"$'\nEOF\nbash x.sh' \
+  $'cat <<EOF > x.sh\n'"$WRAP"$'\nEOF\nchmod +x x.sh\nsh x.sh' \
+  $'bash<<EOF\n'"$WRAP"$'\nEOF' \
+  $'sh<<\'EOF\'\n'"$WRAP"$'\nEOF' \
+  $'/bin/sh<<EOF\n'"$WRAP"$'\nEOF' \
+  $'eval "$(cat <<\'EOF\'\n'"$WRAP"$'\nEOF\n)"' \
+  $'cat <<EOF | sudo -u root -i\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | sudo -E -s\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | sudo --login\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | ash\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | tcsh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | rbash\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | mksh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | $SHELL\n'"$WRAP"$'\nEOF' \
+  $'{ bash; } <<EOF\n'"$WRAP"$'\nEOF' \
+  $'x=`bash <<EOF\n'"$WRAP"$'\nEOF\n`' \
+  ; do
+  test_start "an executing body still blocks (after the opener): ${shape%%$'\n'*}"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"
+done
+# ── round 3: the opener that was not one, the file run by path, `>` as a boundary ──
+for shape in \
+  $'# note <<EOF\nbash <<EOF\n'"$WRAP"$'\nEOF' \
+  $'echo a # <<EOF\nbash <<EOF\n'"$WRAP"$'\nEOF' \
+  $'echo a \\<<EOF\nbash <<EOF\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF > r.sh; chmod +x r.sh; ./r.sh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF > r.sh\n'"$WRAP"$'\nEOF\nchmod +x r.sh\n./r.sh' \
+  $'cat <<EOF > /tmp/r; chmod +x /tmp/r; /tmp/r\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF > r.sh; sudo ./r.sh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF > r; at -f r now\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF > x.sh; . x.sh\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | sh>out\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | sh>/dev/null\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | docker exec -i c \'bash\'\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | pct exec 1 -- "bash"\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | ${SHELL}\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | $BASH\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | $0\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | tee "it\'s" | bash -s -- \'z\'\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | FOO=1 sudo -i\n'"$WRAP"$'\nEOF' \
+  $'cat <<EOF | tee x\n'"$WRAP"$'\nEOF\ncat x | sh>out' \
+  $'cat <<EOF > r.sh\n'"$WRAP"$'\nEOF\nchmod +x r.sh; ./r.sh; echo done' \
+  $'cat <<EOF > r.sh\n'"$WRAP"$'\nEOF\nchmod +x r.sh; (./r.sh)' \
+  $'cat <<EOF > r.sh\n'"$WRAP"$'\nEOF\nchmod +x r.sh; ./r.sh>/dev/null' \
+  $'cat <<EOF | tee "it\'s" | bash -s -- \'a b\'\n'"$WRAP"$'\nEOF' \
+  ; do
+  test_start "an executing body still blocks (round 3): ${shape%%$'\n'*}"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"
+done
+test_start "a quoted mention on a later line is blanked, not read as a shell word"
+run_gate $'cat <<EOF > notes.md\n'"$WRAP"$'\nEOF\necho "then run bash later"'
+assert_exit "$RC" "0" "passes"
+test_start "a file whose name merely PREFIXES a later word is not the file"
+run_gate $'cat <<EOF > r.sh\n'"$WRAP"$'\nEOF\nls r.sh.bak r.sh-old'
+assert_exit "$RC" "0" "passes"
+test_start "a file written by the heredoc and merely READ later is text"
+run_gate $'cat <<EOF > notes.md\n'"$WRAP"$'\nEOF\nwc -l other.md'
+assert_exit "$RC" "0" "passes"
+
+# Text after the opener stays text: nothing on the later lines is a shell word.
+test_start "a commit message heredoc followed by a push is still text"
+run_gate $'git add . && git commit -m "$(cat <<\'EOF\'\nnote: '"$WRAP"$' is caught\nEOF\n)" && git push origin main'
+printf '%s' "$ERR" | grep -q "commit-amend"; assert_exit "$?" "1" "the amend in the message is not read"
+test_start "a notes heredoc followed by an echo is text"
+run_gate $'cat <<EOF > notes.md\n'"$WRAP"$'\nEOF\necho done'
+assert_exit "$RC" "0" "passes"
+
+# ── a flag belongs to ITS command (2026-09-28): `git push … && git worktree remove --force x`
+# was blocked RED as a force-push, because `push[[:space:]].*--force` ran past the `&&`.
+# The flag must sit in the same simple command as the verb; every real shape still blocks.
+rm -f "$(care_path)"
+test_start "a --force on a LATER command is not a force-push"
+run_gate "git push -q origin main && git worktree remove --force /tmp/wt"
+assert_not_contains "$ERR" "force-push" "stderr names no force-push"
+test_start "a -f on a later command is not a force-push"
+run_gate "git push origin main; rm -f /tmp/x.log"
+assert_not_contains "$ERR" "force-push" "stderr names no force-push"
+test_start "a --hard on a later command is not reset-hard"
+run_gate "git reset HEAD~0 && git checkout --hard-to-guess-branch-name || true"
+assert_not_contains "$ERR" "reset-hard" "stderr names no reset-hard"
+test_start "an --amend on a later command is not commit-amend"
+run_gate "git commit -m x | tee log; echo --amend"
+assert_not_contains "$ERR" "commit-amend" "stderr names no commit-amend"
+test_start "control: a force-push AFTER an unrelated command still blocks"
+run_gate "git worktree remove --force /tmp/wt && git push --force origin main"
+assert_exit "$RC" "2" "blocked"
+test_start "control: --force at the end of the same push still blocks"
+run_gate "git push origin main --force && echo done"
+assert_exit "$RC" "2" "blocked"
+test_start "control: -f in the middle of the same push still blocks"
+run_gate "git push -f origin main | tee log"
+assert_exit "$RC" "2" "blocked"
+test_start "control: --force-with-lease=ref:sha still blocks"
+run_gate "git push --force-with-lease=main:abc123 origin main"
+assert_exit "$RC" "2" "blocked"
+test_start "control: reset --hard in the same command still blocks"
+run_gate "git reset -q --hard HEAD~1; echo ok"
+assert_exit "$RC" "2" "blocked"
+
+# ── a wrapped LATER command keeps the greedy match (lens round 3 on 1da5501) ──────────
+# `sudo git push -f` alone passes both gates (CMD_START/PREFIX do not know wrappers; a
+# pre-existing hole). On a plain command the greedy `.*` carried an EARLIER `git push`
+# across the separator into it and blocked RED by accident. The narrow match must not
+# take that away: a segment starting with a wrapper keeps the whole command greedy.
+rm -f "$(care_path)"
+# Listed wrappers and unlisted ones alike (lens round 4: a denylist of wrappers missed 48
+# of 95 words; the rule is an allowlist of inert command words now).
+for w in "sudo" "sudo -u x" "env" "/usr/bin/env" "time" "timeout 5" "xargs" "ssh h" "pct exec 100 --" "docker exec c" "eval" "." "FOO=1 sudo" "busybox" "chronic"; do
+  test_start "an earlier plain push still carries into: $w git push -f"
+  run_gate "git push origin main; $w git push -f"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "and RED, as before"
+done
+test_start "a control keyword segment keeps the greedy match too"
+run_gate "git push a; if true; then git push -f; fi"
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before"
+test_start "a wrapped segment through a PIPE keeps the greedy match too"
+run_gate "git push a | sudo git push -f"
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before"
+# `git` with a global option GIT does not know is a wrapper too (lens round 5): the verb
+# is hidden, and only the earlier greedy carry ever caught it.
+for g in "git --no-pager" "git -p" "git --paginate" "git --work-tree=x" "git --bare" "git -P" "git -c alias.x=push x -f;git"; do
+  test_start "an earlier plain push still carries into: $g push -f"
+  run_gate "git push origin main; $g push -f"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before"
+done
+# A git subcommand that RUNS its arguments is a wrapper (lens round 6).
+for g in "git submodule foreach" "git submodule foreach --recursive" "git bisect run" "git for-each-repo --config=r.x" "git difftool -x" "git p"; do
+  test_start "an earlier plain push still carries into: $g git push -f"
+  run_gate "git push origin main; $g git push -f"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before"
+done
+# An UNLISTED subcommand keeps the greedy match even when it is harmless (config): the
+# list is an allowlist, and nothing outside it narrows (lens round 7).
+test_start "an unlisted git subcommand keeps the greedy match: git config"
+run_gate "git push origin main; git config alias.x push -f"
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before"
+test_start "an amend behind git submodule foreach after a plain commit still blocks"
+run_gate "git commit -m x; git submodule foreach git commit --amend"
+assert_exit "$RC" "2" "blocked"
+test_start "a reset --hard behind git bisect run after a plain reset still blocks"
+run_gate "git reset a; git bisect run git reset --hard"
+assert_exit "$RC" "2" "blocked"
+test_start "a rebase -x after a plain push keeps the greedy match"
+run_gate "git push a; git rebase -x git-push-f main"
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before"
+test_start "an amend behind git --no-pager after a plain commit still blocks"
+run_gate "git commit -m x && git --no-pager commit --amend"
+assert_exit "$RC" "2" "blocked"
+test_start "a reset --hard behind git --no-pager after a plain reset still blocks"
+run_gate "git reset a; git --no-pager reset --hard"
+assert_exit "$RC" "2" "blocked"
+# The inert boundary: `cat` is a prefix of `catchsegv`, `cp` of `cpulimit`. Without the
+# word boundary both read as inert (lens round 5 mutation m7).
+for w in "catchsegv" "cpulimit -l 5" "gitk" "echoer"; do
+  test_start "a word that merely BEGINS with an inert word is not inert: $w"
+  run_gate "git push origin main; $w git push -f"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before"
+done
+test_start "a wrapper in a MIDDLE segment keeps the greedy match too"
+run_gate "git push a; sudo true; git worktree remove --force x"
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before: the greedy match carried across"
+test_start "a wrapper in the FIRST segment keeps the greedy match too"
+run_gate "sudo git push a; git push -f && git worktree remove --force x"
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "Maude [RED]:" "RED, as before"
+# The inert words are what make the intended shape narrow; each is pinned by a line
+# that would be RED under the greedy match and is YELLOW under the narrow one.
+for w in "rm -f x" "echo -f" "ls --hard" "cat x; rm -f y" "tee -a x" "mkdir -p x; rm -f y"; do
+  test_start "an inert later segment stays narrow: git push a && $w"
+  run_gate "git push origin main && $w"
+  printf '%s' "$ERR" | grep -q "force-push"; assert_exit "$?" "1" "not a force-push"
+done
+# Every inert word, individually: dropping any one from the list must red a test.
+for w in echo ls rm cd true false tee cat grep head tail sleep test mkdir cp mv touch wc sort date pwd printf; do
+  test_start "inert word pinned: $w"
+  run_gate "git push origin main && $w --force x"
+  printf '%s' "$ERR" | grep -q "force-push"; assert_exit "$?" "1" "narrow: $w is inert"
+done
+test_start "git with a plain subcommand is inert (the intended shape)"
+run_gate "git push origin main && git worktree remove --force x"
+printf '%s' "$ERR" | grep -q "force-push"; assert_exit "$?" "1" "narrow"
+test_start "an amend behind env after a plain commit still blocks"
+run_gate "git commit -m x && env git commit --amend"
+assert_exit "$RC" "2" "blocked"
+test_start "a reset --hard behind sudo after a plain reset still blocks"
+run_gate "git reset HEAD~1;sudo git reset --hard"
+assert_exit "$RC" "2" "blocked"
+test_start "a reset --hard behind timeout after a plain reset still blocks"
+run_gate "git reset x; timeout 5 git reset --hard"
+assert_exit "$RC" "2" "blocked"
+# The intended shape, unchanged by the wrapper rule: no wrapper, the flag stays with its
+# own command.
+test_start "control: the intended plain shape is still narrow"
+run_gate "git push -q origin main && git worktree remove --force /tmp/wt"
+printf '%s' "$ERR" | grep -q "force-push"; assert_exit "$?" "1" "not a force-push"
+# `|` is a boundary like `;` and `&`; the earlier tests only crossed `&&` and `;`, so a
+# SAME_CMD of `[^;&]*` survived every one of them (lens round 3).
+test_start "a pipe is a command boundary for the narrow match"
+run_gate "git push -q origin main | git worktree remove --force /tmp/wt"
+printf '%s' "$ERR" | grep -q "force-push"; assert_exit "$?" "1" "not a force-push across a pipe"
+
+# ── lens on fc0bf3a: a separator INSIDE a command substitution is not a separator ──
+# `[^;&|]*` stopped at the `|` in `$(… | …)`, so `git reset $(x | y) --hard` passed and a
+# force-push through `$(…)` fell to the YELLOW git-push key. With a substitution anywhere
+# the gate keeps its old greedy match: never less than it blocked before.
+rm -f "$(care_path)"
+for c in 'git reset $(true | true) --hard' 'git reset `git rev-parse HEAD | cut -c1-7` --hard' \
+         'git reset $(true;true) --hard' 'git commit -m $(echo hi|tr a-z A-Z) --amend' \
+         'git commit -m x `echo a|echo b` --amend'; do
+  test_start "substitution with a separator before the flag still blocks: $c"
+  run_gate "$c"; assert_exit "$RC" "2" "blocked"
+done
+test_start "an escaped separator before the flag is a literal and still blocks"
+run_gate 'git commit -m fish\&chips --amend'; assert_exit "$RC" "2" "blocked"
+run_gate 'git reset HEAD\;x --hard'; assert_exit "$RC" "2" "blocked"
+test_start "process substitution with a separator before the flag still blocks"
+run_gate 'git reset <(true | true) --hard'; assert_exit "$RC" "2" "blocked"
+for c in 'git push $(git remote | head -1) --force' 'git push $(git remote | head -1) -f' \
+         'git push `git remote | head -1` --force-with-lease' 'git push $(true;echo origin) --force'; do
+  test_start "force-push through a substitution stays RED: $c"
+  run_gate "$c"; assert_contains "$ERR" "force-push" "names force-push"; assert_contains "$ERR" "RED" "RED key"
+done
+
+# ── lens round 2 on bf22c9d: 61 regressions through constructs a substring list missed ──
+# `${x//|/z}`, bracket globs, redirects (`2>&1`, `&>`, `>|`) and a backslash line
+# continuation all carry a `;` `&` `|` that is not a boundary. The narrow match now runs
+# only on a command made of plain word characters and separators; everything else keeps
+# the old greedy match.
+rm -f "$(care_path)"
+LC=$'git reset origin \\\n--hard'
+LCA=$'git commit -m msg \\\n--amend'
+for c in 'git reset ${x//|/z} --hard' 'git commit -m msg ${x//|/z} --amend' 'git reset ${y:-a|b} --hard' \
+         'git reset fil[|]e --hard' 'git reset 2>&1 --hard' 'git commit -m msg 2>&1 --amend' \
+         'git -C /tmp/repo reset ${x//|/z} --hard' "bash -c 'git commit -m msg \${x//|/z} --amend'" \
+         "$LC" "$LCA"; do
+  test_start "a non-boundary separator before the flag still blocks: $(printf '%q' "$c")"
+  run_gate "$c"; assert_exit "$RC" "2" "blocked"
+done
+LCP=$'git push origin \\\nmain --force'
+for c in 'git push origin ${x//|/z} --force' 'git push origin main &>/dev/null --force' \
+         'git push origin main >| --force' "$LCP"; do
+  test_start "a force-push past a non-boundary separator stays RED: $(printf '%q' "$c")"
+  run_gate "$c"; assert_contains "$ERR" "force-push" "names force-push"; assert_contains "$ERR" "RED" "RED key"
+done
+test_start "the live false match stays fixed: a plain push then a worktree cleanup"
+run_gate "git push -q origin main && git worktree remove --force /var/lib/x/scratchpad/wt4"
+assert_not_contains "$ERR" "force-push" "stderr names no force-push"
+
 rm -f "$(care_path)"
 
 print_summary

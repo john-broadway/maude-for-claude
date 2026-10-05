@@ -13,9 +13,9 @@ where Claude cannot read the output:
 
 Use the wrapper, not `python3 -m` directly: bare `-m` fails with "No module named
 maude_marker" unless PYTHONPATH already points at the plugin root, which is how
-this instruction was first handed to John broken. The wrapper resolves it.
+this instruction was first handed out broken. The wrapper resolves it.
 
-The leading `!` runs it in John's own shell. The links print to his terminal and
+The leading `!` runs it in the account owner's own shell. The links print to their terminal and
 never enter Claude's context or any file Claude reads. Only the HEAD is written to
 the state file, and the head is spent by construction.
 
