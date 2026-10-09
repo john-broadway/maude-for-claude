@@ -163,7 +163,7 @@ that is the point: the map governs, not hard-coded paths.
 
 | Token | What save/rest do | Typical source |
 |---|---|---|
-| `digest-fanout` | Overwrite the live buffer (`now.md`) with the digest; append a `## TIME \| topic` block to `today-<date>.md`; append one line to `recent.md`. Written for next-session **Claude's continuity** — not as Maude's own store. | anthropic-auto-memory |
+| `digest-fanout` | Pipe the digest (first line `## TIME \| topic`) to `scripts/maude-now-write.sh`: it appends the block to `today-<date>.md` and one line to `recent.md`, then makes `now.md` that one block. Never write `now.md` by hand. Written for next-session **Claude's continuity** — not as Maude's own store. | anthropic-auto-memory |
 | `handoff-only` | Write ONLY the source's single handoff file (e.g. `remember.md`) in its handoff format. **Never** touch any other file in that dir — pipeline output belongs to the owning system. | remember-plugin |
 | `full` | Maude owns this store — write any of her own files freely. | maude-self, user-global |
 | `read-only` | Recall only. Never write. | user dirs marked read-only |

@@ -34,6 +34,18 @@ EDIT='{"ts":"2026-01-01T11:00:00Z","kind":"tool","tool":"Edit","target":"/p/foo.
 EDIT2='{"ts":"2026-01-01T11:30:00Z","kind":"tool","tool":"Write","target":"/p/bar.py"}'
 DOC='{"ts":"2026-01-01T11:00:00Z","kind":"tool","tool":"Edit","target":"/p/README.md"}'
 
+# ---- a heredoc body is text: naming a runner in it is not running one (2026-10-08) ----
+# maude_strip_quotes now keeps a $(...) inside double quotes (bash runs it), so the
+# canonical commit-message heredoc must lose its literal body to the heredoc stripper
+# first, as the gate does; otherwise the body's words read as a run and stamp a verify
+# that never happened, the one false "you're covered" this hook exists never to say.
+test_start "a commit whose quoted-heredoc message names pytest does not stamp a verify"
+reset_care; do_stamp $'git commit -m "$(cat <<\'EOF\'\nfix the collector\npytest -q now passes\nEOF\n)"' "[main abc123] fix"
+assert_eq "$(read_care '.last_verify_iso')" "null" "not stamped"
+test_start "control: a real pytest inside a double-quoted substitution does stamp"
+reset_care; do_stamp 'echo "$(pytest -q)"' "5 passed in 0.10s"
+assert_ne "$(read_care '.last_verify_iso')" "null" "stamped"
+
 # ---- stamp: a verify that ran to completion (clean output) is recorded ----
 test_start "stamp records a completed 'pytest -q' (clean output)"
 reset_care; do_stamp "pytest -q" "5 passed in 0.10s"

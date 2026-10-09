@@ -1,6 +1,6 @@
-<!-- Version: 0.33.1 -->
+<!-- Version: 0.34.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-10-05 -->
+<!-- Revised: 2026-10-09 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,132 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.34.0 - the gate reads what bash will run, and now.md has one writer
+
+The gate strips a heredoc body (text, not commands) before it matches, and nine lens rounds
+each found one more line it read differently from bash, several opening a body over a real
+force-push. It is an allowlist now: it strips only after lines whose every token bash
+structures the same way, and the first line it cannot prove ends the stripping.
+Inside double quotes it now reads each `$(...)` and backtick, which bash runs, instead of
+erasing the whole span as text.
+The live memory buffer gets one writer, so lanes stop stacking it and the wake greets the
+newest entry.
+
+- **The lens on the merged main (2026-10-02) read the two branches together and found holes
+  in the rule above, each a shell-fed body carrying a wrapped force-push that the gate before
+  this branch blocked by accident** (its payload scan read raw text, bodies included, which is
+  also why it blocked the python heredoc this branch exists to pass; the accident is not
+  restored, the holes are closed). The shell-fed scan now reads, with the opener line, the
+  lines joined to it by a trailing `\` and, when only `)` or `}` stands before the `<<`, the
+  group back to its opener (nesting counted); a shell spelled one step away counts (`$SH <<EOF`,
+  `"$SH"`, `${0}`, `${SHELL}`, `b\ash`, `sudo . /dev/stdin`, `builtin source`), and a `$NAME` in
+  command position counts as a shell, fail-closed, at the named cost that `$PYTHON - <<PY` keeps
+  its body in the wrapped scan. What the shell steps over before the command word is read per
+  wrapper, each with its own option grammar (an option that takes an argument must take it:
+  `sudo -u $U tee` is not a shell, `env -u X $SH`, `timeout -s KILL 5 $SH`, `exec -a n $SH`
+  are), plus assignments, redirects with their fd digits, `(`, `{`, and `if`/`while`/`!`.
+- **The heredoc stripper now strips only after lines it can prove bash reads the same way.**
+  Nine lens rounds on this branch each found one more place where the stripper, which tried to
+  read every shape bash accepts, read a line differently from bash: a delimiter keyed short
+  (`<<END-OF-FILE` as `END`, `<<EOF{` as `EOF`), a word ended at `\r`, `(` or a Unicode space,
+  a quote or comment misread (`{#`), a continuation read inside a comment, a closer trimmed or
+  never joined. Each opened a body over a real force-push, several in the gate before this
+  branch too. So every command line, from the first, now goes through ONE left-to-right pass
+  (`maude_heredoc_line_ok`, in the C locale) that accepts only tokens bash structures the same
+  way: words of plain characters, `$NAME` / `${NAME}` / special parameters, single-line quotes
+  (`"..."` without `\`, backtick or any other `$`), the operators `| || & && ; > >> >| < >& <&`,
+  a `#` comment at a token start, and openers `<<WORD`, `<<'WORD'`, `<<"WORD"`, `<<\WORD`
+  (dashed or not, WORD `[A-Za-z_][A-Za-z0-9_.-]*`, ended by a blank, an operator or the end of
+  the line), plus the commit shape `"$(cat <<'EOF'` ending a line. The first line with anything
+  else ends the stripping: it and every later line are read as commands. A body ends on the line
+  bash ends it on, exactly: untrimmed, leading tabs off under `<<-`, and in an unquoted body a
+  line ending in an odd run of `\` joins the next (closing early is not safe: body text after an
+  early close would be read as commands, where a `cat <<Z` opens a phantom); a body that never
+  closes is not stripped. **Cost, named and measured:** a text heredoc after a line the grammar
+  refuses (a `\` continuation, a group or subshell, `$(...)`, an escape, a quote spanning lines,
+  a delimiter outside the word set such as `<<1` or `<<\#`, a closer with trailing space or CR)
+  keeps its body in the scan and blocks if it carries gated text. Over the 6,442 heredoc
+  commands run on the maintainer's box: 1 newly blocked (a commit message nested in a `{ }`
+  group after an `if`), 0 newly passed, against the gate before this branch.
+- Open, named: a BARE gated verb inside a body fed to a shell (limitation #3, unchanged);
+  `stdbuf --output 0 $SH` and `sudo --user root $SH` (a long option with a detached argument);
+  `env -S "x=1" $SH`; `sudo -u root` with no command; a prefix word not on the wrapper list
+  (`xargs`, `strace`, `busybox`); a glob or `"$(echo bash)"` as the command word.
+- **Every rule in the allowlist is seen to fail.** Of ten mutations of the line reader
+  (a `$` or `\` or `(` or `{` let into a word, no word boundary, an unclosed `'` accepted,
+  `"..."` content unchecked, the `<<<` refusal removed, the C-locale pin removed, the
+  delimiter widened), eight are now caught by the gate suite. Two had survived the last round:
+  an unclosed quote and a `"$(...)"` on the opener's own line now each have a test where that
+  one construct is the only thing wrong, beside a control. The locale pin had none: in
+  `en_US.UTF-8` bash's `[A-Za-z0-9_]` matches `é`, and without the pin `<<Zé` was read as a
+  delimiter and its body stripped; a test now runs the gate under such a locale (skipped by
+  name where none is installed). The `<<<` refusal is an equivalent mutant (the delimiter rule
+  refuses `<` too) and is kept as the explicit statement.
+- The blanker's comments no longer say the stripper reads it: its one reader is the shell-fed
+  scan.
+- **An unquoted heredoc body is no longer stripped when it can run something.** The lens on
+  this release's tip found that `cat <<EOF` / `$(git push --force)` / `EOF` passed the gate,
+  here and in the released v0.33.x, while `echo $(git push --force)` alone was blocked: with
+  an unquoted delimiter bash runs `$(...)` and backticks inside the body, so the body was
+  never only text. A body line holding either now ends the stripping and is read by the
+  matcher. It is tested as bash reads it, after the backslash-newline join, so
+  `$(git pu\` then `sh --force)` is caught too. A quoted delimiter (`<<'EOF'`) is never
+  expanded and its body is still stripped. Nine gate tests, red before the fix; six mutants
+  of the new lines, all caught.
+- **`now.md` has one writer: `scripts/maude-now-write.sh`.** The write lived as prose in
+  three places that disagreed: `save.md` said overwrite, `rest.md` appended a `## Tomorrow`
+  block, and the session-start hook read the buffer as append-only. Lanes did what each had
+  read, and one buffer here grew to 496 KB with its timed blocks in both orders, so the wake
+  greeted a day-old entry. The writer takes the digest on stdin and refuses it, before any
+  file moves, unless its first line is `## HH:MM ...` and no other line is (the wake reads
+  the last one). It appends the block to `today-<date>.md` and its header to `recent.md`
+  first, then replaces `now.md` with that one block through a sibling temp and a checked
+  rename (never `$TMPDIR`), and prints the header it read back. An old buffer whose whole
+  text is not already a contiguous run in some daily is appended whole to
+  `today-<date>-now-archive.md` and checked byte-for-byte before it is replaced, so the
+  first write over a stacked legacy file loses nothing. (A header match is not enough: a
+  `## Tomorrow` tail, a later edit, and the same header on another day each vouched for a
+  body it never held, in review.) `save.md`, `rest.md`, the agent and the skill's token
+  table call the writer; `## Tomorrow` travels inside the digest. The match is
+  line-aligned (`b` is not kept by a daily line `ab`) and is one awk pass over every daily
+  with lines held in arrays: one call per daily took 50-70 s on this box's real store (a
+  496 KB buffer, 160 dailies) and now takes about 50 ms. `tests/test-now-write.sh` has 65
+  checks: 38 red with the script absent, the rest red against the draft each of three
+  review rounds broke, including the real store's shape under every awk on the box;
+  eighteen mutants of the writer, seventeen turn it red and one was dead code, now gone.
+  Reported from a sibling box; this patch is written here.
+- **A `$(...)` or backtick inside double quotes is read, not erased.** The gate erased every
+  double-quoted span before matching, so `echo "$(git push --force)"` passed (v0.33.x and
+  earlier), and so did the commit-message shape `git commit -m "$(cat <<EOF ... EOF)"` with
+  a `$(git push --force)` line in an unquoted heredoc. Bash runs both. Quotes are now read
+  in one left-to-right scan, the way bash reads them: a single-quoted span is erased; a
+  double-quoted span is erased except each `$(...)` and backtick inside it, which is kept
+  between command boundaries and read through the same scan. An apostrophe inside `"it's"`
+  no longer opens a single-quoted span. One old test asserted that `echo "subshell \`rm -rf
+  /\` example"` passes as prose; bash runs that `rm -rf /`, so it now blocks (the same text
+  in single quotes passes). The scan is linear and measured: the string is split into a
+  character array once, because `substr()` per character is quadratic in one-true-awk (the
+  awk macOS ships) and ran past 60 s on a 418 KB command; a 1.7 MB command scans in about
+  3 s there. The first magnitude test passed its input as one argv string, which Linux caps
+  at 128 KB, so it was green on nothing; it reads a file now and checks all 24,000
+  substitutions came through. Fourteen gate tests, the flipped one among them; seven mutants
+  of the scan, all caught,
+  including a planted quadratic emit.
+- **The `)` that ends a `$(` is found the way bash finds it.** The review of the scan above
+  found the paren matcher counted every `)`: one inside `')'`, in a `#` comment, or in a
+  `case` pattern ended the `$(` early, the rest fell back into the erased span, and a push
+  after it passed. Quoted spans and backticks are skipped now; a `#` comment or a `case`
+  inside the `$(` makes the rest read raw, because with newlines turned into `;` the end of
+  a comment cannot be known. An ANSI-C `$'a\'b'` no longer ends at its escaped quote (it
+  could hide a later `"$(...)"`). The verify watcher strips heredoc bodies before quotes,
+  as the gate does: with a `"$(...)"` kept, a commit-message heredoc whose body started a
+  line with `pytest -q` stamped a test run that never happened. Seven more tests; seven
+  mutants, all caught.
+- An ANSI-C quote is recognised only after a free `$`: `$$'...'` (the PID, then a plain
+  quote) and `\$'...'` were read as ANSI-C, so a `\'` ran on and swallowed the command
+  after it. That was a regression in the first cut of the scan above, found in review
+  before it shipped. Three more tests; two mutants, both caught.
 
 ## v0.33.1 - the macOS leg runs here before it runs in public
 
@@ -171,7 +297,6 @@ and her mark on the wake.
   body that quotes "bash -c '…'" is the incident this exists to pass and one that runs it
   is indistinguishable; the plain patterns never read those bodies either, so the only
   loss is a `bash -c`/`eval` payload inside one.
-
 ### a flag belongs to its own command
 
 - **`git push … && git worktree remove --force x` is no longer a RED force-push.** The five

@@ -58,9 +58,11 @@ if [ "$MODE" = "stamp" ] || [ "$MODE" = "commit" ]; then
   [ -z "$INPUT" ] && exit 0
   CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
   [ -z "$CMD" ] && exit 0
-  # Strip paired quotes first (same as gate/bash-watch): a commit message or echo
-  # that merely names a test tool must not be read as running one.
-  CMD="$(maude_strip_quotes "$CMD")"
+  # Strip heredoc bodies, then paired quotes (the gate's order): a commit message or
+  # echo that merely names a test tool must not be read as running one. The heredoc
+  # pass is load-bearing since maude_strip_quotes keeps a "$(...)" (bash runs it): a
+  # commit-message heredoc's literal body would otherwise read as a run and stamp.
+  CMD="$(maude_strip_quotes "$(maude_strip_heredocs "$CMD")")"
 fi
 
 # --- pattern building blocks ------------------------------------------------

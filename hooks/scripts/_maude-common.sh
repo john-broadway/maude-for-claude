@@ -1878,12 +1878,111 @@ maude_is_comanage_target() {
 # recognises (^ ; & | ( `). Mapping to a space let `foo\ngit push` flatten to
 # `foo git push` — mid-line, unanchored — bypassing every command-position gate
 # (git push / force-push / reset --hard / rm -rf …). (2026-06-30)
+#
+# A double-quoted span is NOT all text: bash runs $(...) and `...` inside it, so those are
+# kept, each between ';' (a command boundary), and read through this same scan; the rest
+# of the span is erased. Two sed passes erased every "..." whole, and
+# `echo "$(git push --force)"` passed (lens 2026-10-07). One left-to-right scan, the way
+# bash reads quotes, so an apostrophe inside "it's" no longer opens a single-quoted span.
+# Unterminated quotes and unbalanced $( are kept raw from their opener: reading more is
+# the safe direction. Linear by construction, measured on a 418 KB command: the string is
+# split into a character array once (substr() is O(n) per call in one-true-awk, the awk
+# macOS ships, so a char-at-a-time substr scan ran past 60 s there), the recursion walks
+# index ranges of that array, and output goes through a small flushed buffer.
 maude_strip_quotes() {
-  local cmd="$1"
-  cmd="$(printf '%s' "$cmd" | tr '\n' ';')"
-  cmd="$(printf '%s' "$cmd" | sed -E "s/'[^']*'//g")"
-  cmd="$(printf '%s' "$cmd" | sed -E 's/"([^"\\]|\\.)*"//g')"
-  printf '%s' "$cmd"
+  printf '%s' "$1" | tr '\n' ';' | LC_ALL=C awk '
+    function emit(c) { buf = buf c; if (++bl >= 512) { printf "%s", buf; buf = ""; bl = 0 } }
+    function raw(lo, hi,   k) { for (k = lo; k <= hi; k++) emit(a[k]) }
+    # closer(p, hi, ch, esc): index of the next ch in p..hi, or 0. A backslash escapes
+    # when esc is set: always outside single quotes, and inside an ANSI-C dollar-quote,
+    # where backslash-quote does not end the span (a plain closer let one hide a later
+    # "$(...)"). No apostrophe may appear in this program: it sits in shell single quotes.
+    function closer(p, hi, ch, esc) {
+      for (; p <= hi; p++) {
+        if (esc && a[p] == "\\") { p++; continue }
+        if (a[p] == ch) return p
+      }
+      return 0
+    }
+    function sq_end(p, hi) { return closer(p + 1, hi, "\047", ansi_c(p)) }
+    # ansi_c(p): the quote at p opens an ANSI-C dollar-quote only when the dollar before
+    # it is a free one: after the run of dollars (a pair is the PID) less one escaped by
+    # an odd run of backslashes, an odd count is left (lens 2: a dollar-dollar or a
+    # backslash-dollar before a plain quote let its backslash-quote run on and swallow
+    # the command after it).
+    function ansi_c(p,   q, k, b) {
+      for (q = p - 1; q >= 1 && a[q] == "$"; q--) k++
+      for (; q >= 1 && a[q] == "\\"; q--) b++
+      if (b % 2) k--
+      return k % 2
+    }
+    # A word boundary before p: where bash can start a word that is a comment or a keyword.
+    function at_word(p, lo) { return p == lo || index(" \t;&|(", a[p - 1]) > 0 }
+    # dq_end(p, hi): index of the " closing the one at p, skipping what bash skips inside
+    # it; 0 when it never closes, -1 when a substitution in it is ambiguous.
+    function dq_end(p, hi,   j) {
+      for (p++; p <= hi; p++) {
+        if (a[p] == "\\") { p++; continue }
+        if (a[p] == "\"") return p
+        if (a[p] == "$" && p < hi && a[p + 1] == "(") {
+          j = close_paren(p + 1, hi); if (j <= 0) return j; p = j; continue
+        }
+        if (a[p] == "`") { j = closer(p + 1, hi, "`", 1); if (!j) return 0; p = j }
+      }
+      return 0
+    }
+    # close_paren(p, hi): index of the ")" matching the "(" at p, found as bash finds it:
+    # quoted spans and backticks are skipped. 0 when it never closes. -1 (AMBIGUOUS) on a
+    # # comment or a case: newlines are ";" here, so the end of a comment is lost, and a case
+    # pattern ")" closes nothing; the caller then reads the rest raw (lens 2026-10-08:
+    # each closed the $( early and the push after it passed).
+    function close_paren(p, hi,   d, j, lo, c) {
+      for (lo = p + 1; p <= hi; p++) {
+        c = a[p]
+        if (c == "\\") { p++; continue }
+        if (c == "\047") { j = sq_end(p, hi); if (!j) return 0; p = j; continue }
+        if (c == "\"") { j = dq_end(p, hi); if (j <= 0) return j; p = j; continue }
+        if (c == "`") { j = closer(p + 1, hi, "`", 1); if (!j) return 0; p = j; continue }
+        if (c == "#" && at_word(p, lo)) return -1
+        if (c == "c" && at_word(p, lo) && a[p+1] a[p+2] a[p+3] == "ase" && index(" \t", a[p + 4])) return -1
+        if (c == "(") d++
+        else if (c == ")" && --d == 0) return p
+      }
+      return 0
+    }
+    # strip(lo, hi, depth): a[lo..hi] with quoted spans erased; a $(...) or `...` inside
+    # double quotes is emitted between ";" and read through strip again.
+    function strip(lo, hi, depth,   i, c, j, q) {
+      if (depth > 16) { raw(lo, hi); return }
+      for (i = lo; i <= hi; ) {
+        c = a[i]
+        if (c == "\\") { raw(i, i + 1 <= hi ? i + 1 : hi); i += 2; continue }
+        if (c == "\047") {
+          j = sq_end(i, hi)
+          if (j == 0) { raw(i, hi); return }    # unterminated: the rest stays raw
+          i = j + 1; continue
+        }
+        if (c != "\"") { emit(c); i++; continue }
+        for (q = i++; i <= hi; i++) {
+          c = a[i]
+          if (c == "\\") { i++; continue }
+          if (c == "\"") break
+          if (c == "$" && i < hi && a[i + 1] == "(") {
+            j = close_paren(i + 1, hi)
+            if (j < 0) { raw(i, hi); return }   # ambiguous: the rest is read raw
+            if (j == 0) j = hi + 1
+            emit(";"); strip(i + 2, j - 1, depth + 1); emit(";"); i = j; continue
+          }
+          if (c == "`") {
+            j = closer(i + 1, hi, "`", 1); if (j == 0) j = hi + 1
+            emit(";"); strip(i + 1, j - 1, depth + 1); emit(";"); i = j; continue
+          }
+        }
+        if (i > hi) { raw(q, hi); return }      # unterminated "
+        i++
+      }
+    }
+    { n = split($0, a, ""); strip(1, n, 0); if (bl) printf "%s", buf }'
 }
 
 # Remove quote CHARACTERS but KEEP their content (newlines → ';', a command
@@ -1963,42 +2062,291 @@ maude_canon_path_view() {
 #     QUEUE — the old single-slot tracker treated body B as live commands.
 # Operates on the raw string BEFORE newline-flattening (heredoc bodies are
 # delimited by newlines).
+# The characters an unquoted heredoc delimiter may carry. Bash takes any word that is not a
+# metacharacter; `[A-Za-z_][A-Za-z0-9_]*` was too narrow — `<<END-OF-FILE` was keyed on
+# `END`, the closing line never matched, and every line after it was stripped as body (lens on
+# merged main, 2026-10-02: a real `eval '… --force'` on the next line passed).
+MAUDE_HEREDOC_DELIM='[A-Za-z0-9_.:/+@%,=!~*#?-]+'
+# The blanker keeps a quoted or escaped delimiter standing (`<<'EOF'` reads `<<` + this byte +
+# `EOF`) so the quoted-span rule after it cannot erase the opener: `cat <<'EOF' | bash` must
+# still read as a heredoc fed to a shell.
+MAUDE_HEREDOC_QMARK=$'\001'
+# … and a `<<` word it cannot read with certainty becomes this byte, `<<` included, so the
+# shell-fed scan counts no opener there. (The stripper does not read the blanker any more: it
+# fails closed on such a line through its own allowlist, maude_heredoc_line_ok, which also
+# tells a quoted delimiter from an unquoted one for the close.)
+MAUDE_HEREDOC_UNSURE=$'\002'
+
+# One line of a command, with everything that is NOT shell structure blanked, so that a
+# `<<` left standing is a heredoc opener and a word left standing is a word in command
+# position. Its one reader is maude_heredoc_shell_fed (maude-gate.sh). It began as the shared
+# reader of the stripper and that scan (the 2026-10-02 lens found their two copies drifting:
+# an escaped quote inside double quotes, `$'…'`, a nested paren in `$(( ))`); since the
+# allowlist (2026-10-04) the stripper reads lines with maude_heredoc_line_ok instead. In order:
+#   `<<<` herestrings are not openers;
+#   a delimiter the gate can read with certainty is a plain word, optionally quoted or
+#     escaped WHOLE (`<<EOF`, `<<'EOF'`, `<<"EOF"`, `<<\EOF`); any other `<<` word — a quote
+#     or a backslash inside it (`<<\#\#`, `<<E'O'F`, `<<"E\OF"`, `<<\-\-`) — is NOT an opener:
+#     no body is stripped and the lines after it are read as commands, fail-closed; so is a
+#     word with any character outside the class before its end (`<<EOF{`, `<<EOF[a]`,
+#     `<<EOF$X`: bash's delimiter is the whole word, and read as `EOF` the body closed past
+#     bash's close and hid the lines between — lens round 7, merged too, oracle RAN). The
+#     word ends where BASH ends it: a space, a tab, or `; | & < > )` — never `[[:space:]]`,
+#     which also ends it at `\r` `\v` `\f` and, in a UTF-8 locale, at Unicode spaces bash
+#     reads as word characters; and not at `(`, which extglob reads into the word (`<<@(x)`);
+#     each of those is a stray character, so the word opens no body (lens round 8). Lens
+#     rounds 3, 4 and 5 each found a new way to read such a word differently from bash, and
+#     every misread opened a body that never closed and swallowed a real force-push;
+#   an escaped metacharacter is INERT (`\<\<`, `<\<`, `\#`, `\$`, `\"` become `_`): the
+#     first cut unescaped it to the character, which MANUFACTURED a `<<` from `\<\<` and a
+#     comment from `\#` (lens round 2); an escaped letter is the letter (`b\ash` is bash);
+#   arithmetic is blanked to two levels of inner parens — `$((…))`, the `((…))` command,
+#     `$[…]` — and an array subscript `a[…]` is its name: bash reads `<<` there as a shift,
+#     and a delimiter class that admits digits would otherwise open a body on `<< 2`;
+#   an array literal `x=(…)` (also `declare -a x=(…)`, `x+=(…)`) is `x=()`: bash reads its
+#     words, not redirections, so `x=(1<<2)` opens nothing (lens round 3, oracle RAN);
+#   `${NAME}` becomes `$NAME` so `${0}` / `${SHELL}` stay readable as shell words, then any
+#     other `${…}` expansion becomes `$X` — still a variable in command position, so
+#     `${SH:-bash} <<EOF` is read as a shell held in a variable, and `${x:-<<EOF}` is not
+#     an opener;
+#   real quoted delimiters are protected (`<<'EOF'` → `<<` MAUDE_HEREDOC_QMARK `EOF`) before
+#     the span blanking;
+#   quoted spans go in ONE left-to-right pass — `$'…'`, `'…'`, `"…"` — a span that is a single
+#     word is that word (`exec -i c 'bash'` runs bash), any other span becomes ONE SPACE: a
+#     space, not nothing, so `<''<` cannot close up into `<<`; ONE pass, because a separate
+#     single-word rule run first paired the closing quote of `'s <<EOF '` with the opening
+#     quote of `'x'` in `echo it's <<EOF 'x'` and left the `<<` standing (lens round 2), the
+#     same way two span passes once paired the apostrophe in "it's" with a later `'`;
+#   a `#` comment is not shell, after whitespace OR a separator (`echo |#…`).
+# Residual, named: `$((` nested three deep, an UNBALANCED quote, and an escaped `$` before
+# `{` (`\${x:-<<EOF}` reads a delimiter `EOF` where bash reads `EOF}`) still leave or move
+# the token (pinned).
+maude_blank_opener_line() {
+  local scan="${1//<<</ }" dc="${MAUDE_HEREDOC_DELIM#[}" bl=$' \t'
+  dc="${dc%-]+}"
+  printf '%s' "$scan" | sed -E \
+    -e "s/<<(-?)[$bl]*'($MAUDE_HEREDOC_DELIM)'/<<\1$MAUDE_HEREDOC_QMARK\2/g" \
+    -e "s/<<(-?)[$bl]*\"($MAUDE_HEREDOC_DELIM)\"/<<\1$MAUDE_HEREDOC_QMARK\2/g" \
+    -e "s/<<(-?)[$bl]*\\\\($MAUDE_HEREDOC_DELIM)([$bl]|$|[;|&<>)])/<<\1$MAUDE_HEREDOC_QMARK\2\3/g" \
+    -e "s/<<-?[$bl]*[^$bl]*[\\\\'\"][^$bl]*/ $MAUDE_HEREDOC_UNSURE /g" \
+    -e "s}<<-?[$bl]*$MAUDE_HEREDOC_QMARK?[$dc-]*[^$dc$MAUDE_HEREDOC_QMARK$bl;|&<>)-][^$bl;|&<>()]*} $MAUDE_HEREDOC_UNSURE }g" \
+    -e 's/\\([^A-Za-z0-9_])/_/g' \
+    -e 's/\$?\(\(([^()]|\([^()]*\)|\(([^()]|\([^()]*\))*\))*\)\)/ /g' \
+    -e 's/\+?=\(([^()]|\([^()]*\))*\)/=()/g' \
+    -e 's/\$\[[^]]*\]/ /g' \
+    -e 's/([A-Za-z_][A-Za-z0-9_]*)\[[^]]*\]/\1/g' \
+    -e 's/\$\{([A-Za-z_0-9]+)\}/$\1/g' \
+    -e 's/\$\{[^}]*\}/$X/g' \
+    -e "s/\\\$'[^']*'|'([A-Za-z_\$][A-Za-z0-9_]*)'|'[^']*'|\"([A-Za-z_\$][A-Za-z0-9_]*)\"|\"[^\"]*\"/\1\2 /g" \
+    -e 's/\\(.)/\1/g' \
+    -e 's/(^|[[:space:];|&(){}])#.*$/\1/'
+}
+
+# A quote can run across lines: `echo "a <<2` ⏎ `b"` is one string, and bash reads no heredoc
+# in it, while the next line after the close is a command again (lens round 3: the digit `2`
+# made the standing `<<2` a delimiter where `<<EOF` never was). The shell-fed scan reads lines
+# through this (the stripper did until the allowlist, 2026-10-04): it carries the open quote in MAUDE_INQ (reset it to ""
+# before a walk), leaves in MAUDE_SCAN only the blanked text that is OUTSIDE a quote still
+# open from an earlier line, and on the line where a quote closes the rest of that line. It
+# writes variables, not stdout, because a `$( )` call would lose the carried state. A quote
+# char left standing after blanking (balanced spans are gone by then) is one that opens and
+# does not close on its line — except the `"` of `"$(`: a command substitution starts a new
+# parse inside the quotes, so `git commit -m "$(cat <<'EOF'` IS an opener line and the `)"`
+# that closes it lines later is that quote's close, not a new open (MAUDE_DQSUB carries it).
+# The close is the first UNESCAPED quote of the open kind (`"`, `'`, or `$'`). Known short: a
+# `"$(` nested in another.
+MAUDE_INQ=""
+MAUDE_DQSUB=""
+MAUDE_SCAN=""
+maude_blank_outside_quotes() {
+  local line="$1" q probe rest
+  MAUDE_SCAN=""
+  if [ -n "$MAUDE_INQ" ]; then
+    # The close is the first quote char that is not escaped: inside `"…"` and `$'…'` a `\"` /
+    # `\'` is a character, not the close (lens round 4: `echo "a` ⏎ `\" x <<2` ⏎ `"` closed
+    # early and a bare force-push after the real close ran). Escapes are neutralised in a
+    # same-length probe so the cut lands on the original line. A plain `'…'` has no escapes.
+    q="${MAUDE_INQ#\$}"; probe="$line"
+    case "$MAUDE_INQ" in '"'|"\$'") probe="${probe//\\\\/__}"; probe="${probe//\\$q/__}" ;; esac
+    case "$probe" in
+      *"$q"*) rest="${probe#*"$q"}"; line="${line:$(( ${#probe} - ${#rest} ))}"; MAUDE_INQ="" ;;
+      *) return 0 ;;
+    esac
+  fi
+  # `"$(` … `)` … `"`: the substitution's commands are shell, the text between its closing
+  # paren and the closing quote is quoted (`echo "$(echo a)<<EOF"` opens nothing — lens round 3
+  # differential, oracle RAN). Matched on this line by paren depth; unmatched, it closes on a
+  # later line and MAUDE_DQSUB carries that.
+  local pre rest inner after j depth
+  while [[ "$line" == *'"$('* ]]; do
+    pre="${line%%\"\$(*}"; rest="${line#*\"\$(}"
+    depth=1; j=0
+    while [ "$j" -lt "${#rest}" ] && [ "$depth" -gt 0 ]; do
+      case "${rest:$j:1}" in '(') depth=$((depth+1)) ;; ')') depth=$((depth-1)) ;; esac
+      j=$((j+1))
+    done
+    if [ "$depth" -gt 0 ]; then line="$pre \$($rest"; MAUDE_DQSUB=1; break; fi
+    inner="${rest:0:$j}"; after="${rest:$j}"
+    case "$after" in *\"*) after=" ${after#*\"}" ;; esac
+    line="$pre \$($inner$after"
+  done
+  MAUDE_SCAN="$(maude_blank_opener_line "$line")"
+  while [[ "$MAUDE_SCAN" =~ [\'\"] ]]; do
+    q="${BASH_REMATCH[0]}"
+    if [ "$q" = '"' ] && [ -n "$MAUDE_DQSUB" ]; then
+      # The close of a `"$(` from an earlier line: what stands between the substitution's
+      # last `)` and this quote is quoted text.
+      pre="${MAUDE_SCAN%%\"*}"; after="${MAUDE_SCAN#*\"}"
+      case "$pre" in *\)*) pre="${pre%\)*})" ;; esac
+      MAUDE_DQSUB=""; MAUDE_SCAN="$pre $after"; continue
+    fi
+    # `$'` opens an ANSI-C string, whose `\'` is a character; remember which kind is open.
+    MAUDE_SCAN="${MAUDE_SCAN%%"$q"*}"
+    if [ "$q" = "'" ] && [[ "$MAUDE_SCAN" == *'$' ]]; then MAUDE_INQ="\$'"; else MAUDE_INQ="$q"; fi
+    break
+  done
+}
+
+# An opener line the gate strips after is one it can prove bash reads the same way (2026-10-04,
+# John's ruling after lens rounds 5-9 each found one more divergence in a parser that tried to
+# read every shape). EVERY command line, from the first, is read by ONE left-to-right pass that
+# accepts only these tokens, each structurally the same to bash (same line boundary, same quote
+# state at the end of the line, same openers):
+#   blanks       space, tab: bash's own word separators (not \r \v \f, not Unicode spaces);
+#   words        [A-Za-z0-9_./:=@%+,~*?-]: no quote, expansion, escape, group or comment char;
+#                a glob or `~` expands, but expansion never changes where a line or a quote ends;
+#   $NAME ${NAME} $1 $@ $? and the other special parameters, in a word or inside "...": bash
+#                parses the line BEFORE it expands, and an expanded value is never parsed again,
+#                so it cannot open a quote, a heredoc or a line; `$(` `$((` `${x:-...}` `$'...'`
+#                are not this (their insides can hold quotes and heredocs) and are rejected
+#                (the one widening the real-command corpus asked for: 7 of 5,122 heredoc
+#                commands run here blocked on a path in a variable, 2026-10-04);
+#   '...'        any bytes but `'`, closed on the same line: bash reads nothing inside;
+#   "..."        no `"` `\` or backtick inside, and a `$` only as a parameter above, closed on
+#                the same line;
+#   operators    | || & && ; > >> >| < >& <& : metacharacters, they end a word in bash too;
+#   # at a token start, to the end of the line: bash's comment (a `#` inside a word is not one,
+#                and is rejected as a non-word character);
+#   an opener    << or <<-, blanks, then WORD, 'WORD', "WORD" or \WORD, WORD being
+#                [A-Za-z_][A-Za-z0-9_.-]*, ended by a blank, an operator or the end of the line:
+#                bash's delimiter is the same word; quoted or escaped, the body does not join;
+#   `"$(cat <<OPENER` ending the line: the commit-message shape; its `)"` comes after the body.
+# Anything else ends the stripping: that line and every later line are read as commands (a
+# `$`, `\`, `(`, `{`, a backtick, `<<<`, an unclosed quote, a byte bash reads into a word). Cost,
+# named: a heredoc after such a line keeps its body in the scan.
+#
+# A body ends on the line bash ends it on, exactly: no trimming (`EOF `, `  EOF`, `EOF\r` close
+# nothing in bash), leading TABS stripped under `<<-`, and in an UNQUOTED body a line ending in
+# an odd run of `\` joins the next before the compare (`EO\` ⏎ `F` closes `<<EOF`). Closing
+# early is not safe: body text after a too-early close is read as commands, and a `cat <<Z` in
+# it would open a phantom over the lines bash runs after its real close (round 6). A body that
+# never closes is not stripped: its lines are handed back.
+MAUDE_HEREDOC_WORDCH='A-Za-z0-9_./:=@%+,~*?-'
+maude_heredoc_line_ok() {
+  # Sets MAUDE_HD_Q / MAUDE_HD_DASH / MAUDE_HD_QUOT (space-separated, one per opener) and
+  # returns 0 when every token of $1 is one the header above accepts.
+  # LC_ALL=C for this function only: in a UTF-8 locale a range like `A-Za-z0-9` also matches
+  # accented letters and non-ASCII digits, and the accepted set must not move with the locale.
+  # ${#1} and every offset below count BYTES under it, so the slicing agrees with the regexes.
+  local LC_ALL=C
+  local s="$1" i=0 n c rest w d qt tab=$'\t'
+  n="${#s}"
+  local param='\$([A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\}|[0-9@*#?$!-])'
+  local word="^([$MAUDE_HEREDOC_WORDCH]|$param)+" delim='^[A-Za-z_][A-Za-z0-9_.-]*'
+  MAUDE_HD_Q="" MAUDE_HD_DASH="" MAUDE_HD_QUOT=""
+  while [ "$i" -lt "$n" ]; do
+    c="${s:$i:1}"; rest="${s:$i}"
+    case "$c" in
+      ' '|"$tab") i=$((i + 1)); continue ;;
+      '#') return 0 ;;
+    esac
+    if [[ "$rest" =~ ^\"\$\(cat[\ $'\t']+\<\<(-?)[\ $'\t']*(\'[A-Za-z_][A-Za-z0-9_.-]*\'|\"[A-Za-z_][A-Za-z0-9_.-]*\"|\\[A-Za-z_][A-Za-z0-9_.-]*|[A-Za-z_][A-Za-z0-9_.-]*)[\ $'\t']*$ ]]; then
+      d="${BASH_REMATCH[1]}"; w="${BASH_REMATCH[2]}"; qt=""
+      case "$w" in \'*|\"*) w="${w:1:${#w}-2}"; qt=1 ;; \\*) w="${w:1}"; qt=1 ;; esac
+      MAUDE_HD_Q="$MAUDE_HD_Q $w" MAUDE_HD_DASH="$MAUDE_HD_DASH ${d:-_}" MAUDE_HD_QUOT="$MAUDE_HD_QUOT ${qt:-_}"
+      return 0
+    fi
+    case "$rest" in
+      '<<<'*) return 1 ;;   # also refused by the delimiter rule below today (`<` starts no word); explicit so a wider delimiter cannot open one
+      '<<'*)
+        i=$((i + 2)); d="_"
+        [ "${s:$i:1}" = "-" ] && { d="-"; i=$((i + 1)); }
+        while [ "$i" -lt "$n" ] && { [ "${s:$i:1}" = " " ] || [ "${s:$i:1}" = "$tab" ]; }; do i=$((i + 1)); done
+        rest="${s:$i}"; qt="_"
+        case "$rest" in
+          \'*) rest="${rest:1}"; qt=1; [[ "$rest" =~ $delim ]] || return 1; w="${BASH_REMATCH[0]}"
+               [ "${rest:${#w}:1}" = "'" ] || return 1; i=$((i + ${#w} + 2)) ;;
+          \"*) rest="${rest:1}"; qt=1; [[ "$rest" =~ $delim ]] || return 1; w="${BASH_REMATCH[0]}"
+               [ "${rest:${#w}:1}" = '"' ] || return 1; i=$((i + ${#w} + 2)) ;;
+          \\*) rest="${rest:1}"; qt=1; [[ "$rest" =~ $delim ]] || return 1; w="${BASH_REMATCH[0]}"
+               i=$((i + ${#w} + 1)) ;;
+          *) [[ "$rest" =~ $delim ]] || return 1; w="${BASH_REMATCH[0]}"; i=$((i + ${#w})) ;;
+        esac
+        # The word ends where bash ends it: a blank, an operator, the end of the line.
+        case "${s:$i:1}" in ''|' '|"$tab"|';'|'|'|'&'|'<'|'>') ;; *) return 1 ;; esac
+        MAUDE_HD_Q="$MAUDE_HD_Q $w" MAUDE_HD_DASH="$MAUDE_HD_DASH $d" MAUDE_HD_QUOT="$MAUDE_HD_QUOT $qt"
+        continue ;;
+      '||'*|'&&'*|'>>'*|'>|'*|'>&'*|'<&'*) i=$((i + 2)); continue ;;
+      ';;'*) return 1 ;;
+      '|'*|'&'*|';'*|'>'*|'<'*) i=$((i + 1)); continue ;;
+    esac
+    # A word: runs of word characters and closed quotes, glued (`a'b'"c"`).
+    local took=""
+    while [ "$i" -lt "$n" ]; do
+      rest="${s:$i}"
+      if [[ "$rest" =~ $word ]]; then i=$((i + ${#BASH_REMATCH[0]})); took=1; continue; fi
+      case "$rest" in
+        \'*) rest="${rest:1}"; case "$rest" in *\'*) ;; *) return 1 ;; esac
+             w="${rest%%\'*}"; i=$((i + ${#w} + 2)); took=1; continue ;;
+        \"*) rest="${rest:1}"; case "$rest" in *\"*) ;; *) return 1 ;; esac
+             w="${rest%%\"*}"
+             local inner="$w"
+             while [[ "$inner" =~ $param ]]; do inner="${inner/"${BASH_REMATCH[0]}"/}"; done
+             case "$inner" in *\\*|*\$*|*\`*) return 1 ;; esac
+             i=$((i + ${#w} + 2)); took=1; continue ;;
+      esac
+      break
+    done
+    [ -n "$took" ] || return 1
+    # After a word: a blank, an operator, or the end; anything else is not ours.
+    case "${s:$i:1}" in ''|' '|"$tab"|';'|'|'|'&'|'<'|'>') ;; *) return 1 ;; esac
+  done
+  return 0
+}
+
 maude_strip_heredocs() {
-  local input="$1" out="" line trimmed scan
-  local -a q=()
+  local input="$1" out="" line logical join="" bs pend="" tab=$'\t' stop="" j
+  local -a q=() qdash=() qquot=() nq nd nt
   local h=0
   while IFS= read -r line || [ -n "$line" ]; do
+    if [ -n "$stop" ]; then out+="$line"$'\n'; continue; fi
     if [ "$h" -lt "${#q[@]}" ]; then
-      # ltrim+rtrim whitespace (covers <<- tab-indented close)
-      trimmed="${line#"${line%%[![:space:]]*}"}"
-      trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
-      [ "$trimmed" = "${q[$h]}" ] && h=$((h + 1))
+      pend+="$line"$'\n'
+      logical="$join$line"; join=""
+      if [ "${qquot[$h]}" = "_" ]; then
+        bs="${line##*[!\\]}"
+        if [ $(( ${#bs} % 2 )) -eq 1 ]; then join="${logical%\\}"; continue; fi
+        # An unquoted delimiter's body is EXPANDED: bash runs $(...) and `...` in it, so it
+        # is not text (lens 2026-10-06: `cat <<EOF` / `$(git push --force)` / `EOF` passed).
+        # A body line that holds either ends the stripping and is emitted for the matcher.
+        # It is tested and emitted as the LOGICAL line, after bash's backslash-newline join:
+        # `$(git pu\` then `sh --force)` is one push, and neither piece reads as one.
+        # (${ and $[ run nothing without a $( or ` inside, so they are not reasons to read.)
+        case "$logical" in *'$('*|*'`'*)
+          stop=1; out+="$logical"$'\n'; pend=""; continue ;;
+        esac
+      fi
+      [ "${qdash[$h]}" = "-" ] && logical="${logical#"${logical%%[!$tab]*}"}"
+      if [ "$logical" = "${q[$h]}" ]; then h=$((h + 1)); pend=""; fi
       continue   # drop body lines AND the closing delimiter line
     fi
-    # Blind tokens that LOOK like heredoc openers but are not, in order:
-    # <<< herestrings; $((…)) arithmetic; then PROTECT real quoted delimiters
-    # (<<'EOF' → <<EOF) so the quoted-SPAN blanking that follows cannot eat
-    # them. What remains in quotes is prose — `echo "note << EOF"` — and
-    # blanking it is exactly what stops the phantom body. Quotes go in ONE
-    # left-to-right pass: two passes paired the apostrophe in "it's" with a
-    # later `'` and ate the real text between. An escaped `\<<` and a `#`
-    # comment are not openers either: `# note <<EOF` on one line made the
-    # next line's real `bash <<EOF` a body and stripped it (lens, 2026-10-01).
-    scan="${line//<<</ }"
-    scan="${scan//\\<</  }"
-    scan="$(printf '%s' "$scan" | sed -E \
-      -e 's/\$\(\([^)]*\)\)//g' \
-      -e "s/<<(-?)[[:space:]]*'([A-Za-z_][A-Za-z0-9_]*)'/<<\1\2/g" \
-      -e 's/<<(-?)[[:space:]]*"([A-Za-z_][A-Za-z0-9_]*)"/<<\1\2/g' \
-      -e "s/('[^']*'|\"[^\"]*\")//g" \
-      -e 's/(^|[[:space:]])#.*$//')"
-    # Queue EVERY delimiter on the line: << [-] [spaces] [\] WORD.
-    while [[ "$scan" =~ \<\<-?[[:space:]]*\\?([A-Za-z_][A-Za-z0-9_]*) ]]; do
-      q+=("${BASH_REMATCH[1]}")
-      scan="${scan#*"${BASH_REMATCH[0]}"}"
-    done
+    join=""
+    if ! maude_heredoc_line_ok "$line"; then stop=1; out+="$line"$'\n'; continue; fi
+    read -r -a nq <<< "$MAUDE_HD_Q"; read -r -a nd <<< "$MAUDE_HD_DASH"; read -r -a nt <<< "$MAUDE_HD_QUOT"
+    for j in "${!nq[@]}"; do q+=("${nq[$j]}"); qdash+=("${nd[$j]}"); qquot+=("${nt[$j]}"); done
     out+="$line"$'\n'
   done <<< "$input"
+  [ "$h" -lt "${#q[@]}" ] && out+="$pend"
   printf '%s' "$out"
 }
 
