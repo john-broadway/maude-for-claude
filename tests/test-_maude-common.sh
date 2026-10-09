@@ -88,9 +88,12 @@ input='git commit -m "$(cat <<'"'"'EOF'"'"'
 mentions git push in body
 EOF
 )"'
-got="$(maude_strip_quotes "$input")"
-# After flatten + strip single-quotes, then double-quotes: only `git commit -m ` remains.
-assert_not_contains "$got" "git push" "literal scrubbed from heredoc"
+# strip_quotes alone keeps a "$(...)" (bash runs it) and cannot know the heredoc inside is
+# literal; every caller strips heredoc bodies FIRST, and that composed view is the one
+# that must scrub the body (2026-10-08).
+got="$(maude_strip_quotes "$(maude_strip_heredocs "$input")")"
+assert_not_contains "$got" "git push" "literal scrubbed from heredoc (heredocs, then quotes)"
+assert_not_contains "$got" '"' "the double quotes are gone"
 
 test_start "strip_quotes preserves unquoted content"
 got="$(maude_strip_quotes "git push origin main")"

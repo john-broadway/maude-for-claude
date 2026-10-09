@@ -103,9 +103,11 @@ MAP="$SELF/house-map.md"
    stayed true.
 
 4. **Tomorrow's starting point.** Write a one-line "what to come back to" into the sources
-   the map says carry it — the `digest-fanout` source's live buffer (`now.md`) and the
-   `handoff-only` source's `## Next` section. Don't hard-code paths; use whichever sources
-   hold those tokens.
+   the map says carry it — the `digest-fanout` source and the `handoff-only` source's
+   `## Next` section. Don't hard-code paths; use whichever sources hold those tokens. For
+   `digest-fanout`, the `## Tomorrow` lines go INSIDE the digest that step 2's save loop pipes to
+   `scripts/maude-now-write.sh`; never append them to `now.md` on their own (a second
+   block is how the buffer stacked, 2026-10-06).
    ```
    ## Tomorrow
    - <one concrete next action, ≤1 line>

@@ -125,7 +125,7 @@ To recall something for the user:
 ## How you write
 
 To save something for the user:
-1. Always write to Anthropic auto-memory: update `now.md` (overwrite — it's the live buffer), append to `today-$(date +%Y-%m-%d).md` and `recent.md`.
+1. Always write to Anthropic auto-memory through the one writer: `printf '%s\n' "$DIGEST" | bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-now-write.sh"` (first line `## HH:MM | <topic>`). It appends to `today-<date>.md` and `recent.md`, then makes `now.md` that one block.
 2. THEN, for each writable location in the house-map (journal/, decisions/, etc.), append the appropriate slice — only if the user has indicated they want that destination touched (check the map's "watch list" or "notes" section).
 3. Report which destinations got the write.
 

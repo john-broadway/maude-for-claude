@@ -193,8 +193,15 @@ RMR="${ABS}"'rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]
 #    unsafe before. This matters doubly since the strip now also feeds the
 #    COMMAND patterns: an adversarial pass measured the quoted-opener
 #    phantom silently swallowing a real `git push --force` on the next
-#    line. Residual, pinned in tests: an UNBALANCED quote before `<<WORD`
-#    still opens a phantom body and can under-block a later command.
+#    line. The old residual (an UNBALANCED quote before `<<WORD` opened a
+#    phantom body) closed 2026-10-03: the open quote is carried across lines
+#    (maude_blank_outside_quotes), so a `<<` inside it is text.
+#    2026-10-02: the blanking moved into ONE function (maude_blank_opener_line)
+#    read by both the stripper and maude_heredoc_shell_fed, after a lens on the
+#    merged main found the two copies had drifted (`\"` inside double quotes,
+#    `$'…'`, a nested paren in `$(( ))`, `${x:-<<EOF}`) and the delimiter class
+#    was narrower than bash's (`<<END-OF-FILE` keyed on `END`). Still open: a
+#    `$((` nested two deep, and a delimiter outside MAUDE_HEREDOC_DELIM.
 # ──────────────────────────────────────────────────────────────────────────
 
 # Sole-copy targets come from the config-aware list (generic defaults + local
@@ -504,37 +511,91 @@ fi
 # `perl -`, `node -`, `make -f -`) is not on the list: a python body that quotes
 # "bash -c '…'" is the incident this exists to pass, and one that runs it is
 # indistinguishable from it; the plain patterns never read those bodies either.
+# The opener line is not always where the command word is (lens on merged main, 2026-10-02):
+# `bash \` ⏎ `<<EOF` joins by continuation, and `(` ⏎ `bash` ⏎ `) <<EOF` feeds a group, so the
+# lines joined to the opener by a trailing `\`, and — when only a group closer stands before
+# the `<<` — the group's lines back to its opener, are scanned with it. A shell held in a
+# variable (`$SH <<EOF`, `"$SH"`) cannot be read, so a `$NAME` in command position counts as a
+# shell: fail-closed, at the named cost that `$PYTHON - <<EOF` keeps its body in the scan.
 maude_heredoc_shell_fed() {
-  local stripped="$1" line scan tail="" seen="" target="" rest
-  # The same blanking the stripper does, so the two agree on what an opener line is;
-  # plus a quoted single word is that word (`exec -i c 'bash'` runs bash). One pass over an
-  # alternation, never a back-reference: BSD sed -E has none, so on macOS `(['"])…\1`
-  # matched nothing, the next rule erased `'bash'` as a quoted span, and the shell went
-  # unseen. One pass, not one rule per quote: two rules cascade, unwrapping `"'bash'"` twice.
-  local blank="s/'([A-Za-z_\$][A-Za-z0-9_{}]*)'|\"([A-Za-z_\$][A-Za-z0-9_{}]*)\"/\1\2/g; s/('[^']*'|\"[^\"]*\")//g; s/(^|[[:space:]])#.*$//"
-  local shellw='(^|[[:space:]/({`])(bash|sh|dash|zsh|ksh|fish|ash|csh|tcsh|rbash|mksh|pwsh|ssh|su|chroot|eval|screen|\$0|\$\{?SHELL\}?|\$\{?BASH\}?|proc/self/exe)([[:space:]);}<>`]|$)'
-  local cmdw='^[[:space:]]*(source|\.)[[:space:]]'
+  local stripped="$1" line scan tail="" seen="" target="" rest head="" before i
+  local -a prior=()
+  # Every line is read through maude_blank_opener_line — the SAME blanking the stripper
+  # uses, so the two cannot disagree on what an opener is (`${0}` arrives as `$0`,
+  # `${SHELL}` as `$SHELL`, `b\ash` as `bash`, `'bash'` as `bash`).
+  local shellw='(^|[[:space:]/({`])(bash|sh|dash|zsh|ksh|fish|ash|csh|tcsh|rbash|mksh|pwsh|ssh|su|chroot|eval|screen|\$0|\$SHELL|\$BASH|proc/self/exe)([[:space:]);}<>`]|$)'
+  # What may stand before the command word and leave it the command word: an assignment
+  # (`FOO=1`, `FOO=$X`), a redirect (`</dev/null`, `<<EOF`, `2>&1`), or a wrapper with its
+  # options. Each wrapper has its own option grammar, because an option that TAKES an argument
+  # (`sudo -u root`, `nice -n 5`) must take it, attached or detached, and may not take nothing:
+  # the first cut let `-u` take nothing, so `sudo -u $U tee <<EOF` read `$U` as the command
+  # (lens round 2, false block); and `-n` is an argument-taker for nice but not for sudo, so
+  # one shared letter set made `sudo -n -u $U` swallow `-u`. A detached argument never starts
+  # with `-`. `--user root` (a long option with a detached argument) is not a prefix; open.
+  local arg='([[:space:]]+[^-[:space:]][^[:space:]]*|[^[:space:]]+)'
+  local sudo_o="[[:space:]]+(-[ugCDhpRTUrt]$arg|-[^-ugCDhpRTUrt[:space:]][^[:space:]]*|--[^[:space:]]*)"
+  local nice_o="[[:space:]]+(-n$arg|-[^-n[:space:]][^[:space:]]*|--[^[:space:]]*)"
+  # env -u NAME / -C dir / -S string; timeout -s SIG / -k DUR; exec -a NAME take an argument
+  # (lens round 3: `env -u X $SH`, `timeout -s KILL 5 $SH`, `exec -a name $SH` ran the body).
+  local env_o="[[:space:]]+(-[uCS]$arg|-[^-uCS[:space:]][^[:space:]]*|--[^[:space:]]*)"
+  local tmo_o="[[:space:]]+(-[sk]$arg|-[^-sk[:space:]][^[:space:]]*|--[^[:space:]]*)"
+  local exec_o="[[:space:]]+(-a$arg|-[^-a[:space:]][^[:space:]]*)"
+  local ion_o="[[:space:]]+(-[cn]$arg|-[^-cn[:space:]][^[:space:]]*|--[^[:space:]]*)"
+  local sb_o="[[:space:]]+(-[ioe]$arg|-[^-ioe[:space:]][^[:space:]]*|--[^[:space:]]*)"
+  local gen_o='[[:space:]]+-[^[:space:]]*'
+  local wrap="(sudo($sudo_o)*|nice($nice_o)*|env($env_o)*|exec($exec_o)*|ionice($ion_o)*|stdbuf($sb_o)*|timeout($tmo_o)*[[:space:]]+[0-9][^[:space:]]*|(nohup|time|command|builtin|setsid|chrt|unbuffer|doas)($gen_o)*)"
+  # A keyword or `!` before the command word is not the command word either (`if $SH <<EOF`,
+  # `! $SH <<EOF`, `while $SH`).
+  local pfx="([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|[0-9]*[<>][<>&|]?[^[:space:]]*|$wrap|if|then|else|elif|do|while|until|!)[[:space:]]+"
+  local cmdw="^[[:space:]({]*($pfx)*(source|\.)[[:space:]]"
+  # A shell held in a variable cannot be read; a `$NAME` (or a `${…}` expansion, which the
+  # blanker hands over as `$X`) in command position counts as one, fail-closed. `{` and `(`
+  # before it are group openers, not words.
+  local varw="^[[:space:]({]*($pfx)*\\\$[A-Za-z_][A-Za-z0-9_]*([[:space:]<>)]|$)"
   local sudow='(^|[[:space:]])sudo[[:space:]].*(-[A-Za-z]*[is]|--login|--shell)([[:space:]]|$)'
+  # Read and written by maude_blank_outside_quotes (_maude-common.sh): the quote and `$(` it
+  # carries across lines. Reset per command so one call's open quote never leaks into the next.
+  # shellcheck disable=SC2034
+  MAUDE_INQ=""
+  # shellcheck disable=SC2034
+  MAUDE_DQSUB=""
   while IFS= read -r line || [ -n "$line" ]; do
+    # Through the same quote-carrying blanker as the stripper: a line inside a quote that
+    # opened earlier is text, not an opener and not a shell word.
+    maude_blank_outside_quotes "$line"; scan="$MAUDE_SCAN"
     if [ -z "$seen" ]; then
-      case "$line" in *'<<'*) ;; *) continue ;; esac
-      scan="${line//<<</ }"; scan="${scan//\\<</  }"
-      scan="$(printf '%s' "$scan" | sed -E \
-        -e 's/\$\(\([^)]*\)\)//g' \
-        -e "s/<<(-?)[[:space:]]*'([A-Za-z_][A-Za-z0-9_]*)'/<<\1\2/g" \
-        -e 's/<<(-?)[[:space:]]*"([A-Za-z_][A-Za-z0-9_]*)"/<<\1\2/g' \
-        -e "$blank")"
-      case "$scan" in *'<<'*) seen=1 ;; *) continue ;; esac
+      case "$scan" in *'<<'*) ;; *) prior+=("$scan"); continue ;; esac
+      seen=1
+      # The head: lines joined to the opener by `\`⏎ …
+      i=${#prior[@]}
+      while [ "$i" -gt 0 ] && [[ "${prior[$((i-1))]}" == *\\ ]]; do
+        i=$((i-1)); head="${prior[$i]%\\} $head"
+      done
+      # … and, when nothing but `)` / `}` stands before the `<<`, the group above it, back to
+      # the line that opened it — counting nesting, so an inner `( cat )` on the way up does
+      # not end the walk early (lens round 3) — or every prior line, if none does: fail-closed.
+      before="${scan%%<<*}"
+      local closer='^[[:space:])}]*$' depth=0 o c
+      if [[ "$before" =~ $closer ]]; then
+        depth="$(printf '%s' "$before" | tr -cd ')}' | wc -c)"; [ "$depth" -gt 0 ] || depth=1
+        while [ "$i" -gt 0 ]; do
+          i=$((i-1)); head="${prior[$i]}"$'\n'"$head"
+          o="$(printf '%s' "${prior[$i]}" | tr -cd '({' | wc -c)"
+          c="$(printf '%s' "${prior[$i]}" | tr -cd ')}' | wc -c)"
+          depth=$((depth + c - o)); [ "$depth" -le 0 ] && break
+        done
+      fi
+      scan="$head$scan"
       # The body written to a FILE that something later runs by path: `cat <<EOF > r.sh;
       # chmod +x r.sh; ./r.sh`, or `/tmp/r` on a later line, or `at -f r now`. Remember the
       # redirect target; if its name recurs as a word after the opener, the body runs.
-      if [[ "$scan" =~ \>\>?[[:space:]]*([^[:space:]\;\|\&\<\>]+) ]]; then
+      # The fd digits go with the redirect (`2>/dev/null $SH`): removing only `>/dev/null` left
+      # a `2` standing as the command word (lens round 3).
+      if [[ "$scan" =~ [0-9]*\>\>?[[:space:]]*([^[:space:]\;\|\&\<\>]+) ]]; then
         target="${BASH_REMATCH[1]}"
         rest="${scan#*"${BASH_REMATCH[0]}"}"
         scan="${scan%%"${BASH_REMATCH[0]}"*} $rest"
       fi
-    else
-      scan="$(printf '%s' "$line" | sed -E -e "$blank")"
     fi
     tail+="$scan"$'\n'
   done <<< "$stripped"
@@ -547,7 +608,7 @@ maude_heredoc_shell_fed() {
     # `r.sh.bak` and `r.sh-old` do not.
     printf '%s' "$tail" | grep -qE "(^|[[:space:]/(])($t|$b)([^[:alnum:]_.-]|$)" && return 0
   fi
-  printf '%s' "$tail" | tr ';|&' '\n\n\n' | grep -qE "$shellw|$cmdw|$sudow"
+  printf '%s' "$tail" | tr ';|&' '\n\n\n' | grep -qE "$shellw|$cmdw|$varw|$sudow"
 }
 
 # ── #3 shell wrapping ────────────────────────────────────────────────────────

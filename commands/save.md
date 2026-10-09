@@ -48,10 +48,15 @@ Report per-tier success/fail in the output.
    cached; Tier 2 only if registered writable + auth env set), then execute its leading
    `write:` **token**:
 
-   - **`digest-fanout`** — overwrite the source's live buffer (`now.md`) with the digest;
-     append a `## $TIME | <topic>` block + 1-line summary to its `today-$TODAY.md`; append
-     one line to its `recent.md`. (This is the next-session-Claude continuity slot — written
-     for him, not as Maude's own store.)
+   - **`digest-fanout`** — pipe the digest to the one writer; never write `now.md` by hand:
+     ```bash
+     printf '%s\n' "$DIGEST" | bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-now-write.sh"
+     ```
+     The digest's first line is `## $TIME | <topic>` (the writer refuses any other first
+     line, since it is the line the wake reads). The writer appends the block to
+     `today-$TODAY.md` and its header to `recent.md`, then replaces `now.md` with that one
+     block, and prints the header it read back. Report that line, not your intent. (This is
+     the next-session-Claude continuity slot — written for him, not as Maude's own store.)
    - **`handoff-only`** — overwrite ONLY the source's single handoff file (e.g.
      `remember.md`) in the handoff format below. **Never** touch any other file in that dir
      (`now.md`, `today-*.md`, `recent.md`, `archive.md`, `core-memories.md`, `logs/`,
