@@ -48,7 +48,8 @@ HAS_MAP=""
 TOPIC_COUNT=0
 
 # Tier 1: Anthropic auto-memory live buffer
-# Append-only, oldest-first: the newest entry is the LAST header, never the first
+# One block, written by scripts/maude-now-write.sh (2026-10-06). A buffer from before the
+# writer may still hold many blocks oldest-first, so read the LAST header, never the first
 # (the wake read the first one as "now" until 2026-09-06).
 if [ -f "$MEM/now.md" ]; then
   NOW_LINE="$(grep -E '^## [0-9]{2}:[0-9]{2}' "$MEM/now.md" | tail -1 | head -c 200)"

@@ -214,9 +214,15 @@ test_start "gate PASSES echo with ; rm -rf / inside a quoted string"
 run_gate 'echo "step one; rm -rf / then done"'
 assert_exit "$RC" "0" "semicolon-prose false positive"
 
-test_start "gate PASSES echo with backtick rm -rf / inside a quoted string"
+# Not prose (2026-10-07): bash RUNS a backtick inside double quotes, so this was a real
+# `rm -rf /` the test kept passing. `bash -c 'echo "see \`echo RAN\` in the doc"'` prints
+# "see RAN in the doc". The ( and ; cases above are literal in double quotes and stay passing.
+test_start "gate BLOCKS echo with backtick rm -rf / inside DOUBLE quotes (bash runs it)"
 run_gate 'echo "subshell `rm -rf /` example"'
-assert_exit "$RC" "0" "backtick-prose false positive"
+assert_exit "$RC" "2" "a backtick in double quotes executes"
+test_start "control: the same backtick inside SINGLE quotes is literal and passes"
+run_gate "echo 'subshell \`rm -rf /\` example'"
+assert_exit "$RC" "0" "single quotes are literal"
 
 test_start "gate PASSES grep for the literal rm -rf pattern"
 run_gate "grep -E 'rm -rf /' logfile.txt"
@@ -291,13 +297,14 @@ docs: git push is gated in this house
 EOF"
 assert_exit "$RC" "0" "<<'EOF' body prose passes"
 
-# Honest residual, pinned: an UNBALANCED quote leaves the << token visible and
-# still opens a phantom body — a later real command is under-blocked. Conscious
-# pin so a future change to this is a choice, not an accident.
-test_start "gate residual: unbalanced quote before << still eats the next line"
+# Was the pinned residual (an UNBALANCED quote left the << token visible and opened a
+# phantom body, under-blocking the next line) until 2026-10-03: the open quote is now carried
+# across lines, so the `<<` inside it is text and the next line is read. The change was a
+# choice, made where the pin asked for it.
+test_start "an unbalanced quote before << no longer eats the next line (the quote is carried)"
 run_gate 'echo "oops << EOF
 rm -rf /'
-assert_exit "$RC" "0" "unbalanced-quote phantom is the documented residual"
+assert_exit "$RC" "2" "the rm on the next line is read and blocked"
 
 # v0.27.0 — the ARITHMETIC half of limitation #7 is CLOSED: $((a << b)) is
 # blinded before heredoc detection, so it no longer opens a phantom body that
@@ -1205,6 +1212,445 @@ test_start "a notes heredoc followed by an echo is text"
 run_gate $'cat <<EOF > notes.md\n'"$WRAP"$'\nEOF\necho done'
 assert_exit "$RC" "0" "passes"
 
+# ── lens on merged main b2faa51 (2026-10-02): the opener line is not always where the shell ──
+# word is, the stripper opened phantom bodies on lines bash does not, and a shell can be spelled
+# one indirection away. Every shape here was RED on main before the heredoc branch and passed
+# after it. The payload is a wrapped force-push; for the stripper cases the BARE form is pinned
+# too, because that is the form the PLAIN patterns read — if only the wrapped form blocks, the
+# fix went into the shell-fed scan and the stripper is still blind.
+rm -f "$(care_path)"
+FP="eval 'git push --force'"
+# F1: the shell is on the line before the opener.
+for shape in \
+  $'bash \\\n<<EOF\n'"$FP"$'\nEOF' \
+  $'sudo -i \\\n<<EOF\n'"$FP"$'\nEOF' \
+  $'ssh host \\\n<<EOF\n'"$FP"$'\nEOF' \
+  $'(\nbash\n) <<EOF\n'"$FP"$'\nEOF' \
+  $'{\n  sh\n} <<EOF\n'"$FP"$'\nEOF' \
+  $'echo start \\\n  && bash \\\n<<EOF\n'"$FP"$'\nEOF' \
+  $'sudo \\\n-i <<EOF\n'"$FP"$'\nEOF' \
+  $'ssh \\\nhost <<EOF\n'"$FP"$'\nEOF' \
+  $'bash \\\n-s <<EOF\n'"$FP"$'\nEOF' \
+  ; do
+  # The last three put a non-shell word before the `<<` on the opener line, so only the
+  # continuation join (not the group lookback) can see the shell: one rule, one fixture.
+  test_start "a shell on the line before the opener feeds the body: $(printf '%q' "${shape%%$'\n'*}")"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+# The allowlist (2026-10-04) strips only after lines it can prove bash reads the same way; a
+# `\` continuation, a group, an escape, an unclosed quote or an odd delimiter is not one, so
+# the text heredocs below are read in full and their gated text blocks: named cost, each
+# confirmed by the bash oracle as a body bash never runs.
+test_start "a continuation before the opener: the body is read in full (allowlist cost: read in full)"
+run_gate $'cat \\\n<<EOF > notes.md\n'"$FP"$'\nEOF'
+assert_exit "$RC" "2" "blocked"
+test_start "a group before the opener: the body is read in full (allowlist cost: read in full)"
+run_gate $'(\necho hi\n) <<EOF\n'"$FP"$'\nEOF'
+assert_exit "$RC" "2" "blocked"
+# F2: lines the stripper read as openers that bash does not. Wrapped AND bare.
+for pre in \
+  $'cat <<END-OF-FILE\nx\nEND-OF-FILE' \
+  $'cat <<E.F\nx\nE.F' \
+  $'cat <<EOF.txt\nx\nEOF.txt' \
+  $'echo "\\"<<EOF"' \
+  $'echo $\'\\\'<<EOF\'' \
+  $'echo $(( (n+1) << k ))' \
+  $'echo ${x:-<<EOF}' \
+  ; do
+  test_start "no phantom body after $(printf '%q' "${pre%%$'\n'*}"): a wrapped force-push on the next line blocks"
+  run_gate "$pre"$'\n'"$FP"; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+  test_start "no phantom body after $(printf '%q' "${pre%%$'\n'*}"): a bare force-push on the next line blocks"
+  run_gate "$pre"$'\ngit push --force'; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+test_start "a real heredoc with a hyphenated delimiter still hides its body"
+run_gate $'cat <<END-OF-FILE > n.md\ngit push --force\nEND-OF-FILE'
+assert_exit "$RC" "0" "passes"
+test_start "the closing line of a hyphenated delimiter is honoured (text after it is read)"
+run_gate $'cat <<E-F > n.md\nx\nE-F\ngit push --force'
+assert_exit "$RC" "2" "blocked"
+# F3: a shell spelled one indirection away.
+for shape in \
+  $'SH=bash; $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'"$SH" <<EOF\n'"$FP"$'\nEOF' \
+  $'${0} <<EOF\n'"$FP"$'\nEOF' \
+  $'${SHELL} <<EOF\n'"$FP"$'\nEOF' \
+  $'sudo . /dev/stdin <<EOF\n'"$FP"$'\nEOF' \
+  $'sudo -u root source /dev/stdin <<EOF\n'"$FP"$'\nEOF' \
+  $'b\\ash <<EOF\n'"$FP"$'\nEOF' \
+  $'cat <<EOF | $SH\n'"$FP"$'\nEOF' \
+  $'cat <<EOF | sudo $SH\n'"$FP"$'\nEOF' \
+  ; do
+  test_start "a shell one indirection away feeds the body: $(printf '%q' "${shape%%$'\n'*}")"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+# The named cost of fail-closed on a variable in command position: an interpreter held in a
+# variable keeps its body in the wrapped scan.
+test_start "named cost: \$PYTHON - <<PY quoting a wrapped amend is read (blocked)"
+run_gate $'$PYTHON - <<PY\nx = "'"$WRAP"$'"\nPY'
+assert_exit "$RC" "2" "blocked"
+test_start "a variable NOT in command position is not a shell (echo \$X after a text heredoc)"
+run_gate $'cat <<EOF > f.txt\n'"$FP"$'\nEOF\necho $X'
+assert_exit "$RC" "0" "passes"
+test_start "a variable assignment before a text heredoc is not a shell"
+run_gate $'OUT=$DIR/f.txt; cat <<EOF > $OUT\n'"$FP"$'\nEOF'
+assert_exit "$RC" "0" "passes"
+
+# ── lens round 2 on the fold (2026-10-02): the blanker must not MAKE an opener, the shell ──
+# word may hide behind a prefix, and sudo's `-u` takes its argument.
+rm -f "$(care_path)"
+# A `<<` bash reads as a shift or a literal is not an opener; a bare force-push after it blocks.
+for pre in \
+  '(( x = 1 << 2 ))' \
+  '(( x <<= 2 ))' \
+  'echo $[1<<2]' \
+  'a[1<<2]=3' \
+  'echo $(( $(( 1 )) << 2 ))' \
+  'echo \<\<EOF' \
+  'echo <\<EOF' \
+  'cat <\< EOF' \
+  "echo <''<EOF" \
+  'echo |#}x<<22' \
+  ; do
+  test_start "not an opener: $(printf '%q' "$pre") — a bare force-push on the next line blocks"
+  run_gate "$pre"$'\ngit push --force'; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+test_start "a trailing backslash on the opener line continues the COMMAND; the body starts after it"
+run_gate $'cat <<E |\\\ngit push --force\nbody\nE'
+assert_exit "$RC" "2" "blocked"
+# Round 6: a backslash at the end of a COMMENT continues nothing; the body starts on the next
+# line and closes at the first EOF, so the push after that close is read.
+test_start "a trailing backslash inside a comment on the opener line is not a continuation"
+run_gate $'cat <<EOF # x \\\nEOF\ngit push --force\nEOF'
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+test_start "an odd run of backslashes at the end of the opener line IS a continuation (the next line is command)"
+run_gate $'cat <<EOF x\\\\\\\n; git push --force\na\nEOF'
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+test_start "backslashes on the opener line: the body is read in full (allowlist cost: read in full)"
+run_gate $'cat <<EOF x\\\\\n'"$FP"$'\nEOF\necho done'
+assert_exit "$RC" "2" "blocked"
+# Round 6 finish: the closing line is recognised exactly as bash recognises it. Closing EARLY
+# is not safe either: body text after a too-early close can open a phantom body whose close
+# sits after bash's real one and hides the lines between (oracle RAN on each, merged passed).
+for c in $'cat <<\'EOF\'\nEOF \ncat <<Z\nEOF\ngit push --force\nZ' \
+         $'cat <<EOF\nEOF \ncat <<Z\nEOF\ngit push --force\nZ' \
+         $'cat <<EOF\n  EOF\ncat <<Z\nEOF\ngit push --force\nZ' \
+         $'cat <<EOF\nx\\\nEOF\ncat <<Z\nEOF\ngit push --force\nZ' \
+         $'cat <<EOF\nEOF\r\ncat <<Z\nEOF\ngit push --force\nZ'; do
+  test_start "a closer bash does not close on does not close the body here: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+# An unquoted body joins `\`⏎ before the closer is compared (`<<-` strips tabs from the
+# joined line's start only); a quoted or escaped delimiter does not join.
+for c in $'cat <<EOF\nEO\\\nF\ngit push --force\nEOF' \
+         $'cat <<EOF\nE\\\nO\\\nF\ngit push --force\nEOF' \
+         $'cat <<EOF\nEOF\\\n\ngit push --force\nEOF' \
+         $'cat <<-EOF\n\tEO\\\nF\ngit push --force\nEOF' \
+         $'cat <<\'EOF\'\nx\\\nEOF\ngit push --force' \
+         $'cat <<\\EOF\nx\\\nEOF\ngit push --force' \
+         $'cat <<\'EOF\'\nx\\\nEOF\ngit push --force\nEOF' \
+         $'cat <<"EOF"\nx\\\nEOF\ngit push --force\nEOF' \
+         $'cat <<\\EOF\nx\\\nEOF\ngit push --force\nEOF'; do
+  test_start "the body closes where bash closes it, joined or not: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+for c in $'cat <<EOF\nEO\\\nF\necho done' \
+         $'cat <<-EOF\n\t'"$FP"$'\n\tEOF\necho done' \
+         $'cat <<EOF\nx\\\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<\'EOF\'\nx\\\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<EOF\nx\\\\\nEOF\necho done'; do
+  test_start "a text heredoc closed where bash closes it stays hidden: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "0" "passes"
+done
+# Round 7: a delimiter word runs to a metacharacter. `cat <<EOF{` is delimited by `EOF{` in
+# bash; read as `EOF` it closed past bash's close and hid the push between (merged too,
+# oracle RAN). A word with a character outside the class before its end opens no body.
+for s in '{' '}' '^' ']' '[' '$' '$X' '{a,b}' '[a]' '^^' '}}'; do
+  c="cat <<EOF$s"$'\nx\n'"EOF$s"$'\ngit push --force\nEOF'
+  test_start "a delimiter word does not stop short of its end: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+for c in $'cat <<-EOF}\n\tEOF}\ngit push --force\nEOF' \
+         $'cat <<\'EOF\'^\nEOF^\ngit push --force\nEOF' \
+         $'cat <<\\EOF}\nEOF}\ngit push --force\nEOF' \
+         $'cat <<"EOF"[\nEOF[\ngit push --force\nEOF'; do
+  test_start "a quoted, escaped or dashed delimiter does not stop short of its end: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+for c in $'cat <<A<<B\n'"$FP"$'\nA\n'"$FP"$'\nB\necho done' \
+         $'cat <<EOF>/dev/null\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<EOF;echo x\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<EOF|cat\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<EOF&&true\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<\'EOF\'>/dev/null\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<\\EOF;echo x\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<-EOF\t\n\t'"$FP"$'\n\tEOF\necho done'; do
+  test_start "a delimiter ended by a metacharacter still hides its body: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "0" "passes"
+done
+test_start "a subshell around the opener: the body is read in full (allowlist cost: read in full)"
+run_gate $'(cat <<EOF)\n'"$FP"$'\nEOF\necho done'
+assert_exit "$RC" "2" "blocked"
+# Round 8: a word ends where BASH ends it — a space, a tab, a newline, or `; | & < > )`. A
+# `\r` `\v` `\f` is part of bash's word (`[[:space:]]` ended it here, and merged blocked these
+# only because its closer was trimmed); `(` after the word is extglob's `@(x)` once
+# `shopt -s extglob` ran; a Unicode space is a word character to bash while a UTF-8 sed reads
+# it as space. Each made the gate key a shorter delimiter than bash's (oracle RAN).
+for ws in $'\r' $'\v' $'\f'; do
+  for open in "<<EOF$ws" "<<'EOF'$ws" "<<\\EOF$ws" "<<\"EOF\"$ws"; do
+    c="cat $open"$'\n'"EOF$ws"$'\ngit push --force\nEOF'
+    test_start "a word does not end at a byte bash reads as part of it: $(printf '%q' "$c")"
+    run_gate "$c"
+    assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+  done
+done
+for c in $'cat <<-EOF\r\n\tEOF\r\ngit push --force\nEOF' \
+         $'cat <<EOF\r <<B\nEOF\r\nB\ngit push --force\nEOF' \
+         $'shopt -s extglob\ncat <<@(x)\n@(x)\ngit push --force\n@' \
+         $'shopt -s extglob\ncat <<!(x)\n!(x)\ngit push --force\n!' \
+         $'shopt -s extglob\ncat <<+(x)\n+(x)\ngit push --force\n+' \
+         $'shopt -s extglob\ncat <<*(x)\n*(x)\ngit push --force\n*' \
+         $'shopt -s extglob\ncat <<?(x)\n?(x)\ngit push --force\n?' \
+         $'shopt -s extglob\ncat <<@(x|y)\n@(x|y)\ngit push --force\n@' \
+         $'shopt -s extglob\ncat <<-@(x)\n\t@(x)\ngit push --force\n@'; do
+  test_start "a word bash reads whole is not keyed short: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+# … and before the word too: `<<\v'EOF'` is delimited by `\vEOF` in bash; read as a quoted
+# `EOF` the body closed EARLY and body text opened a phantom over the push.
+for ws in $'\v' $'\r' $'\f'; do
+  for q in "'EOF'" '"EOF"' '\EOF'; do
+    c="cat <<$ws$q"$'\nEOF\ncat <<Z\n'"${ws}EOF"$'\ngit push --force\nZ'
+    test_start "a byte bash reads into the word does not separate << from it: $(printf '%q' "$c")"
+    run_gate "$c"
+    assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+  done
+done
+# A word the gate cannot read opens no body, so bash's body text is read here as commands; a
+# `cat <<Z` in it opened a phantom whose `Z` hid a push bash runs after its real close (merged
+# too, oracle RAN). From the first uncertain `<<` on, no opener is trusted.
+for c in $'cat <<EOF{\ncat <<Z\nEOF{\ngit push --force\nZ' \
+         $'cat <<E\'O\'F\ncat <<Z\nEOF\ngit push --force\nZ' \
+         $'cat <<\\#\\#\ncat <<Z\n##\ngit push --force\nZ'; do
+  test_start "after a word the gate cannot read, a later opener is not trusted: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+for c in $'echo "use <<\'E F\' here"\ncat <<EOF\n'"$FP"$'\nEOF\necho done' \
+         $'echo hi # see <<E\'O\'F\ncat <<EOF\n'"$FP"$'\nEOF\necho done'; do
+  test_start "an uncertain << inside a string or a comment distrusts nothing: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "0" "passes"
+done
+for loc in C C.UTF-8 en_US.UTF-8; do
+  for u in $' ' $'　' $' '; do
+    c="cat <<EOF${u}x"$'\n'"EOF${u}x"$'\ngit push --force\nEOF'
+    test_start "a Unicode space is part of bash's word under $loc: $(printf '%q' "$c")"
+    LC_ALL=$loc run_gate "$c"
+    assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+  done
+done
+for c in $'cat <<EOF\t\n'"$FP"$'\nEOF\necho done' \
+         $'cat <<\'EOF\' \n'"$FP"$'\nEOF\necho done' \
+         $'cat <<EOF >/dev/null\n'"$FP"$'\nEOF\necho done'; do
+  test_start "a word ended by a space or a tab still hides its body: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "0" "passes"
+done
+# Round 9: `#` after `{` or `}` is a word character to bash; read as a comment it hid an opener
+# or an open quote, and a later `cat <<Z` hid a push bash runs (oracle RAN). The allowlist
+# accepts `#` only at a token start.
+for c in $'echo {#} <<\\E\ncat <<Z\nE\ngit push --force\nZ' \
+         $'echo }#x <<\\E\ncat <<Z\nE\ngit push --force\nZ' \
+         $'echo {#} <<E\ncat <<Z\nE\ngit push --force\nZ' \
+         $'echo {#} <<\'E\'\ncat <<Z\nE\ngit push --force\nZ' \
+         $'echo {#\'\ncat <<Z\n\'\ngit push --force\nZ' \
+         $'echo }#\'\ncat <<Z\n\'\ngit push --force\nZ' \
+         $'echo {#"\ncat <<Z\n"\ngit push --force\nZ' \
+         $'echo a{#\'\ncat <<Z\n\'\ngit push --force\nZ'; do
+  test_start "a # inside a word is not a comment: $(printf '%q' "$c")"
+  run_gate "$c"
+  assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+test_start "a variable in a word or a double quote does not end the stripping: the body stays hidden"
+run_gate $'D=/tmp; cat > "$D/n.md" <<\'EOF\'\n'"$FP"$'\nEOF\necho ${D} $1 done'
+assert_exit "$RC" "0" "passes"
+test_start "a command substitution before the opener ends the stripping (allowlist cost: read in full)"
+run_gate $'cat > $(echo n.md) <<\'EOF\'\n'"$FP"$'\nEOF'
+assert_exit "$RC" "2" "blocked"
+test_start "a closing quote is not an opening quote: echo it's <<EOF 'x' opens no phantom (push read)"
+run_gate $'echo it\'s <<EOF \'x\'\ngit push --force'
+assert_exit "$RC" "2" "blocked"
+# A delimiter bash accepts opens a real body: a digit, a path, an escaped backslash before it.
+for shape in \
+  $'cat <<1 > n.md\n'"$FP"$'\n1\necho done' \
+  $'cat <</dev/null > n.md\n'"$FP"$'\n/dev/null\necho done' \
+  $'echo \\\\<<EOF > n.md\n'"$FP"$'\nEOF\necho done' \
+  ; do
+  test_start "a delimiter outside [A-Za-z_][A-Za-z0-9_.-]*: the body is read in full (allowlist cost: read in full): $(printf '%q' "${shape%%$'\n'*}")"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"
+done
+# An escaped character is inert, not deleted: a real heredoc after `\#` or `\$` is still a heredoc.
+test_start "an escape before the opener: the body is read in full (allowlist cost: read in full)"
+run_gate $'cat \\#<<EOF > n.md\nrun '"$FP"$' now\nEOF\necho done'
+assert_exit "$RC" "2" "blocked"
+# The shell word behind a prefix the shell steps over.
+for shape in \
+  $'SH=bash; env $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'exec $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'time $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'nohup $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'nice -n5 $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'nice -n 5 $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'timeout 5 $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'command $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'($SH) <<EOF\n'"$FP"$'\nEOF' \
+  $'FOO=1 $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'FOO=$X $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'</dev/null $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'<<EOF $SH -s\n'"$FP"$'\nEOF' \
+  $'${SH:-bash} <<EOF\n'"$FP"$'\nEOF' \
+  $'${ARR[0]} <<EOF\n'"$FP"$'\nEOF' \
+  $'builtin source /dev/stdin <<EOF\n'"$FP"$'\nEOF' \
+  $'command . /dev/stdin <<EOF\n'"$FP"$'\nEOF' \
+  $'sudo -u root $SH <<EOF\n'"$FP"$'\nEOF' \
+  ; do
+  test_start "a shell behind a prefix feeds the body: $(printf '%q' "${shape%%$'\n'*}")"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+# ── lens round 3 (2026-10-03): an array literal is words, not redirections; env/timeout/exec
+# options that take an argument take it; `{` opens a group.
+for pre in 'x=(1<<2)' 'declare -a x=(1<<2)' 'a=(b<<2 c)' 'x=(<<2)' 'x+=(1<<2)'; do
+  test_start "not an opener: $(printf '%q' "$pre") — a bare force-push on the next line blocks"
+  run_gate "$pre"$'\ngit push --force'; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+for shape in \
+  $'SH=bash; env -u X $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'SH=bash; env -C /tmp $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'SH=bash; timeout -s KILL 5 $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'SH=bash; timeout -k 2 5 $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'SH=bash; exec -a name $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'SH=bash; { $SH <<EOF\n'"$FP"$'\nEOF\n}' \
+  ; do
+  test_start "a shell behind a prefix feeds the body: $(printf '%q' "${shape%%$'\n'*}")"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+# Round 3 final: a quote that runs across lines is text to its close; an escaped delimiter
+# character is that character; a nested group walks back to ITS opener; more prefixes.
+for pre in $'echo "a <<2\nb"' $'echo \'x <<1 y\nz\'' $'git commit -m "shift 1<<2\nbody"'; do
+  test_start "a quote spanning lines opens no heredoc: $(printf '%q' "${pre%%$'\n'*}") — a bare force-push after it blocks"
+  run_gate "$pre"$'\ngit push --force'; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+test_start "a quote spanning lines before the opener: the body is read in full (allowlist cost: read in full)"
+run_gate $'echo "a\nb" <<EOF > n.md\n'"$FP"$'\nEOF\necho done'
+assert_exit "$RC" "2" "blocked"
+test_start "text between a substitution's close and the outer quote is quoted: \"\$(echo a)<<EOF\" opens nothing"
+run_gate $'echo "$(echo "a")<<EOF"\ngit push --force'
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+test_start "the commit-message shape closing with text after )\" on the last line reads that text"
+run_gate $'git commit -m "$(cat <<\'EOF\'\nnote\nEOF\n)" && git push --force'
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+# Round 4: an escaped quote inside a multi-line quote is not its close; a delimiter may carry
+# more than one escape; stdbuf's -o/-i/-e take an argument.
+for pre in $'echo "a\n\\" x <<2\n"' $'git commit -m "fix\nhe said \\"x\\" and 1<<2\nend"' $'echo $\'a\n\\\' <<2\n\''; do
+  test_start "an escaped quote on a continuation line is not the close: $(printf '%q' "${pre%%$'\n'*}") — the push after blocks"
+  run_gate "$pre"$' ; git push --force'; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+test_start "escaped quotes in a quote before the opener: the body is read in full (allowlist cost: read in full)"
+run_gate $'echo "a\n\\"x\\" b" <<EOF > n.md\n'"$FP"$'\nEOF\necho done'
+assert_exit "$RC" "2" "blocked"
+for d in '\#\#' '\*\*' '\#\!' '\?\?' '\#a\#' '\#\#\#'; do
+  plain="${d//\\/}"
+  test_start "a delimiter with several escapes <<$d closes at $plain; the push after it blocks"
+  run_gate "cat <<$d"$'\nfoo\n'"$plain"$'\ngit push --force'; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+  test_start "a delimiter with several escapes <<$d opens no body: its text is read (fail-closed, round 5)"
+  run_gate "cat <<$d > n.md"$'\n'"$FP"$'\n'"$plain"$'\necho done'; assert_exit "$RC" "2" "blocked"
+done
+# An escaped backslash in the delimiter is a literal backslash: `<<\\E` closes at `\E`.
+for pair in '\\E:\E' '\\#:\#' '\\\\#:\\#'; do
+  d="${pair%%:*}"; cl="${pair#*:}"
+  test_start "an escaped backslash in the delimiter is literal: <<$d closes at $cl; the push after blocks"
+  run_gate "cat <<$d"$'\nfoo\n'"$cl"$'\ngit push --force'; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+  test_start "an escaped backslash in the delimiter: <<$d opens no body (fail-closed, round 5)"
+  run_gate "cat <<$d > n.md"$'\n'"$FP"$'\n'"$cl"$'\necho done'; assert_exit "$RC" "2" "blocked"
+done
+test_start "a shell behind a prefix feeds the body: stdbuf -o 0 \$SH"
+run_gate $'SH=bash; stdbuf -o 0 $SH <<EOF\n'"$FP"$'\nEOF'; assert_exit "$RC" "2" "blocked"
+test_start "stdbuf's argument is not the command word: stdbuf -o \$N cat <<EOF is text"
+run_gate $'stdbuf -o $N cat <<EOF\nrun '"$FP"$' now\nEOF'; assert_exit "$RC" "0" "passes"
+for d in '#' '.' '!' '~' '*' '#x'; do
+  test_start "an escaped delimiter <<\\$d: the push after its closing line blocks"
+  run_gate "cat <<\\$d"$'\nbody\n'"$d"$'\ngit push --force'; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+  test_start "an escaped punctuation delimiter <<\\$d: the body is read in full (allowlist cost: read in full)"
+  run_gate "cat <<\\$d > n.md"$'\n'"$FP"$'\n'"$d"$'\necho done'; assert_exit "$RC" "2" "blocked"
+done
+test_start "a whole-escaped plain delimiter <<\\EOF is read with certainty and hides its body"
+run_gate $'cat <<\\EOF > n.md\n'"$FP"$'\nEOF\necho done'
+assert_exit "$RC" "0" "passes"
+# One rule away from the unclosed-body rule: a misread delimiter whose misreading happens to
+# appear as a LATER line would close late and swallow the lines between. Without the
+# "uncertain word opens no body" rule, `<<\#\#` would be read as `__` and the `__` line below
+# would close it after the push.
+test_start "an uncertain delimiter opens no body even when its misreading appears as a later line"
+run_gate $'cat <<\\#\\#\nfoo\n##\ngit push --force\n__'
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+test_start "an uncertain quoted-piece delimiter opens no body even when its misreading appears later"
+run_gate $'cat <<E\'O\'F\nfoo\nEOF\ngit push --force\nEO'
+assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+test_start "a body that never closes is not stripped: the wrapped payload in it is read (fail-closed)"
+run_gate $'cat <<NEVER > n.md\n'"$FP"$'\nstill body'
+assert_exit "$RC" "2" "blocked"
+test_start "a body that never closes: a bare force-push inside it is read (fail-closed)"
+run_gate $'cat <<NEVER > n.md\ngit push --force'
+assert_exit "$RC" "2" "blocked"
+# Round 5's four shapes: each misread delimiter had opened a body that never closed.
+for shape in \
+  $'cat <<\\-\\-\nfoo\n--\ngit push --force' \
+  $'cat <<\\-x\nfoo\n-x\ngit push --force' \
+  $'cat <<\\#\\ \\#\nfoo\n# #\ngit push --force' \
+  $'cat <<\\#\'#\'\nfoo\n##\ngit push --force' \
+  $'cat <<"E\\OF"\nfoo\nE\\OF\ngit push --force' \
+  $'cat <<"\\#\\#"\nfoo\n\\#\\#\ngit push --force' \
+  $'cat <<\\#"\\#"\nfoo\n#\\#\ngit push --force' \
+  ; do
+  test_start "a delimiter the gate cannot read with certainty opens no body: $(printf '%q' "${shape%%$'\n'*}") — the push blocks"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+test_start "a nested group walks back to its own opener: ( bash / ( cat ) / ) <<EOF feeds the body"
+run_gate $'( bash\n( cat )\n) <<EOF\n'"$FP"$'\nEOF'
+assert_exit "$RC" "2" "blocked"
+for shape in \
+  $'SH=bash; ionice -c 2 $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'SH=bash; ! $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'SH=bash; if $SH <<EOF\n'"$FP"$'\nEOF\nthen :; fi' \
+  $'SH=bash; 2>/dev/null $SH <<EOF\n'"$FP"$'\nEOF' \
+  $'SH=bash; { $SH; } <<EOF\n'"$FP"$'\nEOF' \
+  ; do
+  test_start "a shell behind a prefix feeds the body: $(printf '%q' "${shape%%$'\n'*}")"
+  run_gate "$shape"; assert_exit "$RC" "2" "blocked"; assert_contains "$ERR" "force-push" "names force-push"
+done
+# The option that takes an argument takes it: the word after `-u` is not the command.
+for shape in \
+  $'ionice -c $C cat <<EOF\nrun '"$FP"$' now\nEOF' \
+  $'env -u $V cat <<EOF\nrun '"$FP"$' now\nEOF' \
+  $'timeout -s $SIG 5 cat <<EOF\nrun '"$FP"$' now\nEOF' \
+  $'sudo -u $U tee /etc/x <<EOF\nrun '"$FP"$' now\nEOF' \
+  $'sudo -u "$USER" tee /etc/x <<EOF\nrun '"$FP"$' now\nEOF' \
+  $'sudo -n -u $U cat <<EOF\nrun '"$FP"$' now\nEOF' \
+  $'sudo -E cat $F <<EOF\nrun '"$FP"$' now\nEOF' \
+  $'sudo tee $OUT <<EOF\nrun '"$FP"$' now\nEOF' \
+  $'nice -n $N cat <<EOF\nrun '"$FP"$' now\nEOF' \
+  ; do
+  test_start "a variable that is an option's argument is not a shell: $(printf '%q' "${shape%%$'\n'*}")"
+  run_gate "$shape"; assert_exit "$RC" "0" "passes"
+done
+
 # ── a flag belongs to ITS command (2026-09-28): `git push … && git worktree remove --force x`
 # was blocked RED as a force-push, because `push[[:space:]].*--force` ran past the `&&`.
 # The flag must sit in the same simple command as the verb; every real shape still blocks.
@@ -1384,6 +1830,178 @@ done
 test_start "the live false match stays fixed: a plain push then a worktree cleanup"
 run_gate "git push -q origin main && git worktree remove --force /var/lib/x/scratchpad/wt4"
 assert_not_contains "$ERR" "force-push" "stderr names no force-push"
+
+# The two allowlist rules no test could see removed (mutations "unclosed-sq" and
+# "dq-anything" survived round 9's run): on the OPENER's own line, an unclosed quote and a
+# `"..."` holding `$(` each end the stripping, so the body bash may treat differently is read
+# as commands. Each test makes that one construct the only thing wrong, beside a control.
+test_start "control: a closed quote after the opener keeps the body stripped"
+run_gate $'cat <<Z \'x\'\ngit push --force\nZ'
+assert_exit "$RC" "0" "passes"
+test_start "an UNCLOSED quote after the opener ends the stripping: the body is read"
+run_gate $'cat <<Z \'x\ngit push --force\nZ'
+assert_exit "$RC" "2" "blocked"
+test_start "control: a plain double-quoted word after the opener keeps the body stripped"
+run_gate $'cat <<Z "x"\ngit push --force\nZ'
+assert_exit "$RC" "0" "passes"
+test_start "a double quote holding \$( after the opener ends the stripping: the body is read"
+run_gate $'cat <<Z "$(x)"\ngit push --force\nZ'
+assert_exit "$RC" "2" "blocked"
+
+# The allowlist reads bytes under LC_ALL=C, so what it accepts cannot move with the locale:
+# in en_US.UTF-8 bash's [A-Za-z0-9_] matches é, ǅ and ٣, and without the pin `<<Zé` read as
+# a delimiter and the body was stripped (mutation "no-locale" survived round 9's run).
+WIDE_LOC=""
+for _l in en_US.UTF-8 en_US.utf8 C.UTF-8; do
+  LC_ALL="$_l" bash -c '[[ "é" =~ ^[A-Za-z]$ ]]' 2>/dev/null && { WIDE_LOC="$_l"; break; }
+done
+if [ -n "$WIDE_LOC" ]; then
+  test_start "under a locale whose ranges take é ($WIDE_LOC), a non-ASCII delimiter is still unreadable: the body is read"
+  ERR="$(make_bash_tool_input $'cat <<Zé\ngit push --force\nZé' | LC_ALL="$WIDE_LOC" bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+  assert_exit "$RC" "2" "blocked, as under C"
+  test_start "control: the same locale keeps an ASCII heredoc body stripped"
+  ERR="$(make_bash_tool_input $'cat <<Z\ngit push --force\nZ' | LC_ALL="$WIDE_LOC" bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+  assert_exit "$RC" "0" "passes"
+else
+  printf '  skip  no installed locale widens [A-Za-z] past ASCII here: the locale pin is untested on this host\n'
+fi
+
+# ── An unquoted heredoc body is not text: bash runs its substitutions (lens 2026-10-06) ──
+# The stripper dropped every body after a provable opener, but with an unquoted delimiter
+# bash expands $(...) and `...` inside the body, so `cat <<EOF` / `$(git push --force)` /
+# `EOF` ran the push and passed the gate (rc 0 on the branch AND on main v0.33.x), while
+# `echo $(git push --force)` alone blocks. A quoted delimiter is never expanded.
+test_start "an unquoted heredoc body's \$(...) is read, not stripped"
+run_gate $'cat <<EOF\n$(git push --force)\nEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "an unquoted heredoc body's backticks are read, not stripped"
+run_gate $'cat <<EOF\n`git push -f`\nEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "a later body line's substitution is read too"
+run_gate $'cat <<EOF\nplain text first\nmore text $(git push origin main --force) here\nEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "the <<- form's unquoted body is read the same way"
+run_gate $'cat <<-EOF\n\t$(git push -f)\n\tEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "a substitution inside \${...} is read"
+run_gate $'cat <<EOF\n${X:-$(git push --force)}\nEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "a substitution split by a backslash-newline is read (bash joins the lines first)"
+run_gate $'cat <<EOF\nx $\\\n(git push --force)\nEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "a backtick split the same way is read"
+run_gate $'cat <<EOF\nx \\\n`git push -f`\nEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "a substitution whose command word is split by a backslash-newline is read joined"
+run_gate $'cat <<EOF\n$(git pu\\\nsh --force)\nEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "the same split through the first word"
+run_gate $'cat <<EOF\n$(g\\\nit push -f)\nEOF'
+assert_exit "$RC" "2" "blocks"
+test_start "control: a QUOTED delimiter's body is never expanded, so it stays stripped"
+run_gate $'cat <<\'EOF\'\n$(git push --force)\nEOF'
+assert_exit "$RC" "0" "passes"
+test_start "control: an unquoted body with no substitution stays stripped"
+run_gate $'cat <<EOF\nnotes: never git push --force to main\nEOF'
+assert_exit "$RC" "0" "passes"
+
+# ── A double-quoted span is not text where bash expands it (lens 2026-10-07) ─────────
+# maude_strip_quotes erased every "..." span, but bash runs $(...) and `...` inside double
+# quotes: `echo "$(git push --force)"` passed (rc 0, v0.33.x and v0.34.0), and so did the
+# commit-message shape with an unquoted heredoc inside it. Single quotes stay literal.
+test_start "a \$(...) inside double quotes is read"
+run_gate 'echo "$(git push --force)"'
+assert_exit "$RC" "2" "blocks"
+test_start "a backtick inside double quotes is read"
+run_gate 'echo "`git push -f`"'
+assert_exit "$RC" "2" "blocks"
+test_start "the commit-message shape: an unquoted heredoc inside \"\$(cat ...)\""
+run_gate $'git commit -m "$(cat <<EOF\nmsg\n$(git push --force)\nEOF\n)"'
+assert_exit "$RC" "2" "blocks"
+test_start "an apostrophe inside double quotes does not open a single-quoted span"
+run_gate $'echo "it\'s $(git push -f) and \'later"'
+assert_exit "$RC" "2" "blocks"
+test_start "a substitution inside \${...} inside double quotes is read"
+run_gate 'echo "${X:-$(git push --force)}"'
+assert_exit "$RC" "2" "blocks"
+test_start "a substitution nested in a substitution is read"
+run_gate 'echo "$(echo "$(git push --force)")"'
+assert_exit "$RC" "2" "blocks"
+test_start "control: prose in double quotes still reads as text"
+run_gate 'git commit -m "docs: never git push --force to main"'
+assert_exit "$RC" "0" "passes"
+test_start "control: the canonical commit-message heredoc (quoted delimiter) still passes"
+run_gate $'git commit -m "$(cat <<\'EOF\'\nfix: never git push --force\nEOF\n)"'
+assert_exit "$RC" "0" "passes"
+test_start "control: a substitution inside SINGLE quotes is literal and passes"
+run_gate $'echo \'"$(git push --force)"\''
+assert_exit "$RC" "0" "passes"
+test_start "control: a harmless substitution in a message passes"
+run_gate 'git commit -m "release on $(date +%F): git push --force is not in this"'
+assert_exit "$RC" "0" "passes"
+
+# The quote scan runs on every Bash call, so its cost is a hook budget. A first draft
+# was quadratic: index() on copied tails and string building ran past 300 s on a 418 KB
+# command, and substr() per char ran past 60 s under one-true-awk (macOS). Every awk on
+# the box, a ~1.7 MB quote-dense command, through a FILE: the first version of this test
+# passed it as one argv string, which Linux caps at 128 KB, so exec failed, every awk
+# "returned" the same empty output and the test was green on nothing. The output must now
+# hold all 24,000 substitutions. A planted per-char-concatenation emit takes ~20 s here.
+BIGF="$TEST_TMP/bigcmd.txt"
+awk 'BEGIN { for (i = 0; i < 24000; i++) printf "echo \"line %d with it\047s text $(date) and `id` here\" \047single %d\047 ;\n", i, i }' > "$BIGF"
+QREF=""
+for A in awk original-awk mawk gawk; do
+  command -v "$A" >/dev/null 2>&1 || continue
+  test_start "the quote scan of a ~1.7 MB command finishes in seconds ($A)"
+  mkdir -p "$TEST_TMP/qshim-$A"; ln -sf "$(command -v "$A")" "$TEST_TMP/qshim-$A/awk"
+  T0=$SECONDS
+  PATH="$TEST_TMP/qshim-$A:$PATH" bash -c '. "$1"; maude_strip_quotes "$(cat "$2")"' _ "$HOOKS_DIR/_maude-common.sh" "$BIGF" > "$TEST_TMP/qout-$A"
+  [ $((SECONDS - T0)) -le 12 ]; assert_exit "$?" "0" "took $((SECONDS - T0)) s (bound 12)"
+  assert_eq "$(grep -o ';date;' "$TEST_TMP/qout-$A" | wc -l | tr -d ' ')" "24000" "every substitution read"
+  QOUT="$(cksum < "$TEST_TMP/qout-$A")"
+  [ -n "$QREF" ] || QREF="$QOUT"
+  assert_eq "$QOUT" "$QREF" "same output as the first awk"
+done
+
+# The ) that closes a $( is found the way bash finds it (lens 2026-10-08): a ) inside
+# quotes, in a # comment or in a case pattern does not close it. Before, each of these
+# closed the $( early, the rest fell back into the erased span, and bash ran the push.
+test_start "a ) inside single quotes in a substitution does not close it"
+run_gate $'echo "$(echo \')\'; git push --force o x)"'
+assert_exit "$RC" "2" "blocks"
+test_start "a ) inside double quotes in a substitution does not close it"
+run_gate 'echo "$(echo ")"; git push --force o x)"'
+assert_exit "$RC" "2" "blocks"
+test_start "a case pattern's ) does not close it"
+run_gate 'echo "$(case x in a) echo hi;; esac; git push --force o x)"'
+assert_exit "$RC" "2" "blocks"
+test_start "a ) in a # comment does not close it"
+run_gate $'echo "$(echo # )\ngit push --force o x)"'
+assert_exit "$RC" "2" "blocks"
+test_start "a backslash-escaped quote in ANSI-C \$'...' does not end the span"
+run_gate $'echo $\'a\\\'b\' "$(git push --force)" \'x\''
+assert_exit "$RC" "2" "blocks"
+# Lens round 2 (2026-10-08). A quote after $$ (the PID) or after an escaped \$ is a PLAIN
+# single quote: treating it as ANSI-C let \' run on and swallow the real command (a
+# regression of 954b09f: both blocked at 896308d).
+test_start "a quote after \$\$ is plain, not ANSI-C"
+run_gate $'echo $$\'a\\\'; git push --force #\''
+assert_exit "$RC" "2" "blocks"
+test_start "a quote after an escaped \\\$ is plain, not ANSI-C"
+run_gate $'echo \\$\'a\\\'; git push --force #\''
+assert_exit "$RC" "2" "blocks"
+test_start "control: a real ANSI-C span still hides its own text, and prose after it stays erased"
+run_gate $'echo $\'it\\\'s\' "never git push --force"'
+assert_exit "$RC" "0" "passes"
+test_start "control: \$# and \${#x} are not comments"
+run_gate 'echo "$(echo $# ${#x}) done; git push --force is only prose here"'
+assert_exit "$RC" "0" "passes"
+
+# A substitution's own quotes are read by the same scan (not emitted raw): bash prints
+# this text and runs nothing, so the ; inside the inner quotes must not become a boundary.
+test_start "control: quoted prose inside a substitution inside double quotes passes"
+run_gate 'echo "$(printf "%s" "step; git push --force")"'
+assert_exit "$RC" "0" "passes"
 
 rm -f "$(care_path)"
 

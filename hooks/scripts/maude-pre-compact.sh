@@ -43,8 +43,8 @@ if [ -n "$NOW_FILE" ]; then
   # Snapshot the buffer through best-effort redaction (maude_redact masks obvious
   # secret shapes). Best-effort, not a guarantee — the snapshots dir is gitignored
   # (.maude/plugin/* is self-ignored); wipe at session-end as routine hygiene.
-  # The buffer is append-only and oldest-first, so the session being compacted is at the
-  # TAIL. `head -200` saved the same 35-day-old 5% five times over (2026-09-06); take the
+  # The buffer is one block (scripts/maude-now-write.sh); one written before the writer may
+  # still be a stack, oldest-first, with the session being compacted at the TAIL. `head -200` saved the same 35-day-old 5% five times over (2026-09-06); take the
   # tail, and write the cut into the header so the reader knows what this is not.
   TOTAL_LINES="$(wc -l < "$NOW_FILE" 2>/dev/null | tr -d ' ')"; [ -n "$TOTAL_LINES" ] || TOTAL_LINES=0
   KEEP_LINES=200; [ "$TOTAL_LINES" -lt "$KEEP_LINES" ] && KEEP_LINES="$TOTAL_LINES"

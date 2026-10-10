@@ -1,6 +1,6 @@
-<!-- Version: 0.33.1 -->
+<!-- Version: 0.34.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-10-05 -->
+<!-- Revised: 2026-10-09 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -104,6 +104,8 @@ And on demand, when you ask:
 
 <!-- Each entry's date is the UTC day of the version's release commit on canon (the day
      scripts/release.sh stamped it), never the day it reached the public repository. -->
+**v0.34.0 (2026-10-09) - the gate reads what bash will run, and now.md has one writer.** The gate strips a heredoc body before it matches, because a body is text, not commands. Nine review rounds each found one more line it read differently from bash, and several of those misreads hid a real force-push. The stripper is an allowlist now: it strips only after lines whose every token bash reads the same way, and the first line it cannot prove ends the stripping. Over 6,442 real heredoc commands, one is newly blocked and none newly passed. Every rule in it is now seen to fail by a test. It also closes a hole in v0.33.x: with an unquoted delimiter (`<<EOF`) bash runs `$(...)` and backticks inside the body, so `cat <<EOF` with a `$(git push --force)` line passed the gate. Such a body is read now, not stripped. The same was true inside double quotes: the gate erased a whole `"..."` span as text, so `echo "$(git push --force)"` passed while bash ran the push. Quotes are now read the way bash reads them, and a `$(...)` or backtick inside double quotes is checked like any other command. The live memory buffer, `now.md`, has one writer now: save and rest called it three different ways, so lanes stacked it and the wake greeted a day-old entry. The writer keeps one entry there, puts the history in the daily first, and archives whole anything it would replace that is not already saved.
+
 **v0.33.1 (2026-10-05) - the macOS leg runs here before it runs in public.** v0.33.0 went red on the public macOS check twice before it shipped green, both times for things this box could have shown. `make mac-shape` now runs the full suite in a macOS-shaped setup (no `flock`, the BSD awk, slow process starts, the macOS temp dir) and `ship.sh` runs it before anything goes public. CI runs the archive smoke once, in parallel, which gives back the four minutes v0.33.0 added. A lock that can never be taken now gives up in under a second instead of waiting out its bound.
 
 **v0.33.0 (2026-10-04) - the gate learned whose house it is in.** A user hit a RED-gate refusal that told them to ask the maintainer by name. Whoever installed Maude owns the account, so every line she speaks now says so, and the red-clear flag is `--owner` (`--john` still works). A test now fails the build if a person's name reaches a user again. Also in this release: the gate reads a heredoc body as text and a flag against its own command. A torn line in a store is set aside instead of breaking the hook, and the undo ledger's prune is safe with five sessions at once. The vault recall pages each note once per session, in one line. The wake opens with her mark.
