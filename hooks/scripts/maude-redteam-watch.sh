@@ -8,6 +8,8 @@
 #           the tip it is shipping; the commit whisper below uses only the timestamp.
 #   check   (PreToolUse · Bash, called from maude-bash-watch.sh) — on a `git commit`,
 #           if CODE files were edited since the last adversarial pass, whisper once.
+#           On a PR open (`gh pr create`, `tea pr create`, a push to refs/for/<base>),
+#           whisper unless a care.json stamp shows a lens NAMED the sha being pushed.
 #
 # ALWAYS exits 0. Whisper, never block.
 #
@@ -584,7 +586,168 @@ case "$MODE" in
     ;;
 
   check)
-    CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)"
+    # A command JSON jq refuses (a lone surrogate escape, as a UTF-16 slice mid-emoji
+    # leaves) emptied the command and the hook exited silent, a fail-open (lens round 9).
+    # The raw JSON text is read instead: the trigger still sees the words, and the
+    # character allowlist refuses the braces and quotes, so it whispers.
+    # The whitespace escapes are decoded in the raw text first: \t between two words lost
+    # its backslash in the trigger view and glued them (gh\tpr), lens round 10.
+    CMD="$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // ""' 2>/dev/null)" \
+      || CMD="$(printf '%s' "$INPUT" | sed 's/\\[tnrbf]/ /g')"
+
+    # ── PR time (2026-10-09, the agency rulebook §3 on John's word) ──────────────────
+    # Opening a PR (`gh pr create`, `tea pr create`, or an AGit push to refs/for/<base>)
+    # asks one question: has a lens been pointed at the head being pushed? Maude answers
+    # from what she holds locally, a care.json stamp whose brief NAMED the sha (ship.sh's
+    # own test), and never touches the network (John, 2026-10-09: the forge's status is
+    # the agency's side to enforce; Maude nudges). She never posts a status either: her
+    # stamp is a text heuristic, and a false "covered" is the one failure she exists
+    # never to produce.
+    # The command is read after heredoc bodies go and backslash-newlines join (a
+    # continuation hid a second refspec, lens round 2), with quote CHARACTERS dropped and
+    # quoted content kept (reading the quote-erased view deleted a quoted ref, lens round 2).
+    RAWC="$(maude_strip_heredocs "$CMD")"; RAWC="${RAWC//$'\\\n'/}"
+    PRV="$(maude_unquote "$RAWC")"
+    # TRIGGER (lens round 7): wide and word-based, a whisper at worst; a SILENCE needs the
+    # allowlist below. Read on the UNSTRIPPED command too (a heredoc-fed shell runs what the
+    # stripper hides), case-folded, backslashes dropped (`refs/f\or/`, `gh p\r`). Fires on:
+    # refs/(for|drafts)/ or createPullRequest anywhere; the tool word (gh|tea; gh.exe too,
+    # the dot being a boundary) with
+    # a pr word (pr|pull|pulls) and an open word (create|new|c), so flags between them
+    # (`gh pr -R o/r create`) do not hide it; the tool word with api and pulls|graphql; and,
+    # beside an expansion character ($ ` { } ( )), the tool+pr words or refs/, a word that
+    # may be built at run time (`gh pr crea{te,te}`); any two of the
+    # three words beside one. Six rounds widened a narrow pattern one
+    # spelling at a time before it became this.
+    _W='(^|[^a-z0-9_-])'; _E='([^a-z0-9_-]|$)'
+    _trig() {  # <text> → 0 when it could open a PR
+      local t tool=1 pr=1 open=1 api=1 exp=1
+      t="$(printf '%s' "$1" | tr -d '\\' | tr '\n' ' ' | tr '[:upper:]' '[:lower:]')"
+      printf '%s' "$t" | grep -qE -- 'refs/(for|drafts)/|createpullrequest' && return 0
+      printf '%s' "$t" | grep -qE -- "${_W}(gh|tea)${_E}" && tool=0   # gh.exe: the dot is a boundary
+      printf '%s' "$t" | grep -qE -- "${_W}(pr|pull|pulls)${_E}" && pr=0
+      printf '%s' "$t" | grep -qE -- "${_W}(create|new|c)${_E}" && open=0
+      # Two word tests, not one phrase: the boundary after api ate the space the boundary
+      # before graphql needed, and `gh api graphql --input q.json` went unseen.
+      printf '%s' "$t" | grep -qE -- "${_W}api${_E}" && printf '%s' "$t" | grep -qE -- "${_W}(pulls|graphql)${_E}" && api=0
+      printf '%s' "$t" | grep -qE -- '[$`{}()]' && exp=0
+      # All three words, or any two of them beside an expansion character: `$GH_BIN pr
+      # create` hides the tool and `gh p$x create` the pr word (lens round 8).
+      local n=$(( (1 - tool) + (1 - pr) + (1 - open) ))
+      [ $n -eq 3 ] && return 0
+      [ $exp -eq 0 ] && [ $n -ge 2 ] && return 0
+      [ $tool -eq 0 ] && [ $api -eq 0 ] && return 0
+      [ $exp -eq 0 ] && printf '%s' "$t" | grep -qE -- 'refs/' && return 0
+      return 1
+    }
+    if _trig "$CMD" || _trig "$PRV"; then
+      PDIR="$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)"; [ -d "$PDIR" ] || PDIR="$(maude_project_dir)"
+      # SILENCE ONLY WHERE EVERY STEP IS ONE MAUDE READS IN FULL (lens round 4: a list of
+      # bad words is a denylist, and aliases, update-ref, --git-dir, /bin/sh, make and a
+      # script each walked past it). Plain characters only; then every segment must be a
+      # plain PR open or a known read-only step. Anything else whispers, naming the step.
+      WHY=""; TARGETS=""; NPR=0
+      printf '%s' "$PRV" | tr '\n' ' ' | grep -qE -- '^[A-Za-z0-9[:space:]./:=@+,%_~^;&|-]*$' \
+        || WHY="substitutions, variables or other expansions in: ${PRV:0:80}"
+      # A separator inside a quoted argument is not a split, but the loop below splits on
+      # it, and each piece then began with a vouched verb while the flag the allowlist
+      # exists to catch sat in a piece read as a read-only step (lens round 8). Such a
+      # command is not read with certainty: whisper. Newlines are folded to \001 first so
+      # a quoted span is matched across them.
+      if [ -z "$WHY" ] && printf '%s' "$RAWC" | tr '\n' '\001' \
+           | grep -qE -- "'[^']*[;&|"$'\001'"][^']*'|\"[^\"]*[;&|"$'\001'"][^\"]*\""; then
+        WHY="a separator inside quotes: ${PRV:0:80}"
+      fi
+      if [ -z "$WHY" ]; then
+        while IFS= read -r seg; do
+          seg="${seg#"${seg%%[![:space:]]*}"}"; seg="${seg%"${seg##*[![:space:]]}"}"
+          [ -n "$seg" ] || continue
+          if [[ "$seg" =~ ^git([[:space:]]+-C[[:space:]]+([^-[:space:]][^[:space:]]*))?[[:space:]]+push([[:space:]]|$) ]]; then
+            # A plain push, at most one -C: a remote, then ONLY review refspecs. Every
+            # <src>:refs/(for|drafts)/ refspec is a target (a lensed first must not vouch
+            # for an unlensed second), and any other token (a branch, HEAD, a refs/heads
+            # refspec) can rewrite what the PR shows: whisper (lens round 6).
+            d="$PDIR"; c="${BASH_REMATCH[2]}"
+            if [ -n "$c" ]; then case "$c" in /*) d="$c" ;; *) d="$PDIR/$c" ;; esac; fi
+            # No option at all after `push`: --receive-pack=<cmd> and --exec=<cmd> run a
+            # command before the push (lens round 5), and the rest is not worth reading.
+            # Refspecs begin with a name or `+`, never `-`.
+            if printf ' %s' "${seg#*push}" | grep -qE -- '[[:space:]]-'; then
+              WHY="a push option I cannot vouch for: $seg"; break
+            fi
+            read -ra toks <<<"${seg#*push}"
+            if [ "${#toks[@]}" -lt 2 ]; then WHY="a push that is not a review push: $seg"; break; fi
+            case "${toks[0]}" in *:*) WHY="a push with no remote named first: $seg"; break ;; esac
+            for t in "${toks[@]:1}"; do
+              case "$t" in *:refs/for/*|*:refs/drafts/*) ;; *) WHY="a push of something that is not a review refspec: $t"; break 2 ;; esac
+            done
+            specs="$(printf '%s' "$seg" | grep -oE -- '[^[:space:]]*:refs/(for|drafts)/[^[:space:]]*')"
+            if [ -z "$specs" ]; then WHY="a push that is not a review push: $seg"; break; fi
+            while IFS= read -r sp; do
+              src="${sp%%:refs/*}"; src="${src#+}"
+              TARGETS="$TARGETS$d	${src:-HEAD}
+"
+            done <<SPECS_EOF
+$specs
+SPECS_EOF
+            NPR=$((NPR + 1))
+          elif [[ "$seg" =~ ^(gh[[:space:]]+pr[[:space:]]+(create|new)|tea[[:space:]]+(pr|pulls|pull)[[:space:]]+(create|c))([[:space:]]|$) ]]; then
+            # With --head/-H or --repo/-R the PR head is a branch ON THE FORGE, which a
+            # network-free Maude cannot read: whisper. Without them it is HEAD.
+            # Any short cluster carrying one of the letters, wherever it sits: -dH feat
+            # hid -H from a leading-flag match (lens round 5). tea takes Go-style one-dash
+            # words too (-head feat, -base main): on tea, any one-dash word whispers (round 7).
+            if printf ' %s' "$seg" | grep -qE -- '[[:space:]](--repo|--head|--remote|--login)([=[:space:]]|$)|[[:space:]]-[A-Za-z]*[RHrl]' \
+               || { [[ "$seg" == tea* ]] && printf ' %s' "$seg" | grep -qE -- '[[:space:]]-[A-Za-z][A-Za-z]'; }; then
+              WHY="a PR head or repository named on the forge: $seg"; break
+            fi
+            TARGETS="$TARGETS$PDIR	HEAD
+"
+            NPR=$((NPR + 1))
+          elif [[ "$seg" =~ ^(git[[:space:]]+(status|log|diff|show)|echo|true)([[:space:]]|$) ]]; then
+            # Read-only, unless it writes: --output=<file> / -o<file> on log|diff|show can
+            # land a ref under .git before the open (lens round 5). Any short cluster with
+            # an `o` is refused too; none of these verbs has a legitimate one.
+            if printf ' %s' "$seg" | grep -qE -- '[[:space:]](--output([=[:space:]]|$)|-[A-Za-z]*o)'; then
+              WHY="a read-only step that writes a file: $seg"; break
+            fi
+          else
+            WHY="a step I cannot vouch for: ${seg%%[[:space:]]*}"; break
+          fi
+        done <<SEGS_EOF
+$(printf '%s\n' "$PRV" | tr ';&|' '\n\n\n')
+SEGS_EOF
+      fi
+      # Nothing opened a PR and nothing was opaque: prose that only NAMES one.
+      [ -z "$WHY" ] && [ "$NPR" -eq 0 ] && exit 0
+      if [ -n "$WHY" ]; then
+        printf 'Maude: opening a PR through a command I cannot read with certainty (%s), so no lens can be shown to cover what it pushes. Run the lens on the commit it pushes first.\n' "$WHY" >&2
+        exit 0
+      fi
+      NOW_S="$(date +%s)"
+      UNRES=""; UNCOV=""
+      while IFS="$(printf '\t')" read -r d src; do
+        [ -n "$src" ] || continue
+        sha="$(git -C "$d" rev-parse --verify -q "$src^{commit}" 2>/dev/null)"
+        if [ -z "$sha" ]; then UNRES="$UNRES $src"; continue; fi
+        # care.json: a stamp whose refs name the sha (7+ chars), from any session, not
+        # from the future (skew 60 s). `. as $r` names the ref: inside `$sha | ...` the dot
+        # is $sha itself, and that slip let ANY stamped ref cover the head.
+        cov="$(jq -r --argjson now "$NOW_S" --arg sha "$sha" '
+          [(.last_redteam_iso // {}) | if type=="object" then .[] else empty end
+           | select(type=="object")
+           | select(((.ts // "") | sub("Z$";"") | strptime("%Y-%m-%dT%H:%M:%S") | mktime) <= ($now + 60))
+           | (.refs // [])[] | select(type=="string" and length >= 7)
+           | . as $r | select($sha | startswith($r))] | length' "$CARE" 2>/dev/null)"
+        [ "${cov:-0}" -gt 0 ] 2>/dev/null || UNCOV="$UNCOV ${sha:0:7}"
+      done <<TARGETS_EOF
+$TARGETS
+TARGETS_EOF
+      [ -n "$UNRES" ] && printf 'Maude: opening a PR, but%s does not resolve here, so no lens can be shown to cover it. Name the commit and run the lens on it first.\n' "$UNRES" >&2
+      [ -n "$UNCOV" ] && printf 'Maude: opening a PR for%s and no adversarial lens names it (asked care.json). Run the lens on%s before it opens.\n' "$UNCOV" "$UNCOV" >&2
+      exit 0
+    fi
+
     printf '%s' "$CMD" | grep -qE -- "$COMMIT_RE" || exit 0
 
     TRACE_DIR="$(maude_self_dir)/trace"

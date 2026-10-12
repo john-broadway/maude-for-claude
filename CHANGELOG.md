@@ -1,6 +1,6 @@
-<!-- Version: 0.34.0 -->
+<!-- Version: 0.35.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-10-09 -->
+<!-- Revised: 2026-10-12 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,60 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.35.0 - she sees the PR open, and says when no release will reach you
+
+- **The suite can no longer hang the release gate.** Every test file now runs with stdin
+  closed. A hook under test reads its JSON from stdin when stdin is not a terminal, and under
+  the release script that stdin never closed, so the gate sat a full day on one file with
+  nothing red. A control shows the hook waiting on an open stdin and returning on a closed one.
+
+- **The redteam whisper moves to the moment a PR opens.** When a command could open a PR,
+  Maude checks that a lens was pointed at what is pushed, and whispers when nothing shows it.
+  The trigger is wide and word-based, read on the command before heredoc bodies are stripped:
+  `gh` or `tea` (`.exe` too) beside `pr`/`pull`/`pulls` and `create`/`new`/`c` in any order,
+  `gh api` on pulls or graphql, anything naming `refs/for/` or `refs/drafts/` or
+  `createPullRequest`, and any two of those words beside an expansion character (`$`,
+  backtick, brace, parenthesis), where a word may be built at run time. She stays silent only
+  where she reads the whole command: plain characters (no `$`, backticks, parentheses,
+  braces, redirects or backslashes), no `;`, `&`, `|` or newline inside a quoted argument,
+  and every step either a plain PR open (`git push [-C dir] <remote>
+  <src>:refs/for/<base>` with no option, no other refspec, and each refspec's source checked,
+  or `gh`/`tea pr create` from HEAD with no `--head`/`--repo`/`--remote`/`--login`, no short
+  cluster carrying `H`, `R`, `r` or `l`, and on `tea` no one-dash word) or a known read-only
+  step (`git status|log|diff|show`, `echo`, `true`, none carrying `--output` or a short cluster
+  with an `o`), and every pushed sha named by a lens stamp in her care.json (seven characters
+  or more, not from the future), the test `ship.sh` already uses. Anything else she sees
+  whispers, naming the step or the command. She reads text, not the shell: an open she cannot
+  see is one whose words are hidden two at a time (`$BIN $sub create`, `git push $ARGS`, a
+  variable exported earlier, an alias, a script file). She never touches the network and never posts a
+  status: a forge's review status is the forge's to enforce, and her stamp is a text
+  heuristic. Never blocks. Eight review rounds each found spellings that went silent; the
+  rule became an allowlist of commands rather than a list of bad words, and the trigger
+  became a set of words rather than a phrase.
+
+- **She says when no release will ever reach you.** Claude Code's only update notice for a
+  plugin is its own `Plugin updated: maude` (reloaded in place, or run `/reload-plugins`),
+  printed after the startup pass refreshes a marketplace with auto-update on; that is off by default for
+  every marketplace that is not Anthropic's. At wake, when her marketplace is remote (github,
+  git, url) and no record carries an `autoUpdate` key (a settings file's
+  `extraKnownMarketplaces` entry or `known_marketplaces.json`), the self-check names the
+  switch: `/plugin`, Marketplaces, maude, Enable auto-update. She resolves the key the way
+  the harness does: settings scopes merged, project-local over project over user, a scope's
+  entry replacing the lower one whole, then the record; both under `CLAUDE_CONFIG_DIR` when
+  it is set. A boolean found there, true or false, is a choice already made and she stays
+  quiet; so do in-place directory installs, which have nothing to auto-update, and the
+  harness's own kill switches read with its grammar (`DISABLE_AUTOUPDATER`,
+  `DISABLE_UPDATES`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, and `autoUpdates: false` in
+  `.claude.json` unless the install is native and protected, all unless
+  `FORCE_AUTOUPDATE_PLUGINS`). A settings entry the harness would drop (its schema: a source with its
+  kind's required field, `installLocation` a string if present, `autoUpdate` a boolean if
+  present, null included in the rejects) is no entry. The README's install section carries the same flip. Seven lens
+  rounds folded: a whisper on stderr passed a merged capture, the switch grammar, the config
+  dir, the whole-entry merge, a suite that read the caller's switches, the notice's real
+  wording, the harness's entry schema, the `on` spelling no test had held, the fourth switch in `.claude.json`, and three rounds
+  of holes in the suite itself (the common adopter config, the record's own discovery path,
+  fixtures with no spaces in their names).
 
 ## v0.34.0 - the gate reads what bash will run, and now.md has one writer
 

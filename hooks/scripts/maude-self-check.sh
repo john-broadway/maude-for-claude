@@ -34,9 +34,85 @@ command -v jq >/dev/null 2>&1 || exit 0
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$DIR/../.." && pwd)}"
 
+# Both records live under the config dir, which CLAUDE_CONFIG_DIR relocates (lens 1); the
+# global config sits beside them there, else at $HOME/.claude.json (lens 4).
+CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+KM="$CFG/plugins/known_marketplaces.json"
+GC="${CLAUDE_CONFIG_DIR:+$CLAUDE_CONFIG_DIR/.claude.json}"; GC="${GC:-$HOME/.claude.json}"
+
+# ── Will the next Maude reach this house at all? ───────────────────────────
+# Claude Code's only update notice for a plugin is its own
+# "Plugin updated: maude" (suffixed: reloaded, or run /reload-plugins), printed after the
+# startup pass refreshes a marketplace with auto-update ON. That is off by default
+# for every marketplace that is not Anthropic's, so an adopter who followed the
+# README never hears of a release (2026-10-10, read from 2.1.296 and the docs).
+# She says so at session start, for a REMOTE marketplace (github, git, url;
+# in-place directory/file sources load their current files and have nothing to
+# auto-update), when NO record carries the key. The harness resolves it the way
+# this does: the settings scopes merged, project-local over project over user,
+# where a scope's `extraKnownMarketplaces.maude` entry replaces the lower one
+# WHOLE (an entry without the key hides a lower true: lens 1), else the
+# known_marketplaces.json record. Managed, --settings and --add-dir scopes are
+# not read here. A boolean found there, true or false, is a choice somebody made.
+# Silent under the harness's own kill switches, read with its grammar (2.1.296:
+# DISABLE_AUTOUPDATER / DISABLE_UPDATES / FORCE_AUTOUPDATE_PLUGINS are on for
+# 1, true, yes, on, trimmed and any case; CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC
+# for any non-empty value; autoUpdates false in the global config unless the
+# install is native and protected, lens 4), where the pass the toggle governs
+# never runs, the menu hides the toggle, and the flip would change nothing. The
+# host-pin switch (CLAUDE_CODE_AUTOUPDATER_DISABLED_BY_HOST) is not read. A file
+# that fails to parse casts no vote.
+# stdout is the brief Claude reads, as the two whispers below; whether a line
+# reaches the human's screen is his to relay.
+# An entry is what the harness keeps after its schema (2.1.296, the shapes `claude doctor`
+# reports as "Invalid marketplace entry was ignored"): source an object with a string kind
+# and the string field that kind requires (github: repo; git, url: url; file, directory:
+# path; an unknown kind is left unvalidated), installLocation absent or a string,
+# autoUpdate absent or a boolean (an explicit null is rejected). Anything else it drops
+# before the merge, so a hand-edited {"autoUpdate":true} with no source is no entry
+# (lens 2), and a broken higher entry does not hide a lower true (lens 3).
+_au_entry() {  # <settings-file> → nothing (no entry) | none (entry, no key) | true | false
+  [ -f "$1" ] && jq -r '.extraKnownMarketplaces.maude
+    | if type != "object" or (.source | type) != "object" or (.source.source | type) != "string" then empty
+      elif has("installLocation") and (.installLocation | type) != "string" then empty
+      elif ({github: "repo", git: "url", url: "url", file: "path", directory: "path"}[.source.source]) as $need
+           | $need != null and (.source[$need] | type) != "string" then empty
+      elif has("autoUpdate") | not then "none"
+      elif (.autoUpdate | type) == "boolean" then (.autoUpdate | tostring)
+      else empty end' "$1" 2>/dev/null
+}
+_switch_on() {  # the harness's Ne(): trimmed, lowercased, one of 1 true yes on
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')" in
+    1|true|yes|on) return 0 ;; *) return 1 ;;
+  esac
+}
+case "$(jq -r '.maude.source.source // empty' "$KM" 2>/dev/null)" in
+  github|git|url)
+    PROJ="${CLAUDE_PROJECT_DIR:-$PWD}"
+    VOTE=""
+    for f in "$PROJ/.claude/settings.local.json" "$PROJ/.claude/settings.json" "$CFG/settings.json"; do
+      ENTRY="$(_au_entry "$f")"
+      [ -n "$ENTRY" ] || continue            # this scope declares no entry: look lower
+      [ "$ENTRY" != "none" ] && VOTE="$ENTRY"
+      break                                  # the highest scope with an entry is the whole entry
+    done
+    [ -n "$VOTE" ] || VOTE="$(jq -r '.maude.autoUpdate | if type == "boolean" then tostring else empty end' "$KM" 2>/dev/null)"
+    KILLED=""
+    if ! _switch_on "${FORCE_AUTOUPDATE_PLUGINS:-}"; then
+      if _switch_on "${DISABLE_AUTOUPDATER:-}" || _switch_on "${DISABLE_UPDATES:-}" \
+         || [ -n "${CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:-}" ] \
+         || { [ -f "$GC" ] && jq -e '.autoUpdates == false
+                and (.installMethod != "native" or .autoUpdatesProtectedForNative != true)' "$GC" >/dev/null 2>&1; }
+      then KILLED=y; fi
+    fi
+    if [ -z "$VOTE" ] && [ -z "$KILLED" ]; then
+      printf 'Maude: auto-update is off for my marketplace, so Claude Code will never say a new Maude landed. Flip it once: /plugin, Marketplaces, maude, Enable auto-update. From then on each release prints "Plugin updated: maude" at the start of a session, with a note whether it reloaded or needs /reload-plugins.\n'
+    fi
+    ;;
+esac
+
 SRC="${MAUDE_SOURCE_DIR:-}"
 if [ -z "$SRC" ]; then
-  KM="$HOME/.claude/plugins/known_marketplaces.json"
   [ -f "$KM" ] && SRC="$(jq -r '.maude.source.path // empty' "$KM" 2>/dev/null)"
 fi
 [ -n "$SRC" ] && [ -d "$SRC" ] || exit 0

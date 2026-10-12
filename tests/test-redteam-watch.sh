@@ -1652,6 +1652,298 @@ test_start "the collation NOTE names its locales on every run (33rd lens, MINOR-
 assert_contains "${_NOTE_LOCALES:-}" "collation pins asserted under:" "the NOTE line is printed"
 assert_contains "${_NOTE_LOCALES:-}" "$LOCALES" "and it carries the locale set the pins ran under"
 
+# ── PR-TIME LENS NUDGE (2026-10-09, projects-13 item 1 on John's word) ────────────
+# Before a PR opens, Maude asks whether a care.json stamp's brief NAMED the head sha
+# (ship.sh's test). Whisper when none does; never block; never post a status; never touch
+# the network (the forge's agency/lens status is the agency's side, John 2026-10-09). The sha checked is the one being PUSHED, not merely HEAD: guessing HEAD
+# could say "covered" for a branch nobody reviewed.
+PRR="$TEST_TMP/prrepo"
+mkdir -p "$PRR"; git -C "$PRR" init -q; git -C "$PRR" config user.email t@t; git -C "$PRR" config user.name t
+git -C "$PRR" commit -q --allow-empty -m one; FEAT="$(git -C "$PRR" rev-parse HEAD)"; git -C "$PRR" branch feat
+git -C "$PRR" commit -q --allow-empty -m two; HEADSHA="$(git -C "$PRR" rev-parse HEAD)"
+pr_cmd() { jq -nc --arg c "$1" --arg d "$PRR" '{tool_name:"Bash", hook_event_name:"PreToolUse", session_id:"s1", cwd:$d, tool_input:{command:$c}}'; }
+stamp_refs() { jq -nc --arg r "$1" '{last_redteam_iso:{other:{ts:"2099-01-01T00:00:00Z", refs:($r|split(","))}}}' > "$CARE"; }
+stamp_now() { jq -nc --arg r "$1" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{last_redteam_iso:{other:{ts:$ts, refs:($r|split(","))}}}' > "$CARE"; }
+run_pr() { OUT="$(pr_cmd "$1" | bash "$RT" check 2>&1 >/dev/null)"; }
+
+test_start "gh pr create with no lens naming HEAD whispers, naming the sha and the source"
+reset_all; run_pr "gh pr create --fill"
+assert_contains "$OUT" "${HEADSHA:0:7}" "names the sha"
+assert_contains "$OUT" "care.json" "names the source that answered"
+test_start "a care.json stamp that names HEAD (7+ chars) keeps gh pr create silent"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "gh pr create --fill"
+assert_eq "$OUT" "" "silent"
+test_start "a stamp naming some other sha does not cover HEAD"
+reset_all; stamp_now "${FEAT:0:7}"; run_pr "gh pr create --fill"
+assert_contains "$OUT" "${HEADSHA:0:7}" "whispers"
+test_start "a 6-char prefix is a word, not a sha: no credit"
+reset_all; stamp_now "${HEADSHA:0:6}"; run_pr "gh pr create"
+assert_contains "$OUT" "${HEADSHA:0:7}" "whispers"
+test_start "a stamp from the future is not a stamp"
+reset_all; stamp_refs "${HEADSHA:0:7}"; run_pr "gh pr create"
+assert_contains "$OUT" "${HEADSHA:0:7}" "whispers"
+test_start "an AGit push to refs/for/<base> is a PR open too"
+reset_all; run_pr "git push origin HEAD:refs/for/main"
+assert_contains "$OUT" "${HEADSHA:0:7}" "whispers"
+test_start "the PUSHED ref is checked, not HEAD: a lensed HEAD does not cover an unlensed branch"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "git push origin feat:refs/for/main"
+assert_contains "$OUT" "${FEAT:0:7}" "names the pushed sha"
+test_start "and a lensed pushed branch is silent"
+reset_all; stamp_now "${FEAT:0:7}"; run_pr "git push origin feat:refs/for/main"
+assert_eq "$OUT" "" "silent"
+test_start "a pushed ref that does not resolve is never called covered"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "git push origin nosuchref:refs/for/main"
+assert_contains "$OUT" "nosuchref" "names what it could not resolve"
+test_start "a plain push to a branch is not a PR open: no lens whisper"
+reset_all; run_pr "git push origin main"
+assert_eq "$OUT" "" "silent"
+test_start "tea pr create is a PR open"
+reset_all; run_pr "tea pr create --title x"
+assert_contains "$OUT" "${HEADSHA:0:7}" "whispers"
+
+# Lens on bb41cbf: each of these stayed SILENT while an unlensed sha was the one pushed.
+OTHER="$TEST_TMP/otherrepo"
+mkdir -p "$OTHER"; git -C "$OTHER" init -q; git -C "$OTHER" config user.email t@t; git -C "$OTHER" config user.name t
+git -C "$OTHER" commit -q --allow-empty -m o; OSHA="$(git -C "$OTHER" rev-parse HEAD)"
+test_start "every refspec is checked: a lensed first one does not cover an unlensed second"
+reset_all; stamp_now "${FEAT:0:7}"; run_pr "git push origin feat:refs/for/main HEAD:refs/for/dev"
+assert_contains "$OUT" "${HEADSHA:0:7}" "names the unlensed second"
+test_start "and both lensed is silent"
+reset_all; stamp_now "${FEAT:0:7},${HEADSHA:0:7}"; run_pr "git push origin feat:refs/for/main HEAD:refs/for/dev"
+assert_eq "$OUT" "" "silent"
+test_start "git -C <dir> push resolves in that dir, not the hook's cwd"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "git -C $OTHER push origin HEAD:refs/for/main"
+assert_contains "$OUT" "${OSHA:0:7}" "names the other repo's head"
+test_start "gh pr create --head <branch> whispers: the PR head is a branch on the forge (round 4)"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "gh pr create --head feat"
+assert_contains "$OUT" "on the forge" "says why"
+test_start "gh pr create -H owner:branch cannot be resolved here: whisper"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "gh pr create -H someone:feat"
+assert_contains "$OUT" "someone:feat" "names what it could not resolve"
+test_start "a cd before the PR open: the repo is unknown, whisper"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "cd $OTHER && gh pr create"
+assert_contains "$OUT" "Maude:" "whispers"
+for c in "gh -R o/r pr create" "GH_TOKEN=x gh pr create" "env gh pr create" "tea pr c" "tea pulls c" \
+         "git -c a=b push origin HEAD:refs/for/main" "git push origin HEAD:refs/drafts/main"; do
+  test_start "detected as a PR open: $c"
+  reset_all; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+# Lens round 2 on 1282e0f: refs were read from the quote-STRIPPED view, so quoting a ref
+# deleted it (falling back to a lensed HEAD) or deleted the trigger itself.
+for c in '"feat":refs/for/main' 'feat:"refs/for/main"' '"feat:refs/for/main"'; do
+  test_start "a quoted refspec still names what is pushed: $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "git push origin $c"
+  assert_contains "$OUT" "${FEAT:0:7}" "names the pushed sha"
+done
+for c in '--head "feat"' "-H 'feat'" '-Hfeat' '--head HEAD --head feat' '-H HEAD -H feat'; do
+  test_start "gh pr create $c whispers (quoted, attached, or several --head)"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "gh pr create $c"
+  assert_contains "$OUT" "on the forge" "a forge head is never called covered"
+done
+for c in 'echo $(git push origin feat:refs/for/main)' '(git push origin feat:refs/for/main)' '`git push origin feat:refs/for/main`'; do
+  test_start "a PR open inside a subshell or substitution is detected, and whispers: $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "not silent (it is not read with certainty, round 3)"
+done
+test_start "a backslash-newline continuation does not hide the second refspec"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr $'git push origin HEAD:refs/for/main \\\n  feat:refs/for/dev'
+assert_contains "$OUT" "${FEAT:0:7}" "names feat"
+# Lens round 3 on 91005fd: substitutions, wrappers, a HEAD moved earlier in the same
+# command, a base carried in a variable. Silence now requires a command Maude reads in
+# full; anything else whispers that she cannot verify it.
+for c in 'git push origin $(git rev-parse feat):refs/for/main' \
+         'git push origin $(git rev-parse feat | head -1):refs/for/main' \
+         'bash -c "git push origin feat:refs/for/main"' 'bash -c "gh pr create --head feat"' \
+         'eval "gh pr create --head feat"' 'git checkout feat && gh pr create --fill' \
+         'git switch feat; gh pr create' 'R=refs/for/main; git push origin feat:$R' \
+         'git commit -m wip && gh pr create' 'gh api repos/o/r/pulls -f head=feat -f base=main'; do
+  test_start "not read with certainty, so it whispers: $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+# A wrapper hides a HEAD move from the quote-erased view: without the wrapper rule this
+# reads as a plain open of a lensed HEAD and goes silent, though bash checks out feat first.
+test_start "a wrapped checkout before the open whispers (the wrapper rule, not the moves rule)"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr 'sh -c "git checkout feat" && gh pr create'
+assert_contains "$OUT" "cannot vouch for: sh" "names the step it could not vouch for"
+# Lens round 4 on 39390fa: a denylist of words lost to aliases, update-ref, --git-dir,
+# /bin/sh, make and scripts. Each of these, with a lensed HEAD, must whisper.
+for c in 'git -c alias.x=checkout x feat && gh pr create' 'git update-ref HEAD feat && gh pr create' \
+         'git symbolic-ref HEAD refs/heads/feat && gh pr create' 'git bisect start feat && gh pr create' \
+         'git fetch . feat:c && git push origin c:refs/for/main' 'git branch -f c feat && git push origin c:refs/for/main' \
+         'git --git-dir=../o/.git git push origin HEAD:refs/for/main' 'GIT_DIR=../o/.git gh pr create' \
+         'env -C ../o gh pr create' 'git -C . -C ../o git push origin HEAD:refs/for/main' \
+         '/bin/sh -c "git checkout feat" && gh pr create' './sw.sh && gh pr create' 'make sw && gh pr create' \
+         'gh pr checkout 5 && gh pr create' 'git push origin feat:main && gh pr create' 'gh pr create -R x/y'; do
+  test_start "round 4, not vouched for, whispers: $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+# Two -C flags compose in git (-C /other -C . is /other). Reading either one alone can land
+# on a lensed cwd; only one plain -C is read, and two whisper.
+test_start "git -C <other> -C . push whispers (git joins the -C flags)"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "git -C $OTHER -C . push origin HEAD:refs/for/main"
+assert_contains "$OUT" "Maude:" "whispers"
+# Lens round 5 on 9cf2c6d: a "read-only" git log|diff|show --output=<file> writes a ref
+# before the open; git push --receive-pack=<cmd> / --exec=<cmd> runs a command first; and a
+# combined short cluster (-dH feat) hid -H from a leading-flag match.
+for c in 'git log --output=.git/refs/heads/feat -1 && gh pr create' 'git diff --output .git/refs/heads/feat && gh pr create' \
+         'git show -o .git/refs/heads/feat && gh pr create' 'git log -po x HEAD && gh pr create'; do
+  test_start "round 5, a read-only verb that writes a file whispers: $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "$c"
+  assert_contains "$OUT" "writes a file" "names the step"
+done
+for c in 'git push --receive-pack=./evil origin HEAD:refs/for/main' 'git push --exec=./evil origin HEAD:refs/for/main' \
+         'git push -o topic=x origin HEAD:refs/for/main' 'git push origin HEAD:refs/for/main --force' \
+         'git -C . push -u origin HEAD:refs/for/main'; do
+  test_start "round 5, a push carrying any option whispers: $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "$c"
+  assert_contains "$OUT" "push option" "names the step"
+done
+for c in '-dH feat' '-fH feat' '-Hd feat' '-dR o/r' '-fr someone' '-tl x'; do
+  test_start "round 5, a short cluster carrying H/R/r/l whispers: gh pr create $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "gh pr create $c"
+  assert_contains "$OUT" "on the forge" "a forge head is never called covered"
+done
+for c in 'git log --oneline -3 && gh pr create --fill' 'git log -p -3 && gh pr create' 'git diff --stat && gh pr create' \
+         'gh pr create -d --fill' 'gh pr create -df' 'gh pr create -t x -b y' 'git push origin +feat:refs/for/main'; do
+  test_start "round 5 control, still silent: $c"
+  reset_all; stamp_now "${HEADSHA:0:7},${FEAT:0:7}"; run_pr "$c"
+  assert_eq "$OUT" "" "silent"
+done
+
+# Lens round 6 on 570fb43: the trigger's left boundary had no ; & | and no newline, so a
+# PR open written on its own line (the shape the harness sends most) was never seen; a
+# backslash inside the trigger word hid it; gh api graphql createPullRequest opens a PR; a
+# review push could carry a non-review refspec beside the review one.
+for c in $'git status\ngh pr create' 'git status;gh pr create' 'git status&&gh pr create' 'true|gh pr create' \
+         'git status ;tea pr create --title x' $'git status\ngit push origin HEAD:refs/for/main' \
+         'git push origin HEAD:refs/f\or/main' 'gh p\r create' 'gh api graphql -f query=createPullRequest' \
+         'gh PR create' 'gh pr new' '(gh pr create)' '/usr/bin/gh pr create' 'git status | gh pr create'; do
+  test_start "round 6, an unlensed open is seen and whispers: $c"
+  reset_all; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+for c in 'git push origin feat:refs/for/main HEAD' 'git push origin feat:refs/for/main HEAD:refs/heads/z' \
+         'git push origin feat:refs/for/main main' 'git push feat:refs/for/main'; do
+  test_start "round 6, a review push carrying anything but review refspecs whispers: $c"
+  reset_all; stamp_now "${FEAT:0:7},${HEADSHA:0:7}"; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+for c in '--head=feat' '--remote x' '--login other'; do
+  test_start "round 6, a forge-side head form whispers with HEAD lensed: gh pr create $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "gh pr create $c"
+  assert_contains "$OUT" "on the forge" "names why"
+done
+test_start "round 6, tea pr create --login whispers with HEAD lensed"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "tea pr create --login other"
+assert_contains "$OUT" "on the forge" "names why"
+test_start "round 6, a redirect in a read-only step is not plain text, lensed or not"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr 'git log > .git/refs/heads/zz ; gh pr create'
+assert_contains "$OUT" "cannot read" "the character allowlist refuses it"
+test_start "round 6 control: a lensed open on its own line is silent"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr $'git status\ngh pr create --fill'
+assert_eq "$OUT" "" "silent"
+
+# Lens round 7 on f7b84e9: flags between pr and create (gh routes `gh pr -R o/r create` as a
+# create), .exe spellings (WSL), a heredoc-fed shell, a graphql open from a file, tea's
+# single-dash flags, and words built by brace or $'' expansion. The trigger is wide and
+# word-based now, read on the UNSTRIPPED command; the allowlist decides.
+for c in 'gh pr -R o/r create --head feat' 'gh pr --repo o/r create' 'gh pr -R o/r new' 'tea pr -l x create' \
+         'tea pulls --login x create' 'tea pr --repo o/r create' 'gh.exe pr create' 'tea.exe pr create' 'GH.EXE pr create' \
+         $'bash <<\'EOF\'\ngh pr create\nEOF' $'cat <<EOF | sh\ngit push origin HEAD:refs/for/main\nEOF' \
+         $'python3 - <<EOF\nimport os; os.system("gh pr create")\nEOF' \
+         'gh api graphql -f query=@q.graphql' 'gh api graphql --input q.json' $'gh api graphql -f query=@- <<EOF\nmutation { createPullRequest }\nEOF' \
+         'refs/{for,for}/main' 'git push origin HEAD:refs/{for,for}/main' 'gh pr crea{te,te}' "gh pr \$'create'" 'gh pr $(echo create)' \
+         'gh pr `echo create`' 'echo `gh pr create`' 'tea pull create' 'git status & gh pr create' 'git log && git push origin HEAD:refs/for/main' \
+         'true && tea pr create'; do
+  test_start "round 7, an unlensed open is seen and whispers: $c"
+  reset_all; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+for c in '--repo o/r' '--repo=o/r' '-R o/r'; do
+  test_start "round 7, gh pr create $c whispers with HEAD lensed"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "gh pr create $c"
+  assert_contains "$OUT" "on the forge" "names why"
+done
+for c in 'tea pr create --repo o/r' 'tea pr create -head feat' 'tea pr create -base main -head feat' 'tea pulls create -head=feat'; do
+  test_start "round 7, $c whispers with HEAD lensed (tea flags)"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+# The plain-character allowlist, one character at a time, each with a lensed HEAD.
+for ch in '$' '\\' '{' '}' '*' '?' '#' '!' '<' '>' '(' ')' '`'; do
+  test_start "round 7, a lensed open carrying the character $ch is not plain text"
+  reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "gh pr create ${ch}x"
+  assert_contains "$OUT" "cannot read" "the allowlist refuses it"
+done
+test_start "round 7, the expansions whisper names what it saw"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr 'gh pr create $F'
+assert_contains "$OUT" 'gh pr create $F' "names the command"
+
+# Lens round 8 on 5457a16: a separator inside a quoted argument split the command, each
+# piece began with a vouched verb, and the flag the allowlist exists to catch sat in a piece
+# read as a read-only step; a tool word hidden in a variable beside plain pr+create words;
+# and no row held $ or the backtick alone in the expansion class.
+for c in 'gh pr create --body "tests pass; echo ok" --head other' 'gh pr create --body "tests pass; true" -R o/r' \
+         'gh pr create --body "a & true" -H unl' 'gh pr create --body "a | echo" --repo o/r' \
+         $'gh pr create --body "line one\ntrue" --head feat' 'gh pr create --title "x; true" --head=feat' \
+         'tea pr create --description "x; echo" --head feat' "gh pr create --body 'it works; echo' --head feat" \
+         "git push origin 'feat:refs/for/m;true' --receive-pack=cmd" 'git push origin "feat:refs/for/m&echo" --exec=cmd'; do
+  test_start "round 8, a separator inside quotes is not a split, whispers with HEAD lensed: $c"
+  reset_all; stamp_now "${HEADSHA:0:7},${FEAT:0:7}"; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+test_start "round 8 control: quotes without a separator inside stay silent when lensed"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr 'gh pr create --title "tests pass" --body "all green"'
+assert_eq "$OUT" "" "silent"
+for c in '$GH_BIN pr create' '"$GH_BIN" pr create' '${BIN} pr create --fill' '$FORGE pulls create' 'gh $x create' 'gh p$x create' \
+         'gh pr $SUB' 'tea pulls $SUB' 'gh pr crea$x' 'gh pr `cat sub`' "g''h pr create" "git push origin HEAD:refs/f''or/main"; do
+  test_start "round 8, a word hidden by an expansion or a quote split is seen and whispers: $c"
+  reset_all; run_pr "$c"
+  assert_contains "$OUT" "Maude:" "whispers"
+done
+test_start "round 8, a stamp five minutes in the future is not a stamp"
+reset_all; jq -nc --arg r "${HEADSHA:0:7}" --arg ts "$(date -u -d '+300 seconds' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v+300S +%Y-%m-%dT%H:%M:%SZ)" '{last_redteam_iso:{other:{ts:$ts, refs:($r|split(","))}}}' > "$CARE"
+run_pr "gh pr create"; assert_contains "$OUT" "${HEADSHA:0:7}" "whispers"
+test_start "round 8, a stamp ref that is a mid-sha substring does not cover"
+reset_all; stamp_now "${HEADSHA:5:8}"; run_pr "gh pr create"; assert_contains "$OUT" "${HEADSHA:0:7}" "whispers"
+
+# Lens round 9 on 4aa53ae: a command JSON jq refuses (a lone surrogate, as a UTF-16 slice
+# mid-emoji leaves) emptied the command and the hook exited silent, a fail-open; and the
+# createPullRequest trigger had no row, so a tool other than gh carrying it was unguarded.
+test_start "round 9, a command JSON jq cannot parse is read raw, never silent"
+reset_all; stamp_now "${HEADSHA:0:7}"
+OUT="$(printf '{"tool_name":"Bash","hook_event_name":"PreToolUse","session_id":"s1","cwd":"%s","tool_input":{"command":"gh pr create --head x --body \"hi \\ud83d\""}}' "$PRR" | bash "$RT" check 2>&1 >/dev/null)"
+assert_contains "$OUT" "Maude:" "whispers on the raw text"
+raw_pr() { OUT="$(printf '{"tool_name":"Bash","hook_event_name":"PreToolUse","session_id":"s1","cwd":"%s","tool_input":{"command":"%s"}}' "$PRR" "$1" | bash "$RT" check 2>&1 >/dev/null)"; }
+# Lens round 10 on 364045e: in the raw text the escape \t lost its backslash in the trigger
+# view and glued two words (gh\tpr); the fallback decodes the whitespace escapes first.
+for c in 'gh\tpr create --fill \ud83d' 'gh pr\tcreate --fill \ud83d' 'gh\tpr\tcreate \ud83d' 'tea\tpulls\tc \ud83d' 'gh\r\npr\r\ncreate \ud83d'; do
+  test_start "round 10, an escape-glued word in a JSON jq refuses still whispers: $c"
+  reset_all; stamp_now "${HEADSHA:0:7}"; raw_pr "$c"; assert_contains "$OUT" "Maude:" "whispers"
+done
+test_start "round 10, a truncated JSON carrying an open whispers on the raw text"
+reset_all; OUT="$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"gh\tpr create' "$PRR" | bash "$RT" check 2>&1 >/dev/null)"; assert_contains "$OUT" "Maude:" "whispers"
+test_start "round 9, createPullRequest in any tool's command whispers"
+reset_all; run_pr 'node scripts/createPullRequest.js'; assert_contains "$OUT" "Maude:" "whispers"
+test_start "round 9, a separator inside single quotes, each kind"
+reset_all; stamp_now "${HEADSHA:0:7}"
+for c in "gh pr create --body 'a & true' -H unl" "gh pr create --body 'a | true' -H unl" "gh pr create --body 'a ; true' -H unl"; do
+  run_pr "$c"; assert_contains "$OUT" "Maude:" "whispers: $c"
+done
+
+test_start "control: a read-only step beside a plain lensed open stays silent"
+reset_all; stamp_now "${HEADSHA:0:7}"; run_pr "git status && gh pr create --fill"
+assert_eq "$OUT" "" "silent"
+test_start "control: a plain lensed open stays silent (the allowlist is not a blanket whisper)"
+reset_all; stamp_now "${FEAT:0:7}"; run_pr "git push origin 'feat':refs/for/main"
+assert_eq "$OUT" "" "silent"
+test_start "control: quoted prose naming gh pr create is not a PR open"
+reset_all; run_pr 'echo "next: gh pr create"'
+assert_eq "$OUT" "" "silent"
+
 print_summary
 teardown_test_env
 exit $FAILED
