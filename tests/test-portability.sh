@@ -358,6 +358,16 @@ V="$(grep -rnE 'mapfil[e]|readarra[y]|declare [-]A' "$ROOT/hooks/scripts" "$ROOT
   | grep -v 'portability-shim')"
 assert_eq "$V" "" "bash-4 builtin leaked: $V"
 
+# A $'...' that expands to a backslash, used as a ${var//pattern/} pattern, is not read the
+# same way by bash 3.2 (macOS) and bash 5: the old bash re-reads the backslash as a glob
+# escape or leaves the pattern unmatched, so a join that works here does nothing there
+# (v0.35.0, the PR-open continuation join; red on the public macOS leg only). Hold such a
+# pattern in a variable and quote it: "${var//"$pat"/}".
+test_start "product: no backslash-carrying \$'...' as a parameter-expansion pattern (bash 3.2)"
+V="$(grep -rnE '[$][{][^}]*[$]'"'"'[^'"'"']*[\\][\\]' "$ROOT/hooks/scripts" "$ROOT/scripts" --include='*.sh' 2>/dev/null \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')"
+assert_eq "$V" "" "bash-3.2 pattern leaked: $V"
+
 test_start "tests: no GNU touch dash-d (use touch_ago/touch_at)"
 V="$(grep -rnE 'touch [-]d([^[:alnum:]]|$)' "$ROOT/tests" --include='*.sh' 2>/dev/null \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#')"
