@@ -29,7 +29,10 @@ trap 'rm -f "$OUT_TMP"; rm -rf "$SUITE_TMP"' EXIT
 
 for t in test-*.sh; do
   TOTAL=$((TOTAL + 1))
-  bash "$t" > "$OUT_TMP" 2>&1; rc=$?
+  # stdin pinned shut: a hook under test that reads its JSON from stdin (`[ -t 0 ] || cat`)
+  # waited forever on a stdin that never closed, and the release gate sat a day on
+  # test-eye-hooks.sh with nothing red (2026-10-12). A gate that never returns is a stamp.
+  bash "$t" < /dev/null > "$OUT_TMP" 2>&1; rc=$?
   # Exit status is not the only signal. A file that ends without `exit "$FAILED"`
   # returns 0 whatever its assertions said (four did, 147 assertions unenforced,
   # found by the 11th lens on v0.30.1). Read the summary line too: a file that

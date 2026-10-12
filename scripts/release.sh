@@ -127,7 +127,7 @@ fi
 # 4. the gate — fail loudly if anything is incomplete/inconsistent
 RC=0
 printf '\n== verify ==\n'; bash scripts/maude-verify.sh "$ROOT" | tail -3 || RC=1
-printf '\n== test ==\n';   env -u MAUDE_RUN_GOVERNOR bash tests/run.sh >/dev/null 2>&1 && printf '  suite green\n' || { printf '  SUITE FAILED — run: env -u MAUDE_RUN_GOVERNOR make test\n'; RC=1; }
+printf '\n== test ==\n';   env -u MAUDE_RUN_GOVERNOR bash tests/run.sh </dev/null >/dev/null 2>&1 && printf '  suite green\n' || { printf '  SUITE FAILED — run: env -u MAUDE_RUN_GOVERNOR make test\n'; RC=1; }
 printf '\n== lint ==\n';   shellcheck --severity=warning hooks/scripts/*.sh scripts/*.sh tests/*.sh >/dev/null 2>&1 && printf '  lint clean\n' || { printf '  LINT FAILED — run: make lint\n'; RC=1; }
 # The prove-it-real gate: the release must work from the COMMIT a stranger
 # gets, not the working tree. NOTE: version bumps above are still uncommitted
