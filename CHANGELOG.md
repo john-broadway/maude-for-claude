@@ -1,6 +1,6 @@
-<!-- Version: 0.35.0 -->
+<!-- Version: 0.36.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-10-12 -->
+<!-- Revised: 2026-11-08 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,686 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.36.0 - the gate judges from the words bash will run, and every refusal says what it read
+
+- **On macOS the gate no longer runs out its clock on a long command.** The macOS-shaped
+  suite (BSD awk, as macOS ships it) ran this release's pin on 60,000 padding words before
+  `git push` and the hook was killed at 4 s, after which a killed hook blocks nothing; on
+  the box's own awk the same command blocked in a second. The red-clear fold grew its
+  output one word at a time, and BSD awk copies a string on every append and measures it on
+  every `length()`: 7.4 s for the fold alone. The join grew its input one line at a time
+  and its output one backslash run at a time, the same shape. The join now reads one line
+  at a time and prints as it goes, holding a run that ends a line until the next line says
+  whether a newline follows it: linear, 28 ms where it took 1.9 s. The fold appends to a
+  buffer flushed every 4 KB and keeps a running length (a table of one entry per word was
+  the next cliff, 1.2 s at 60,000 entries and 0.3 s at 64,000); its mention count is taken
+  only for names the command assigns, the only names it is ever read for, by a match loop
+  rather than a split per word; and a word with no `$` skips the substitution, the only
+  thing it does. The fold is faster, not proven linear, under BSD awk: the release's last
+  lens found one assignment, 60,000 words and the closet directory spelled still killed at
+  4 s once and 3.6 to 3.9 s the rest, and that shape now blocks in 2.3 to 2.5 s at host load
+  11 (pinned as `assign-closet`; red on the tree before it). The output is byte-identical:
+  the lens diffed over 10,000 inputs under both awks, and the join's oracle (the
+  per-character loop it replaced) still agrees. The padding pins are red on the unfixed
+  tree under the macOS shape and green on this one. The shape was older than this release
+  (`fix/gate-time-budget`, after v0.35.0), and no macOS-shaped run had read it until the
+  release rail did.
+- **The ship rail's leak audit reads loopback and the documentation ranges as what they
+  are, and a credential prefix at a word boundary.** This release was the first the audit
+  (2026-07-17) ran against the house's own fixtures, and it refused twenty files: the
+  embedder's loopback address in code and docs, RFC 5737 documentation addresses in the
+  redaction tests, and `task-notification`, which its credential pattern read as `sk-`
+  plus twelve characters. Loopback and the three documentation ranges are stripped from
+  each added line before the match (the box's pre-push guard exempts the same two
+  classes), so a real address beside one still fires; only a whole address is stripped,
+  so one glued to a documentation address (the release lens's catch:
+  the greedy last octet ate the real one's first) fires too; the credential prefix needs a
+  non-word character or the line start before it. Fixtures that ARE the shape under
+  test (an RFC1918 address the push label must class internal, the root home `~root`
+  expands to, a private-looking quad the redactor must mask) are assembled in the test
+  from two literals, the convention the rail uses for its own patterns; the synthetic
+  home in the judge tests is no longer home-shaped; the forge fixtures say `git@`.
+  Four pins in `tests/test-ship.sh`, red first: a loopback and a documentation address
+  pass, a real-shaped address beside one blocks, `task-notification` passes, an
+  assembled `sk-` token blocks.
+- **The red-clear refusal says what it read.** One line, "a command that names the red-clear
+  token file may only read it", was printed for every refusal, and most refusals in a day's
+  work named no token file at all: a closet path beside `${MAP:-…}`, `$(ls …)`, a `$1` inside
+  an awk program, `$(date …)` in a trace name, each refused because the static fold could not
+  read the expansion and failed closed, as the rule says it must. The label said the command
+  did what it did not do, and Maude's own wake ritual tripped it twice in one morning. A
+  refusal that states the wrong reason is a lying refusal (the push-label rule: a wrong label
+  trains clearing without reading). The rule is unchanged; the label is now built from what
+  `maude_redclear_touch` read: *unread* (the fold could not read something beside `.maude`,
+  which is what it keys on, not the closet; the way out is a literal path in its own call),
+  *redirect* (into the token, or into a quoted or shell-built target), or *word* (the first
+  command word beside the token that is not a plain reader, named: "has `sed` beside it,
+  read as a command word"),
+  and how the token was named: by its stem, or by a word the shell builds inside
+  `.maude/plugin` at run time, which the rule reads as the token ("names a word inside
+  .maude/plugin the gate cannot read whole … and has `date` beside it"). On an unread command the write checks
+  read the CLEAN PREFIX of the skeleton, the text before its first `$`, backtick, `{`, `(`,
+  `#` or `}`, in one pass: there every separator is a real boundary and every word is one
+  bash runs, so `rm <token> $1` says "write"; past that point a `;` may sit inside
+  `${x:-a;rm b}` or a comment, a word may be a fragment the seams cut from an expansion
+  (`x-sed` from `${x-sed}`), and the label says "refused unread; a write elsewhere in it
+  was not read either", which is true (the second and third lenses on this branch: a
+  boundary test that tried to name such writes read `;` inside an expansion, comments and
+  case patterns as boundaries, and a loop that re-read the skeleton per refused word went
+  quadratic and outran the hook's 5 s on 620 fragments, after which a killed hook blocks
+  nothing). Cost, named: a write after the first expansion on an unread command (`cat
+  ${MAP:-x} <token>; rm <token>`) is refused unread, not named. The word printed is
+  bounded: lowercased as the rule read it, only the 26 letters, digits and
+  `_./+-` in the C locale (under a UTF-8 locale `[a-z]` took accented and fullwidth
+  letters, and a lookalike of `rm` printed as the command run), at most 40 characters,
+  else "a word the label does not print"; a word holding a quote marker (`"r"m`, `""cat`)
+  prints as "a quoted word" (the first lens on this branch: a URL-shaped word carried a
+  credential to stderr, an ESC byte a terminal escape, and `"r"m` printed as `m`). Cost,
+  named: a 40-character word of that alphabet prints in full, which is the shape of some
+  secret keys minus their case; the label repeats only text already in the command. The ritual text in `commands/wake.md` and
+  `commands/check-on-claude.md` no longer puts the closet beside a `$(pwd)` or a `$(date …)`
+  in one call. Cost, named: a `$1` inside a quoted awk program is read by the fold as a
+  special parameter and refused unread; write the program to a file. Named, not folded: the
+  same `SELF=$PROJ/.maude/plugin` block stands in `found.md`, `notice.md`, `rest.md`,
+  `save.md` and `promote.md`, and trips the same refusal run as one call. The fifth lens
+  on this branch (`238e1c9`; 116 A/B probes against the base, no verdict moved, nothing
+  leaked, nothing over 2 s) found four labels that still lied: "runs `rm` beside it" on
+  a case pattern, an arithmetic operand, an array element, a function name or a comment
+  (the walk takes the first word after every seam as a command word, and the label now
+  says that: "has `rm` beside it, read as a command word", never that it runs); "a write
+  past that point was not read" when a `(` or `{` BEFORE the write emptied the clean
+  prefix (`(rm <token>); cat <token> $1`: the write is before the expansion, and the
+  label now says "elsewhere in it"); "builds a word inside .maude/plugin at run time"
+  on a quoted glob character, a literal byte (now "names a word inside .maude/plugin the
+  gate cannot read whole (… a glob character, quoted or not …)"); and "move the
+  expansion out" on a command with no expansion, refused by the fold's own caps (65
+  literal assignments, a value past 4 KB, 64 KB of text), which now say so ("holds more
+  than the gate's fold reads … Split it into smaller calls"). Named, not folded: the
+  stem inside a comment (`cat /x/y # see care-redclear.json; rm /x/y`) refuses with the
+  word label, since the rule reads a comment as text (a named cost already); a literal
+  `\001` byte in a word prints as "a quoted word", the skeleton's own marker. Tests:
+  `tests/test-gate-redclear-label.sh` (277 assertions: the three labels by shape and by naming, a write
+  beside an unread expansion, the bounded word, the rule and the hand on every label, the
+  plain reads that pass, the ritual text, the four labels the fifth lens caught).
+- **A word known only at run time in command position no longer hides the verb.** `$x git
+  push --force`, `${x:-} rm -rf /`, `$(true) gh release create v1`, `$1 git reset --hard`,
+  `git $x push`, and glued, `${x}git push`, `gi${x}t push`, `${x}rm -rf /`, and in a
+  wrapper's operand slot, `timeout $x 5 git push --force`, `sudo $x -u root rm -rf /`,
+  `git -C $x . push --force`: with x unset bash runs the words after the expansion, or the
+  literal residue of the word, and the slots shift; every one of them passed the gate
+  rc 0, every RED key included, behind two characters. The tables keyed nothing (the verb
+  was not at a command start) and the judge said *pass* (read whole, nothing keyed): its
+  unwrapping read a run-time command word as "no command here", and a run-time operand as
+  filling its slot. Now the parser gives every word its EMPTY READING (`empty`: the text
+  with each run-time expansion dropped, `$SHELL` and `$BASH` kept), and the judge reads
+  every command more than one way: CONSUMED (each word fills its slot, as before) and
+  VANISHED (a run-time word gone, a glued word left as its residue, the slots shifted),
+  and since two run-time words before the verb can be one empty and one not (`$x sudo -u
+  $u rm -rf /` with x unset and u set runs `sudo -u <u> rm -rf /`, which neither extreme
+  is: the lens on `fa4225c`), the run-time words the walk reads before the verb are read
+  by their kind: a BARE one, where a command word stands, is empty in every view (filled,
+  it is a wrapper the reader cannot see, and the read is opaque); a SLOT one, an option's
+  value or an operand (`-u $u`, a duration, a lock, git's `-C $d`), is empty or filled;
+  one AMONG a wrapper's options, or git's, is empty or an option that takes the next word
+  (`sudo $x root rm -rf /` with x = -u runs `sudo -u root rm -rf /`; every word of a run
+  there is one; one among git's options makes the read opaque in any reading, since it
+  can be `-c alias.push=…`); a value glued to its option or inside an assignment (`-n$n`,
+  `--user="$u"`, `FOO="$v"`, `$x=1` under env) is a slot too, filled as typed or empty as
+  its residue, and the read stays whole (its value is tier C: a token opens `env
+  GIT_SSH_COMMAND="ssh -i $key" git push`); in every combination up to four slot and
+  option words; past four the read is unreadable, which the gate refuses when nothing
+  keys. The region is read again with every word found so far empty, with each
+  option-area word taking the next word, and with every option-area word found so far
+  taking its next word at once, until no new word appears (eight passes at most), since
+  a word behind a slot's value, or behind a taken pair, is reached only there (`git -c
+  $x a=b $y push`, `sudo $x root -u $u rm -rf /`), and a word behind TWO taken pairs
+  only where both are taken (the fourth lens, on `dd9d405`: one pair per view left the
+  third word unfound, so `sudo $a r $b r $c r rm -rf /`, which with a, b and c set to
+  `-u` wipes the system, passed rc 0; four slot words before `git push --force` read
+  whole with no key; and five words among git's options read opaque, never unreadable,
+  since the cap counted only what discovery had found); a run-time word before the verb
+  that discovery could not place leaves the read unreadable (an equivalent mutant,
+  named: a word is unplaced only past eight passes or eight option-area words, and every
+  pass past the first is opened by a newly found slot or option word, so the cap of four
+  has refused the read before either bound is reached; the rule stays as the fail-closed
+  floor under the bounds). (The commit
+  security reviews on `57dc1ed`, `2747b8b` and `7bde3f2`, and the third lens: the two
+  extremes alone left an unkeyed pass, the walk stopped at a run-time word inside a
+  wrapper's options, git's region ended at its first run-time option, a filled
+  option-area word could take the next word, an opaque payload ahead of an overflowed
+  combination left the read opaque, discovery missed the eat views, a lookahead per word
+  went quadratic, and a glued slot was never filled.) Every hit of any reading counts.
+  Cost, named: the over-cap refusal reads as parser-unread, whose text says "a construct
+  it does not know"; the construct is five or more run-time slot words before the verb. A read in which a run-time word stood where the command
+  word stands, or among git's options, is not whole (opaque: no yellow token opens it,
+  since the word can be a wrapper or an alias); one a slot consumed as an option's value
+  or an operand (`git -C $d push`, `timeout $t git push`) is whole, as before: its value
+  is tier C (a value may split into more words; that is not read). The block line carries
+  the words as typed, the whole typed command when the hit was found with a run-time word
+  emptied, and reaches stderr on the partial-read and RED paths too (they cut the message
+  at its conscience sentence, and the parser's words were printed after it), printed once
+  (a message with no such sentence, parser-depth, kept its label through the cut and got
+  it twice), and find's deletes name the typed `find / -delete`, not the `rm -rf /` they
+  are read as. Where the tables keyed a RED on their own the judge does not run, and that
+  refusal prints the tables' message with no parser words (named, not folded). The
+  partial-read advice says to write the run-time word out when the syntax is valid. The
+  tables take a run-time word, or a run of them, as a transparent prefix (PREFIX, TPREFIX,
+  the rm net: `$NAME`, `${…}`, `$1`-class, `$(…)`, `$((…))`, a backtick), a `${…}`, `$(…)`
+  or backtick glued to the front of a verb as the path prefix they already skip (ABS, the
+  publish row included), and a run-time word among git's global options as skipped, so
+  with no python3 these block: `$x git push`, `$x$y git push`, `$((0)) git push`, `git $x
+  push --force`, `${x}git push`, `${x}${y}git push`, `${x}/bin/rm -rf /`, `${x}gh release
+  create v1`, `$x rm -rf /`, `$x mv <sole copy> …`; a run-time word BEFORE a wrapper
+  (`${x}sudo rm -rf /`, `$x env -C /tmp git push`) or in a wrapper's slot is the judge's
+  alone. Cost, named: `$CC …`, `$PYTHON …`,
+  `${CROSS}gcc …`, `"$VENV/bin/python" …` and any command led by an expansion pass as
+  before and are never read whole, so a yellow key beside one waits on the prefix being
+  written out; `${x:-git} push` stays tier C (a default value is not read); `"$x" git
+  push` and `$#git push` read the same as `$x git push` (bash runs `""`, or `0git`, and
+  stops; an over-block of a command that does nothing); with no python3, `gi${x}t push`
+  and `sudo`, `time`, `!` and `{` before a verb (older than this change) are the judge's
+  alone; a here-string holding an expansion (`bash <<<"$x git push --force"`) is not read
+  by either reader, older than this change and tier B. The fourth lens, on `dd9d405`,
+  broke the tables' half of the claim: the `$(…)` atom the rows skip excluded whitespace,
+  where the backtick atom beside it did not, so `$(printf '') mv <sole copy> /tmp/x`,
+  `$(true 1) git push --force`, `$(printf '')rm -rf /` and `sudo $(printf '') mv …`
+  passed both readers rc 0 (on main too; a sole-copy key is the tables' alone), and git's
+  option area skipped `$x` but not `$(true)` or a backtick (`git $(true) push --force`
+  passed the tables). The atom now allows whitespace; `;`, `&` and `|` stay out of it (a
+  run that crosses a separator is the 45 s grep), so a substitution holding one
+  (`$(:;:) mv <sole copy> …`) is a named residual for the keys the tables hold alone
+  (sole-copy-target, drop-table, the red-clear writes); the judge reads it for its own
+  keys. The same lens falsified the opaque rule on the judge's side: `timeout $x 5 $y git
+  push`, `flock $x /tmp/l $y git push`, `taskset $x 1 $y git push`, `chroot $x /r $y git
+  push`, `chrt $x 1 $y git push` and `runuser $x -u root git push` were keyed AND read
+  whole, so a yellow token opened them, with `$y` where the command word stands once
+  `$x` is empty: the consumed walk had taken `$x` as the duration, the lock, the mask or
+  the user, read `5` or the lock as the command, and never seen `$y`; the mark came from
+  that walk alone. A run-time word that stood where a command word stands in ANY
+  reading (a slot or an option word in another or not), and runuser's user word when it
+  is run-time, now mark the read not whole. The commit security review on the fourth
+  lens's first fold (`07bedea`) then found discovery still short: it took one found
+  option-area word at a time, or all of them at once, and a word behind a pair whose
+  neighbour must stay empty (`sudo $a $b r $c r $d r rm -rf /`: `$d` is reached where b
+  and c take and a does not) was reached by neither; discovery now takes every subset
+  of the words found so far (at most fifteen views a pass) and stops past the cap, where
+  the read is unreadable whatever else it would find. And the push label never reached
+  a push behind a run-time word: the
+  tables keyed it, the judge marked it opaque, and the partial-read refusal printed the
+  flat "Public, irreversible." before the labeler ran; the label is read first now, and
+  such a push says its remote could not be classed (an expansion disqualifies the
+  downgrade, as the threat model says). Named, not folded: a quote-glued word
+  (`$x""git push`, `$x''rm -rf /`, `"$x"rm -rf /`) passes the tables, since the quote
+  strip leaves `$xgit`, one name, where bash runs `git` (the judge reads it; tier B), and
+  the label prints that stripped word for the quoted forms; a RED behind four option-area
+  words and a 60,000-word tail (120 KB, under the cap) costs the judge 2.1 s (sixteen
+  views, each canonicalising every operand) and is refused as parser-budget, which says
+  to retry, where main passed it in 1.6 s (so the earlier claim that no budget shape
+  slowed was wrong for this one); a word that is both a slot and an option word counts
+  twice toward the cap, so four such words (`timeout $t1 5 $t2 5 $t3 5 $t4 5 git push
+  --force`) are unreadable where four plain option words key; the over-cap refusal still
+  says "a construct it does not know", not the count. The fifth lens, on `1cd56d1`, found
+  no tier A bypass and one hole left in the opaque rule: `timeout $x 5 nice $y -n 5 git
+  push` (and `ionice $y -c 3`, `stdbuf $y -o0`, `env $y -C /tmp`, before `git reset
+  --hard` and `git commit --amend` too) read whole, so a minted yellow token opened it;
+  with x empty bash runs `nice $y -n 5 git push`, and nice's first non-option word is
+  its command. The walk had filed `$y` as an option word because an option followed it.
+  For a wrapper whose first non-option word is its command (nice, ionice, stdbuf, sudo,
+  env, nohup, setsid and the rest) a run-time word in the option area is now a
+  command-position word too, and the read is not whole; for timeout, flock, taskset,
+  chrt and chroot the first word is an operand (a duration, a lock, a mask, a priority,
+  a directory), a run-time word there cannot be the command, and `timeout $t git push`
+  and `timeout $x 5 timeout $y 5 git push` stay whole, as a token should open them. Tests:
+  `tests/test-gate-dynamic-word.sh` (283 assertions: the tables with and without python3
+  on the PATH, the typed words on stderr, the label once, the token refusal, the `$CC`
+  controls both ways) and `tests/shell/test_judge_dynamic.py` (189, with the combined
+  readings, the parser's empty reading and a linear-time pin on 32 KB of glued wrappers).
+- **A `git push` block names the class of remote it aims at.** "git push detected. Public,
+  irreversible." said public for every push, and four pushes to an internal forge in one
+  night were each cleared on a label that was wrong: a wrong label trains clearing without
+  reading. The block is the same block, with the same `git-push` token; the label is read
+  from the remote's push URL on the block path only (one `git remote get-url --push`, never
+  on a command that passes): a local path or `file://`, localhost, a loopback or RFC1918
+  address, a host under `.lan` `.local` `.internal` `.home.arpa` `.localdomain`, or a host
+  listed in gate-config `internal_push_hosts` reads "an internal remote (host): not public,
+  still gated"; a known public forge reads "a PUBLIC remote (host). Public, irreversible";
+  anything else says it could not class the remote and reads as public. It downgrades the
+  wording only on a positive read of a push the gate can place: one push, at the front, in
+  the hook's cwd or a plain `-C`, with nothing in the command that could move it before it
+  runs (a `-c` config override can rewrite a URL by `pushInsteadOf`; `GIT_*` or `HOME=`
+  can swap the config that does; `cd`, `env`, `--git-dir`, `--work-tree`, `--receive-pack`
+  move the repo or what runs for it). The host is all the label prints: a token in an
+  `https://user:token@host` URL never reaches stderr. Force-push keeps its red row: history
+  dies on any remote. From the commit review: a URL git reads one way and a host reader
+  another (`https://github.com?@x.lan/r`: git ends the authority at the `?`, a reader past
+  the `@` says x.lan) holds a `?`, `#`, `%`, a backslash or a second `@`, and reads unknown;
+  a push that recurses into submodules (`--recurse-submodules`, or `push.recurseSubmodules`
+  set past `no`/`check`) sends each to its own remote and reads unknown too. Tests:
+  `tests/test-gate-push-label.sh` (120 assertions, with the shapes above).
+- **No run in a pattern row crosses a separator, so one grep cannot outrun the kill.** A
+  run like `[^[:space:]]*` scanned to the next space from every place a match could start,
+  and one line of 20,000 `a=1;` segments (80 KB, under the byte cap) with a push at its
+  end cost the git-push row's grep 45 s on main and on this branch's first commit: one
+  grep, which the clock between patterns cannot cut (the lens on c898dca, BLOCKING;
+  pre-existing, and the previous bullet's "linear" claim was wrong for this shape). With
+  `;&|` out of every run a start at a `;` scans its own segment and no further: the same
+  line walks in 1.2 s and keys git-push; 20,000 segments on their own lines, 63 s before,
+  1.3 s. An interval bound (`{0,255}`) was tried first and made grep slower, since it
+  expands intervals. Cost, named: an unquoted assignment value or path holding `;&|` is
+  not read by the tables; the judge, which keeps the quotes, reads it. On a box with no
+  python3 that is a regression in one shape: `X=a;b git push --force` was blocked by the
+  over-reach and now passes, as bash runs it (`b git push --force`, the command is `b`);
+  a function or wrapper named `b` that runs its arguments is the residual there, on main
+  with the judge as well.
+- **An argless `git push` is placed the way git places it.** The label read every remote
+  and called the push public if any was, a guess: `branch.<b>.pushRemote` or
+  `remote.pushDefault` set to a URL sent `git push` to github while the label read `git
+  remote`'s names and said internal (the lens, M1). It now follows git's order:
+  `branch.<b>.pushRemote`, `remote.pushDefault`, `branch.<b>.remote`, else origin; a URL is
+  taken wherever a name goes; a detached HEAD with nothing configured, or more than eight
+  remotes and no origin (the label has no clock of its own: M3), reads unknown; the label
+  is not read at all once the walk's clock is out. The label prints a host and nothing
+  else: a URL it cannot read, a local path, a remote name the repo lacks, a directory that
+  does not exist are each named by kind, never by value (M2).
+- **Unread with no key is refused too.** "unreadable" from the judge refused a yellow token
+  and nothing else, so one line it could not read (`shopt -s extglob` then `ls !(x)`: the
+  one construct found unread in 25 tried) ahead of a key only the judge reads passed, and
+  bash ran it (the lens, M4; pre-existing, the cut's sibling). A command the judge could
+  not read all of, with no key from the tables, is red, `parser-unread`, which nothing
+  clears. A payload known only at run time (`eval "$x"`, `bash -c "$x"`, a shell fed by a
+  pipe) is not this: the judge now says "opaque" for it, which refuses a yellow token and
+  nothing else, and the wrapped-payload walk whispers and passes it as before. A literal
+  body that does not parse is unreadable, at whatever depth: `bash -c $'shopt -s
+  extglob\nls !(x)\nenv -C /tmp git push --force'` read "opaque" and the tables alone
+  read its text, which do not key that push (the commit review on 2178e43). Cost,
+  named: a command in a syntax the parser does not read, a stray quote included, is
+  refused until it is rewritten in plain bash or split.
+- **A judge the clock cut no longer passes a command the tables did not key.** The shell
+  parser is the only reader of a quoted `"git" push`, `env -C <dir> git push`, brace
+  expansion and the wrappers it knows. A cut judge added nothing, so those passed, rc 0,
+  whenever the judge was cut or skipped for want of time, as it was under a loaded suite
+  (found by a mutant run on this branch; a test pinned the pass as "the cut read changes
+  nothing"). A cut on a command with no key is now red, `parser-budget`, the rule the table
+  walk already had. So is a judge that started reading and died (a crash on crafted text, a
+  kill under load): the gate's wrapper asks it for a first line, "read", before any
+  reading (`MAUDE_JUDGE_MARK`, off for the CLI), and a nonzero exit with that line behind it
+  is read as a cut; `env -C <dir> git push` passed that way once more in a loaded suite
+  after the clock fix. A judge that cannot start (no python3, or a python3 that exits with
+  nothing said) is the soft dependency it always was: the tables' verdict stands. With that, the walk's overdue check and the judge's budget
+  read the real clock (`EPOCHREALTIME` by its digits only, since the locale sets its decimal
+  mark and a comma made the arithmetic fail and the clock read "not overdue"; a clock it
+  cannot read, or one that went backwards, is overdue; the whole-second clock stands in on an
+  older bash):
+  `SECONDS` turns on the shell's own second boundary, so the whole-second read was overdue
+  anywhere from 2.0 to 3.0 s real and let a 3.7 s walk run, and a judge under budget could
+  be skipped for a second the clock could not see. Under budget the judge always gets one
+  second, so it is done by 4 s of the hook's 5. Cost, named: on a box slow enough to cut
+  the judge, or to walk a heavy command past 3 s (this box is a container on a shared host,
+  and at host load 30 twelve heredoc openers of 3.9 KB walked for 3 s), a plain command is
+  refused too, and passes on retry.
+- **The cushion-flip walks roots outside the project, dates the oldest unpushed commit, and
+  counts a commit on a detached HEAD.** A box's git-hooks repo held four unpushed commits on main for a month, unseen:
+  it sits outside every project, and the walk started at the project. Roots named one per
+  line in `~/.claude/maude/cushion-roots`, or in `MAUDE_CUSHION_ROOTS` (colon-separated),
+  are walked the same way; a root that does not exist is skipped. The unpushed line now
+  reads `N unpushed commit(s), oldest YYYY-MM-DD`.
+- **Pinned: a gated verb on line 1 followed by 12,000 lines is still read.** A peer found
+  two workspace hooks passing such input: `grep -q` exits on its first match, past the
+  pipe's 64 KB the writer takes SIGPIPE, and under `pipefail` the pipeline reads "no match".
+  The gate runs without `pipefail`; a mutant with it set still blocked every key, and lost
+  only the opaque-wrap whisper on `eval "$x"`, so the test pins the blocks and the whisper.
+- **The gate finishes inside the harness's kill, whatever the padding.** Under the 128 KB
+  cap, 100,000 spaces before `git push` ran the hook to 7.4 s, 60,000 words then `;` to
+  6.9 s and 130,000 `;` to 4.0 s; the harness kills a hook at 5 s and a killed hook blocks
+  nothing (lens 2 on the red-clear port, measured on `26fc003`). One bash substitution
+  (`${seg//[[:space:]]/}` over a 100 KB segment) was 5.7 of the 7.4 s. Now every walk over
+  the command is linear in its bytes: the blank test is a regex match, a run of separators
+  splits as one, the red-clear join walks only its backslash runs (byte-identical to the old
+  loop on a seeded corpus, `tests/test-redclear-join.sh`) and runs twice a command, not
+  three times; a run of 64 or more spaces, or of 64 or more tabs, is read as one before any
+  view is made (one class at a time, so a `<<-` body ends where bash ends it; the command
+  runs as sent); and the table walk of the live command asks the clock
+  between patterns and every 64 segments, stopping closed as `parser-budget`, red, which
+  nothing clears, the way `parser-depth` does (the blocking run only: the spend run after
+  the command re-reads it uncut, so it spends under the key it reserved). The 128 KB cap
+  bounds what the gate reads, the home-expanded view included: `~` is one byte in the
+  command and the home directory's length in every view that spells it out, so 62,000 of
+  them under the cap made 600 KB of views and outran the kill past the clock (the lens on
+  `177319d`, BLOCKING); a command whose expanded view passes the cap is refused whole. The
+  red-clear fold, which substitutes a literal value into every use, is bounded as a whole
+  too (OVER past twice the cap), not only per word: a 4 KB value used 25,000 times folded
+  to 100 MB under the cap and outran the kill (the advisor on this branch). Costs, named:
+  a command spelling some 20,000 home paths is refused; a command whose folded view passes
+  twice the cap is refused with the token-file rule's line though it may name no file; a command of some 40,000
+  segments, or one whose tables outrun 3 s on a slow box, is refused rather than run; a run
+  of 64 blanks inside a quoted argument reads as one in the gate's view only; a quoted
+  heredoc delimiter holding a run of 64 or more whose closing line spells a different count
+  closes the body early for the gate (the squeeze stops at a quote and never removes a run,
+  so a closing line that matches byte for byte matches squeezed): a block, never a pass.
+- **A command that names the red-clear token file may only read it.** The gate's net for
+  `care-redclear.json` listed verbs and redirects, and lost to `sed -i`, `>|`, `tee -a`, `xargs`,
+  a name parked in a variable and a write inside a loop body (25 of 46 cases from the
+  10-19 branch passed the live gate on 11-02). Now, when a command names the file by its
+  stem, in any case or spelling the gate's view can fold (a backslash inside the name, an
+  ANSI-C byte, an empty expansion, a one-character glob, the stem parked in a variable),
+  every command word must be a plain reader (cat, grep, jq, a checksum, a test, `true`,
+  `:`) and no redirect may point into the file, into a quoted target, or into one the
+  shell builds, or quoted in part; anything else is refused and the refusal says why. The
+  redirect check and the command-word walk read the command with its quoted text erased
+  and one marker byte left where each quote stood, so a `|` in a jq filter or a `>` in a
+  grep pattern is a read, not a pipe or a redirect, and a quote can hide neither a name
+  nor a command word. A name the shell builds inside `.maude/plugin` (a brace, a variable,
+  a glob) is read as the token, and a name assembled from literal assignments or a `cd`
+  across statements (`p=…/care-red; … ${p}clear.json`) is folded before the check and read
+  as the token too; the fold only adds to what the raw view says, folds only literal values
+  assigned once and never rebound, turns off where a binding builtin (`read`, `declare`,
+  `printf -v`, `let`, `eval` and their kin) or a shell-managed name appears, refusing any
+  `$` use there, and a command past its bounds (64 assignments, a 4 KB value, a 64 KB word)
+  is refused outright; any expansion there that is not a folded literal refuses, and a
+  backslash-newline is joined before any view is read. The cost, owned: a read of the
+  token file beside a `read` builtin, a `for`, a `$PWD` or a `$?` is refused. The honest cost: a read beside other work, a read copied
+  into a quoted or shell-built path, a read whose pipe target is not a reader (cut, tr,
+  nl and their kin are; python3, tee, xargs, find, and sort, uniq, xxd, less, more, each
+  of which can write a file or run one, are not), a read inside a shell-fed
+  heredoc, any file whose name holds the stem, or a commit message that spells the file is
+  refused too. What this view cannot see, and the harness deny on the path is for: a move
+  or rm of the directory above the file, an interpreter heredoc, and text decoded or
+  evaluated at run time. Ported from `fix/gate-false-pass` onto the current reader,
+  red-first; three lenses and two commit reviews on the port each found a seam, each
+  folded.
+
+- **The attic: past sessions, his words and Claude's kept apart by construction.**
+  `python3 -m maude_recall build --attic <transcripts dir>` indexes this project's past
+  sessions: your typed turns (only where Claude Code marks the turn as typed by a person)
+  and Claude's replies (text only: never its reasoning, tool calls or tool output), each
+  redacted first, in separate namespaces so Claude's words are never filed as yours.
+  Measured here: 109 sessions, 98 s and 919 MB to build. Not yet started at session start.
+
+- **Redaction: an IP address ending a sentence is now masked.** `maude_redact` let
+  "at 192.0.2.71." through because of the final dot. Five-part versions still survive.
+
+- **Her own word table: recall by meaning with no model at all.** At build time she
+  learns a vector for each word from the words it sits beside in your own notes and
+  lines, plus its 4- and 5-letter pieces so a word and its stem stay close. Standard
+  library only, deterministic, relearned only when your notes or the recipe change.
+  It is a fourth rung, `hers`, after the house's embedder when there is one and before
+  plain words. `python3 -m maude_recall replay` scores recall against a set of your
+  real questions and the note each should have brought up (the set lives in your house,
+  never in the repo). Measured honestly, it does not yet find what the others miss:
+  learned only from what existed before the questions were asked, none of words, the
+  embedder or her table brought the right note into the top 50 for any of the four
+  meaning questions. An earlier reading (ranks 12 and 7) came from learning on the
+  record of the very conversation being replayed.
+
+- **She finds the house's embedder, and recalls by meaning.** The session-start probe
+  looks for an embedding server already running on loopback (llama.cpp, ollama, vLLM
+  shapes), proves it with one real request, and records it; an open port alone is not an
+  embedder, and a server off the machine is used only when you name it. `maude_recall`
+  answers one call from three rungs: words (FTS5 porter), parts of words (FTS5 trigram),
+  and meaning (the house's embedder, vectors in sqlite, content-hashed so only new or
+  changed text is embedded and a new model re-embeds). Every hit names its rung, and a
+  down embedder falls through to words. PRIVACY.md says exactly what goes to that
+  loopback server.
+
+- **The tape holds only your words.** Messages from other sessions and agents
+  (`<agent-message`, `<cross-session-message`, `<teammate-message`, `[SYSTEM NOTIFICATION`)
+  were captured as if you typed them: 650 of 6,170 rows on the author's box. Capture and
+  harvest drop them now, and every reader of the `voice` table skips the ones already
+  stored, so nothing in the durable store is rewritten. The voice profile is recomputed at
+  every SessionEnd (it had sat ten weeks stale), and wake says so when it is over a week old.
+
+- **The gate's fuzzer runs long every night on the internal forge.** The daily CI run adds 20000
+  cases on the day's date as the seed (6 min 19 s on this box for 2026-10-31, green), so each
+  night reads inputs no run has read; a push still runs the quick 400-case fixed seed. `make
+  fuzz` calls `python3 -m pytest`, so a runner with the module but no `pytest` command runs it.
+
+- **The gate reads the bigger bypass list** (the account owner's "do the bigger list of bypasses
+  as well", 2026-10-31; `docs/gate-threat-model.md` changed first). Each form passed the live
+  hook before and keys to what its inner words hold:
+  - the text that reaches a shell: through `cat`, `tee`, `head`, `tail`, `sort`, `uniq` to an
+    `echo`, `printf`, `yes`, heredoc or here-string; a shell or `source`/`.` reading
+    `/dev/stdin`, `/dev/fd/0` or `<(…)`; `sh < <(…)`; `|&`; `xargs` in front of a shell; a
+    group or compound (`{ echo x; } | sh`), which the parse leaves without its pipe, so a
+    shell reading stdin reads every feeder in the command;
+  - `$SHELL`/`$BASH` as the command word; the wrappers `strace`, `ltrace`, `unshare`, `pkexec`,
+    `systemd-run`, `nsenter`, `setpriv`, `runuser`, `chrt`, `taskset`, `chroot`, `flock`;
+    long-option abbreviations (`--us`), both readings judged when one is ambiguous;
+  - text another shell runs: `su -c` (and `su USER` reading stdin), `runuser USER -c`,
+    `script -c`, `flock LOCK -c`, `watch`, `trap`, `ssh HOST …` (`ssh host git push` was a
+    tier C pass and keys `git-push` now), `find -exec/-execdir/-ok` with `{}` as each start
+    path, `find -delete` as `rm -rf` of each start path, `git -c alias.NAME=…`.
+  Filters that change the text, `xargs`, an unseen stdin and a run-time carried text are never
+  read whole. Tier C stays: encoded text into a shell (`base64 -d | sh`), aliases and functions,
+  interpreters, a plain `source file`. A read keeps a memo and a 400k-character budget (a
+  20-line command had grown to 9 s; past the budget is `parser-depth`). The fuzzer generates
+  every new form; 0 regressions against main over 75k fuzz cases. From the lens and the
+  security review rounds: both readings of an abbreviation are judged at their own start (it
+  had recursed forever); `-c` is found the way getopt_long finds it, and after `su … --` with
+  bash's own option reader; a `find` with a test (`-name`, `-type`, `-mtime`) deletes matches,
+  not the tree, and `sudo find` keeps its sudo; a run-time `-c` program or `eval` word is read
+  for keys and never whole (`bash -c "$SHELL -c '…'"` passed before). 23 dressed variants
+  through the real hook all block red. The push review on `acce506`: git ignores an alias that
+  shadows a builtin (`git -c alias.push=status push --force` still pushes), so the alias read
+  only adds to the plain read; `find -D …`/`-O3` lead the start paths; more strace value options.
+
+- **The gate's shell reader is fuzzed, and the fuzzer found two holes.** New
+  `tests/shell/test_judge_fuzz.py` (stdlib `random`, fixed seed, `bash -n` holds every case
+  to real shell; `make fuzz` for a long run on a fresh seed) dresses red commands in
+  wrappers, groups, payloads, quoting and yellow neighbours, and asserts a red key comes
+  back, a yellow one never hides it, and mangled text never crashes or stalls the read.
+  Planted controls prove it sees a judge that cannot read `--force` or a wrapper. Its finds,
+  both passing the live hook before this fix:
+  - `env -u HOME rm -rf ~` (and `${HOME}`, a `HOME=` prefix) read as an unknown target, so
+    nothing blocked. The shell expands `~` before `env` or the prefix runs; the judge now
+    reads it as this home (`rm-rf-sole-copy`). A command that really moves HOME first reads
+    the same: a false block, never a false pass.
+  - A wrapper in front of an echo into a shell (`sudo -u root echo 'rm -rf /' | sh`, `nice`,
+    `busybox`, `/bin/echo`) hid the payload. The judge now unwraps the feeder.
+  - A short option group that ends in an option taking a value (`sudo -nu root rm -rf /`,
+    `sudo -iu root`) left that value as the command word, so the judge read `root` and passed.
+    The group now takes the next word.
+  An echo behind `xargs` or an `env` option off a short safe list (`env -S`, `-iS`, `--split=`)
+  stays unread: the shell's text is not the words on the page.
+  From the lens on the fuzzer (it found what the fuzzer's oracle had excused):
+  - A payload nested past the reader's cap (four `bash -c` deep) was only "unread", and an
+    unkeyed command not read whole passes the hook with no token at all. It is now the
+    `parser-depth` hit, which nothing clears; the oracle no longer excuses it.
+  - `rm` targets are normalised: `rm -rf /tmp/../*` is `rm -rf /*`, `~/./*` is home's every file.
+  - Only the real `echo`/`printf` feeds a read (`./echo` is any program), any run-time word in
+    the feeder's chain leaves it unread, `echo -n/-e` and `printf --` are read past, and an
+    `echo -e` with a backslash or a `printf` format with `%` or `\` stays unread.
+  - An echo or printf into a shell is read for keys (every word when a printf format
+    converts) and is never called read whole: an alias, a function, `enable`, a sourced file,
+    `BASH_ENV`, `BASH_FUNC_*` or xpg_echo can each change what it writes, and each review
+    round found another. A red word in it still blocks; a yellow token no longer opens it.
+    Unread alone would have passed an unkeyed command. `rm` of a path through `.git/..`
+    stays `rm-rf-sole-copy`.
+  - The generator stopped making commands that never run (zsh, dash-only quoting, an external
+    wrapper in front of `eval`, busybox without the applet, a redirect over a fed stdin,
+    backticks that strip the backslash a payload needs).
+  Pinned in `tests/shell/test_judge.py` and through the real hook in `tests/test-gate-parser.sh`;
+  both go red on the old judge.
+
+- **License: Apache-2.0 to AGPL-3.0-or-later from this release.** John's call, 2026-10-31:
+  stop people from taking it closed. Every release through v0.35.0 was Apache-2.0 and
+  stays Apache-2.0. `LICENSE` is the GNU text byte for byte (sha256 `0d96a4ff…abcb0`).
+
+- **A yellow key no longer hides a red one in the same command.** The gate keyed a
+  command by its first match, and a clear token is per key, so `git push; \rm -rf /`
+  keyed `git-push` and passed whole on a `git-push` token, which Claude may mint. The
+  same held on main, wherever the tables matched yellow first. Now the judge reports
+  every key, the tables rank inside themselves, and every stage keeps reading until the
+  key is red. A red key replaces a yellow one, never the reverse. A yellow token does
+  not open a command the parser did not read whole: one appended `(` hid the red line
+  above it. Not read whole covers text or a payload body that does not parse, a body
+  known only at run time or fed from a pipe, a payload past the depth cap, a judge that
+  was cut, failed, or had no time left (it gets only the time the hook has left), and a
+  wrapped-payload walk stopped on its clock. The judge reads bash's own options (`-s`
+  makes stdin the program; `-o` and `--rcfile` take a value; `+X` is an option; the
+  `-c` program is the first word after every option and its value).
+  A command nested too deep to read blocks as `parser-depth`. A command not read whole
+  with no key still passes on the tables' verdict, as before (a named tier-B residual).
+  The keys that rank red outside the red list (`red-self-clear`, `redclear-write`,
+  `parser-depth`) take their tokens from the red file only: a token written into
+  `care.json` for `redclear-write` opened the red file, and with it every red key. Costs,
+  named: a yellow-keyed command with a syntax error or a run-time payload, or whose
+  commit message trips a red backstop, is blocked even with its token. Residual, named: two keys of the same tier
+  share one token. Details: `docs/gate-threat-model.md`.
+- **The gate judges commands from the words bash would run, beside its patterns.** For
+  the git keys, the public publishes and the `rm -rf` family, `maude_shell/judge.py`
+  reads the parsed command and names the key it would hit. A block from either the
+  patterns or the judge blocks; the judge never lifts one, and when python3 is missing,
+  the read takes longer than 2 s, or the text is not complete bash, the patterns'
+  verdict stands. It closes dressed forms (`"git" push`, `\rm`, `{git,push}`), wrappers
+  the patterns did not know (`time`, `nice`, `timeout -s`, `xargs -n`, `env -u`,
+  `uv run`), commands inside `if`/`for`/`{ }`, a heredoc, here-string or `echo |` fed
+  to a shell, and `rm -rf` of `/*`, of home (it holds `~/.claude`) or of a glob at
+  home's root. A heredoc fed to `bash` is now read (the two tests that pinned it as a
+  limitation expect a block). Runs as `python3 -I -S`, so a module planted in the
+  project cannot answer for it. Costs about 40 ms per Bash call. Keys, wrappers and
+  residuals: `docs/gate-threat-model.md`.
+- **The gate has a written threat model, and a shell reader to judge from.**
+  `docs/gate-threat-model.md` says what the gate promises (tier A: a destructive command in
+  its plain form, typed by mistake), what it catches when it can read it (tier B: quoting,
+  escapes, braces, wrappers), and what is out of its reach by design (tier C: anything only
+  known at run time). A false block on a command that only mentions a gated one is held to
+  the same bar as a miss, and a review round has a stop rule. New package `maude_shell`
+  (stdlib, Python 3.8 floor) reads a command the way bash tokenizes it and returns JSON:
+  each command's words after quotes, escapes, braces and `~`/`$HOME`, which words hold
+  something only known at run time or a glob, redirects, heredoc bodies apart from the command, and
+  the commands inside substitutions and unquoted heredoc bodies. It is checked against bash
+  itself (words through `eval`, structure through `bash -n`). The gate judges from it
+  (entry above). Design: `docs/specs/2026-10-23-shell-parser-design.md`.
+- **The auto-memory index has a budget, and a write that would grow it past the budget is
+  refused.** Claude Code loads `<slug>/memory/MEMORY.md` whole at every session start, so
+  every unit in it is paid by every session; a whisper after the write did not hold it
+  down (on the box this was built on, the index sat at its 25,000-unit cap through 54
+  trims). Now a Write, Edit or MultiEdit that would leave the index past its budget and
+  larger than it is now is refused with the numbers; a shrinking edit always passes. Each
+  prompt says so while the index is over, which is the net for a write made through Bash.
+  The budget is `memory_index_budget` in gate-config (a whole number of at least 1,000),
+  default 23,500 UTF-16 units, just under the loader's cut; the after-write whisper reads
+  the same budget. Fails open without `jq` or `python3`: it keeps the index lean and guards
+  nothing irreversible, and a broken or missing copy of the rail never blocks a write (it
+  refuses with its own code, 42, which the Write/Edit hook alone turns into a refusal;
+  bash exits 2 on a syntax error). The edit is handed to Python on stdin, so a write past
+  128 KiB is judged too; CRLF counts as two units, as the loader counts it; only a real
+  `<slug>/memory/MEMORY.md` is the index; a FIFO at that path is never opened.
+- **Maude's stdlib-only Python one-liners run isolated (`python3 -I`).** A hook's working
+  directory is the user's project, and a plain `python3 -c` puts it first on the import
+  path, so a `json.py` sitting there ran inside the hook. The `python3 -m maude_*` calls
+  need `PYTHONPATH` and are not changed here.
+
+- **The two red backstops read a heredoc body as text.** A note written through
+  `cat >> note.md <<'EOF'` that QUOTED the line for clearing a RED key was blocked as a
+  self-clear, and a note that mentioned a redirect into the red token file was blocked as a
+  write to it (2026-10-08, live: documenting the trap sprang it). Every pattern in the table
+  had read a body as data since v0.27.0 and the wrap scan since v0.34.0; the two backstops
+  still grepped the whole command. They now read the same body-stripped view the wrap scan
+  reads, decided once: bodies out, unless a shell is fed the heredoc, in which case that body
+  runs and the whole command is read. The plain invocation, a shell-fed body, and the command
+  after a text heredoc stay blocked. The drop-table backstop keeps the whole-command view by
+  its own design (a body naming both a SQL client and DROP TABLE fails closed). One body the
+  red backstops keep that the table does not (the lens): a heredoc written into a runnable
+  file. `cat > f.sh <<'EOF'` carrying the clear line, a Makefile then `make`, `> ~/.bashrc`,
+  a target held in a variable, a `| tee x.sh`, a writer before the heredoc (`tee f.sh <<EOF`,
+  `dd of=`, `sponge`, `cp /dev/stdin f.sh`): the write is the moment, because the second
+  step carries no clear line. The opener lines (only those: a body line that documents the
+  trap is text) are walked quote-aware, so `>> "note.md"` is the note and `--title "a -> b"`
+  is not a redirect; every redirect that carries stdout is read wherever it stands (`| cat >
+  f.sh`, `2>&1 > f.sh`, `> f.sh 2> err.md` are scripts; a `2>` carries no body; `>&1` and
+  `/dev/null` are sinks; a dup of stdout onto an fd, by number or by `/dev/stderr`, reads every
+  file on the line; an `exec` with a redirect anywhere, a name bash would rewrite (`$'…'`, a
+  substitution, a backslash), a dup onto an fd the line does not open, or a wrapper or
+  assignment in front of anything but a known writer (`sudo -u x cat`, `FOO=1 nice …`)
+  keeps the body); a pipe segment is
+  read by its command word (tee by every operand, a reader or `python3 -` is text, anything
+  else is closed); and a doc-shaped file the same command then names as a word (`bash
+  notes.md`, `make -f Makefile.txt`) is run, not read. The allowlist is the doc shapes
+  (`.md`, `.txt`, `.json`, …, LICENSE, CHANGELOG) plus the plain names a note takes (README,
+  NOTES, `.log`, `.html`…), case-folded, so the note stays text; a doc-shaped file another
+  tool runs
+  (`package.json` then `npm run`) is the named residual, the harness deny-rules' job as the
+  script-file two-step always was. Also closed, and older than this change: the red key
+  standing LAST, followed by `;`, `&&`, `)` or a newline, was not read as the key (lines are
+  joined with `;` before the match). The security review on the first cut found three more
+  reads, folded fail-closed: a closer word glued to its operator (`done>f.sh`) is a closer;
+  a comment line ending in a backslash is not joined to the opener under it (bash never
+  joins a comment, and the join lost that opener's writer; the stripper admits no other
+  trailing backslash, so the join is gone); and a doc-shaped file named by ANOTHER heredoc's
+  body (`python3 - <<PY` with `os.system("bash notes.md")`, the one body this scan never
+  reads) is run, not read. The stripper now records each body under its opener's line so the
+  named-again count can leave out only the note's own body. Cost, named: a second note that
+  links the first (`[x](notes.md)`, a commit message naming it), or two appends to one note in
+  a single command, read the note's body and block only when it carries the red line. The
+  lens on that fold found three more: a line that opens two heredocs owns both bodies and
+  which one its redirect takes is not traced, so both count (the python body on the note's
+  own line had been dropped as "own"); the other bodies are gathered once per opener line
+  and grepped once per target, not once per body (a grep per body per target was quadratic
+  and past about forty heredocs outran the 5 s hook budget, which blocks nothing), and more
+  than 32 bodies is closed unread like the 4 KB opener line; and `<` joined the mention
+  prefix class, with quote characters taken out of the bodies first (`bash<notes.md`,
+  `n''otes.md`). The lens on that found the unquoting deleted the quote that was the only
+  prefix of a list argv (`["bash","notes.md"]`): the other bodies are grepped in both views
+  now, raw and unquoted. It also measured what the first lens
+  had named: the gate's own per-line walks. Every pattern of the table re-ran the stripper
+  on the whole command and the two command-position guards ran it twice more, so 300 plain
+  lines cost 4.5 s and 700 outran the 5 s budget, which blocks nothing; the shell-fed scan
+  cost ~4 ms for every line the stripper handed back, so a 5,000-line heredoc that never
+  closed took 20 s. The stripped view is made once and handed down, and two line caps
+  close the rest unread, like the 4 KB opener line: a command over 2,048 lines is not
+  stripped, and one that hands back over 256 lines is not scanned; both are read whole.
+  Cost, named: a command over a cap that carries the red line in a note is blocked; split it.
+  The lens on that showed the line caps bound a count while the walks cost by bytes and
+  quotes: one 20 KB command line of `"a" "a" …` cost the stripper 6.9 s on its own, and
+  twenty 3.9 KB opener lines cost the opener walk 5 s, every one under both caps. So the
+  bound is the clock: the gate marks its start, and the stripper, the shell-fed scan and
+  the runnable-file walk each ask per line and stop closed once 3 of the hook's 5 seconds
+  are gone; a command line past 4 KB is handed back unread, as an opener line past 4 KB
+  was; and the body cap moved from 64 to 32, where the walk at the cap fits the clock.
+  The lens on the clock found what it left: after it fires, the whole-command reads still
+  cost per byte, and nothing bounded the bytes. A command past 128 KB is refused whole
+  before anything reads it (split it, or write the file with the Write tool); and the views
+  expand a tilde only where bash does, at a word's start, because replacing every `~` grew
+  a line of tildes by HOME's length before every grep. The clock's two values are read
+  only when they are plain digits: an inherited `1;rm` made the stripper print nothing but
+  an arithmetic error in the hooks that do not set them.
+- **gen says where it may run, and the chain says which link is next.** Six commands and no
+  deletes on 2026-10-08. `gen` typed at the `!` prompt, as every instruction said, refused
+  with "run it in your own shell with a leading !", the thing just done: the `!` prompt runs
+  inside the session (it inherits the environment, and the harness's own description of `!`
+  says its output lands in the conversation), so the refusal was right and its text was a
+  loop. It now names a terminal outside Claude Code and prints the plain line to type there;
+  no script or doc hands out a `! … gen` line any more (a test counts them). Then a link
+  pasted from the wrong end read "not a preimage of the current head": the chain spends in
+  order and nothing said which end was next. `gen` numbers the links in the order they are
+  spent, #1 first, and records that order with the chain's length; a new `next <key>` names
+  the link to paste; a refused link, an accepted one, and `status` say it too; the red clear
+  script repeats the verifier's reason and that line instead of swallowing them. A chain
+  generated before this was printed bottom-up and is told apart by its state (no order
+  recorded): its next link is #remaining of that list, and `next` says so. A state nobody's
+  gen or verify wrote (a remaining above the count, a float, `1e999`) names no link and is
+  called malformed, instead of a negative link number or a traceback (the lens).
+- **A server you list as recoverable gates YELLOW; an unlisted one stays RED and says why.**
+  A mail server's `delete_draft` (a draft, recoverable from the mailbox) was refused as
+  `infra-destructive` against "a non-sandbox target (node=? vmid=?)": the verb sweep matched
+  the name, and the refusal spoke of hypervisor targets the call never had (2026-10-08).
+  The 07-30 law stands: a destructive verb on a server in no gate-config list is RED, because a
+  second live hypervisor must not pass unseen. So the gate does not guess; you declare. A server
+  under a new `mcp_yellow_tool_prefix` (a string or an array of `mcp__name__` prefixes, matched
+  through the trailing `__`) gates its destructive verbs on the new YELLOW key
+  `mcp-destructive`: one call per token, reserved at PreToolUse and spent at PostToolUse like
+  every other key, cleared by `/maude:conscience mcp-destructive`. A server under
+  `infra_tool_prefix` is infra whatever else lists it; RED wins. The red refusal for an unlisted
+  server with no target shape now names the server, the knob, and the config file instead of
+  asking after a node and a vmid; a call that carries a target still says which. Sandbox targets
+  pass as before, and without jq the list is unreadable, so a listed server fails closed. The
+  list is matched by exact server segment against entries of the shape `mcp__<name>__`; a bare
+  or malformed entry lists nothing, so a short entry cannot widen it (the security lens). Said
+  plainly: gate-config is the person's file, and the agent can write it, as it can the sandbox
+  lists beside this one; the refusal addresses the account owner and the harness deny-rules are
+  the lock, as they always were.
 
 ## v0.35.0 - she sees the PR open, and says when no release will reach you
 

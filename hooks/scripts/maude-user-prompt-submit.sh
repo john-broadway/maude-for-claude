@@ -9,6 +9,10 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
+# The auto-memory index budget speaks on every prompt while it is over: a write made through
+# Bash is not judged before it runs, so this is its net. Needs no house-map.
+bash "$DIR/maude-memory-budget.sh" prompt "$(maude_mem_dir)/MEMORY.md"
+
 maude_have_map || exit 0
 
 # Read user prompt from stdin JSON. Fail-silent if jq isn't around or input isn't JSON.

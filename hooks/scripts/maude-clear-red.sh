@@ -98,11 +98,24 @@ maude_marker_house() {
   [ -d "$MARKER_DIR" ] && { [ -f "$MARKER_STATE" ] || [ -f "$MARKER_DIR/.marker-enforced" ]; }
 }
 
-# 0 (true) if $2 is a valid unspent link for key $1. CONSUMES it on success.
+# 0 (true) if $2 is a valid unspent link for key $1. CONSUMES it on success. What the
+# verifier SAID (the reason, and which link is next) is kept in MARKER_SAID: until
+# 2026-10-08 it was thrown away, and the person who pasted a link from the wrong end
+# read only "not a valid unspent link", with nothing to tell him which end was next.
+MARKER_SAID=""
 maude_marker_verify() {
-  maude_python3_ok || return 1
-  PYTHONPATH="$PLUGIN_ROOT" python3 -m maude_marker verify "$1" "$2" \
-    --state "$MARKER_STATE" --ledger "$MARKER_LEDGER" >/dev/null 2>&1
+  maude_python3_ok || { MARKER_SAID="no working python3 on PATH: no link can be verified here"; return 1; }
+  MARKER_SAID="$(PYTHONPATH="$PLUGIN_ROOT" python3 -m maude_marker verify "$1" "$2" \
+    --state "$MARKER_STATE" --ledger "$MARKER_LEDGER" 2>&1 >/dev/null)"
+}
+
+# The gen line, for every refusal that points at it. A terminal OUTSIDE Claude Code: the
+# `!` prompt runs inside the session and lands its output in the conversation (the
+# harness's own words for it), so the `! … gen` line these refusals used to hand out
+# voided the chain it minted, and gen's own refusal under `!` sent the person back to `!`.
+maude_marker_gen_line() {  # <key>
+  printf '  bash "%s/maude-marker.sh" gen %s 20\n' "$DIR" "$1"
+  printf '  (in a terminal outside Claude Code: at the ! prompt the links would land in the transcript)\n'
 }
 
 if [ -z "$KEY" ]; then
@@ -166,14 +179,15 @@ Account owner, paste your next unspent link (the leading ! runs it as your hand)
 
   ! bash "$DIR/maude-clear-red.sh" "$KEY" --marker <link>
 
-Chain status:  bash "$DIR/maude-marker.sh" status
+Which link is next:  bash "$DIR/maude-marker.sh" next $KEY
+Chain status:        bash "$DIR/maude-marker.sh" status
 EOF
       maude_log_trace "gate-clear-refused" "key=$KEY reason=red-needs-marker"
       exit 1
     fi
     if ! maude_marker_verify "$KEY" "$MARKER"; then
       printf 'Maude: marker REFUSED for "%s" — not a valid unspent link. Nothing was cleared.\n' "$KEY" >&2
-      printf 'Reason detail: bash "%s/maude-marker.sh" verify %s <link>\n' "$DIR" "$KEY" >&2
+      [ -n "$MARKER_SAID" ] && printf '%s\n' "$MARKER_SAID" | sed 's/^/       /' >&2
       maude_log_trace "gate-clear-refused" "key=$KEY reason=marker-invalid"
       exit 1
     fi
@@ -187,7 +201,7 @@ was found for it. Refusing rather than falling back — an unreadable chain used
 downgrade to --owner, which a redteam turned into a one-command forgery.
 
 If you genuinely have no chain for this key, provision one:
-  ! bash "$DIR/maude-marker.sh" gen $KEY 20
+$(maude_marker_gen_line "$KEY")
 Chain status:  bash "$DIR/maude-marker.sh" status
 EOF
       maude_log_trace "gate-clear-refused" "key=$KEY reason=marker-house-no-chain"
@@ -198,9 +212,8 @@ EOF
 Maude: "$KEY" is a RED key, MAUDE_MARKER_REQUIRED=1, and no marker chain is
 provisioned for it. Refusing — there is no way to prove this is your hand.
 
-Generate one in YOUR shell so the links never enter Claude's context:
-
-  ! bash "$DIR/maude-marker.sh" gen $KEY 20
+Generate one where the links never enter Claude's context:
+$(maude_marker_gen_line "$KEY")
 EOF
       maude_log_trace "gate-clear-refused" "key=$KEY reason=marker-required-no-chain"
       exit 1
@@ -218,14 +231,14 @@ as your hand, outside Claude's tool-gate):
 harness deny-rules — see .scratch/maude-spine-deny.json.)
 
 Stronger: provision a marker chain for this key and --owner stops being enough.
-
-  ! bash "$DIR/maude-marker.sh" gen $KEY 20
+$(maude_marker_gen_line "$KEY")
 EOF
       maude_log_trace "gate-clear-refused" "key=$KEY reason=red-needs-owner"
       exit 1
     fi
     printf 'Maude: WEAK PATH — no marker chain for "%s", so this cleared on --owner alone,\n' "$KEY" >&2
-    printf '       which a copied script can forge. Close it:\n         ! bash "%s/maude-marker.sh" gen %s 20\n' "$DIR" "$KEY" >&2
+    printf '       which a copied script can forge. Close it:\n' >&2
+    maude_marker_gen_line "$KEY" | sed 's/^/       /' >&2
     maude_log_trace "gate-clear-weak-path" "key=$KEY reason=no-chain-owner-only"
   fi
 fi

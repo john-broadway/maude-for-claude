@@ -63,6 +63,41 @@ MAUDE_PROBE=false bash "$PROBE" >/dev/null 2>&1
 [ ! -f "$(care_path)" ]
 assert_exit "$?" "0" "false spelling honored"
 
+
+# --- the house's embedder (seeing-gap design A2) -----------------------------------------
+# A stub /v1/embeddings in the background; MAUDE_EMBED_PROBE_PORTS points the probe at it,
+# never at whatever this box really runs.
+PLUGIN_ROOT="$(cd "$HOOKS_DIR/../.." && pwd)"
+export CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT"
+PORTF="$TEST_TMP/stub.port"
+python3 - "$PORTF" <<'PY2' &
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def do_POST(self):
+        n = len(json.loads(self.rfile.read(int(self.headers["Content-Length"])))["input"])
+        body = json.dumps({"model": "stub-embed", "data": [{"index": i, "embedding": [0.6, 0.8]} for i in range(n)]}).encode()
+        self.send_response(200); self.end_headers(); self.wfile.write(body)
+s = HTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[1], "w").write(str(s.server_port))
+s.timeout = 15; s.handle_request(); s.handle_request()
+PY2
+STUB_PID=$!
+for _i in $(seq 1 50); do [ -s "$PORTF" ] && break; sleep 0.1; done
+SPORT="$(cat "$PORTF" 2>/dev/null)"
+
+test_start "probe records the house's embedder, proven by a real request"
+MAUDE_EMBED_PROBE_PORTS="9,$SPORT" bash "$PROBE" >/dev/null 2>&1
+assert_eq "$(read_care '.embedder.dim')" "2" "dim from the answer"
+assert_eq "$(read_care '.embedder.model')" "stub-embed" "model from the answer"
+assert_eq "$(read_care '.embedder.url')" "http://127.0.0.1:$SPORT/v1/embeddings" "url"
+
+test_start "with no embedder the record is cleared, not left stale"
+MAUDE_EMBED_PROBE_PORTS="9" bash "$PROBE" >/dev/null 2>&1
+assert_eq "$(read_care '.embedder')" "null" "embedder cleared"
+kill "$STUB_PID" 2>/dev/null; wait "$STUB_PID" 2>/dev/null
+
 print_summary
 teardown_test_env
 exit $FAILED

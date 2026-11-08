@@ -355,7 +355,8 @@ assert_eq "$V" "" "GNU construct leaked: $V"
 test_start "product+tests: no bash-4-only builtins (macOS ships bash 3.2)"
 V="$(grep -rnE 'mapfil[e]|readarra[y]|declare [-]A' "$ROOT/hooks/scripts" "$ROOT/scripts" "$ROOT/tests" --include='*.sh' 2>/dev/null \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
-  | grep -v 'portability-shim')"
+  | grep -v 'portability-shim' \
+  | grep -v 'portability-name-only')"   # a name the gate READS (its binding-builtin list), never a builtin it runs
 assert_eq "$V" "" "bash-4 builtin leaked: $V"
 
 # A $'...' that expands to a backslash, used as a ${var//pattern/} pattern, is not read the
@@ -376,7 +377,8 @@ assert_eq "$V" "" "GNU touch in tests: $V"
 test_start "product+tests: no GNU checksum tools (absent on macOS; use file_digest)"
 V="$(grep -rnE 'md5su[m]|sha256su[m]|sha1su[m]' "$ROOT/hooks/scripts" "$ROOT/scripts" "$ROOT/tests" --include='*.sh' 2>/dev/null \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
-  | grep -v 'portability-shim')"
+  | grep -v 'portability-shim' \
+  | grep -v 'portability-name-only')"   # a name the gate READS as a reader (its allowlist), never a tool it runs
 assert_eq "$V" "" "GNU checksum tool leaked: $V"
 
 rm -rf "$BSD_BIN"

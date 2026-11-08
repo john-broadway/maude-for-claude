@@ -1,4 +1,4 @@
-<!-- Version: 0.35.0 -->
+<!-- Version: 0.36.0 -->
 <!-- Created: 2026-06-30 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
@@ -32,7 +32,7 @@ else must be made to agree with it.
 ### B. Satellites (NOT in this repo — sweep by hand every release; nothing here catches a miss)
 | Repo | File | What to update |
 |---|---|---|
-| `john-broadway/john-broadway` | `README.md` | the **Maude bullet** — version + ship date + one-line ("…vX shipped YYYY-MM-DD (…). Apache 2.0.") |
+| `john-broadway/john-broadway` | `README.md` | the **Maude bullet** — version + ship date + one-line ("…vX shipped YYYY-MM-DD (…). AGPL-3.0-or-later.") |
 | `john-broadway/john-broadway.github.io` | `index.html` | the **Maude card** `<p class="status">` — version + date + blurb |
 | `john-broadway/john-broadway.github.io` | `maude/index.html` | **three places**: (1) front-matter `description:` version, (2) `.subtitle` `&middot; vX &middot;`, (3) **add a new `<h2>vX &mdash; …</h2>` release-highlight block at the top of the highlights series** (keep the prior one below as history) |
 

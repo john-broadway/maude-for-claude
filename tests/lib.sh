@@ -210,10 +210,14 @@ assert_file_absent() {
 
 # Build a Bash tool input JSON envelope.
 # Usage: make_bash_tool_input "<command>"
-make_bash_tool_input() {
-  local cmd="$1"
+make_bash_tool_input() {  # <cmd> [cwd] — cwd rides along as the harness sends it, when given
+  local cmd="$1" cwd="${2:-}"
   if command -v jq >/dev/null 2>&1; then
-    jq -nc --arg cmd "$cmd" '{tool_name:"Bash", tool_input:{command:$cmd}, hook_event_name:"PreToolUse"}'
+    if [ -n "$cwd" ]; then
+      jq -nc --arg cmd "$cmd" --arg cwd "$cwd" '{tool_name:"Bash", tool_input:{command:$cmd}, cwd:$cwd, hook_event_name:"PreToolUse"}'
+    else
+      jq -nc --arg cmd "$cmd" '{tool_name:"Bash", tool_input:{command:$cmd}, hook_event_name:"PreToolUse"}'
+    fi
   else
     printf '{"tool_name":"Bash","tool_input":{"command":"%s"},"hook_event_name":"PreToolUse"}\n' \
       "$(printf '%s' "$cmd" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"

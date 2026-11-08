@@ -60,4 +60,17 @@ else
   } > "$CARE"
 fi
 
+# The house's embedder (seeing-gap design A2): the only tier-1 appliance Maude reads. Proven
+# by one real embeddings request on loopback, never by an open port; a remote one only when
+# the user named it (MAUDE_TAPE_EMBED_URL). Recorded as {url, model, dim}, or cleared, through
+# the locked update: care.json is shared by every lane. Bounded inside this hook's 5 s.
+if command -v jq >/dev/null 2>&1 && maude_python3_ok; then
+  EMB="$(PYTHONPATH="${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" maude_timeout 3 python3 -m maude_tape embed-probe 2>/dev/null)"
+  if [ -n "$EMB" ] && printf '%s' "$EMB" | jq -e '.url and .dim' >/dev/null 2>&1; then
+    maude_care_set "$CARE" --argjson e "$EMB" '. + {embedder: $e}'
+  else
+    maude_care_set "$CARE" '. + {embedder: null}'
+  fi
+fi
+
 exit 0

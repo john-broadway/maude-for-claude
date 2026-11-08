@@ -7,3 +7,4 @@ name: "Maude CodeQL config"
 paths:
   - maude_eye
   - maude_vault
+  - maude_recall

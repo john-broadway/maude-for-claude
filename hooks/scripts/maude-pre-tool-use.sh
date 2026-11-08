@@ -4,7 +4,8 @@
 # letting Claude touch a watched path:
 #   - house-map watch list (project-local)
 #   - cross-project patterns.md (user-global) — has she seen this kind of edit go wrong before?
-# Surfaces a one-line nudge. Never blocks the tool call.
+# Surfaces a one-line nudge. Blocks only through the memory-budget rail (a write that would
+# grow the auto-memory index past its budget).
 
 set +e
 
@@ -14,6 +15,14 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # Tool input is JSON on stdin — read ONCE. Two consumers now share it, and jq would
 # have drained it for the first one.
 INPUT="$(cat 2>/dev/null)"
+
+# The auto-memory index budget refuses before anything else runs, so a refused write leaves
+# no undo snapshot behind. Called from here, not registered in hooks.json, for the reason
+# the undo note below gives: a script edit is live on save, a registry entry is not.
+# Only its own refusal code (42) refuses: bash exits 2 on a syntax error and 127 on a missing
+# file, and a broken or half-installed copy of the rail must not stop every write.
+printf '%s' "$INPUT" | bash "$DIR/maude-memory-budget.sh" gate
+[ "$?" -eq 42 ] && exit 2
 
 # UNDO (the sixth pillar) — snapshot the file's current bytes before the write lands.
 # Called from here rather than registered in hooks.json on purpose: registry entries

@@ -1,6 +1,6 @@
 # Maude for Claude — CodeQL
 # Copyright (c) 2026 John Broadway
-# Licensed under the Apache License, Version 2.0
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Authors: John Broadway, Claude (Anthropic)
 #
 # Static analysis of the shipped Python (the eye's verdict parser + the vault
@@ -29,11 +29,11 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/init@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           languages: python
           config-file: ./.github/codeql/codeql-config.yml
       - name: Autobuild
-        uses: github/codeql-action/autobuild@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/autobuild@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
       - name: Analyze
-        uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        uses: github/codeql-action/analyze@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2

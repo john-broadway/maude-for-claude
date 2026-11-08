@@ -88,7 +88,7 @@ If the verdict is **go** AND the action matches a gated pattern, what happens ne
 
 ### YELLOW keys — Claude may self-clear
 
-`git-push`, `commit-amend`, `no-verify`, `no-gpg-sign`, `reset-hard`, `run-governor` — routine and reversible-enough that you clearing your own block is fine. Run the clear-script; the token lives 5 minutes and clears on first use:
+`git-push`, `commit-amend`, `no-verify`, `no-gpg-sign`, `reset-hard`, `run-governor`, `mcp-destructive` — routine and reversible-enough that you clearing your own block is fine. Run the clear-script; the token lives 5 minutes and clears on first use:
 
 ```bash
 bash "$CLAUDE_PLUGIN_ROOT/hooks/scripts/maude-clear-gate.sh" "<key>"
@@ -110,10 +110,10 @@ Longer window (e.g. a release session with several pushes): append seconds — `
 ! bash <PLUGIN_ROOT>/hooks/scripts/maude-clear-red.sh <key> --marker <link>
 ```
 
-If a marker chain is provisioned for that key, a one-time link is the ONLY thing that opens it — `--owner` alone is refused, and so is anything Claude can compute from what is on disk. If no chain exists yet, `--owner` still works and the script says out loud that it is the weak path. To close it:
+If a marker chain is provisioned for that key, a one-time link is the ONLY thing that opens it — `--owner` alone is refused, and so is anything Claude can compute from what is on disk. The chain spends in order: `bash <PLUGIN_ROOT>/hooks/scripts/maude-marker.sh next <key>` says which link to paste, and a refused link says it too. A pasted link lands in the transcript, and that is fine: a spent link is worthless. If no chain exists yet, `--owner` still works and the script says out loud that it is the weak path. To close it, the user runs this **in a terminal outside Claude Code** (never at the `!` prompt, which runs inside the session and lands its output in the conversation; the links would be in the transcript and the chain void):
 
 ```
-! bash <PLUGIN_ROOT>/hooks/scripts/maude-marker.sh gen <key> 20
+bash <PLUGIN_ROOT>/hooks/scripts/maude-marker.sh gen <key> 20
 ```
 
 Fill `<PLUGIN_ROOT>` with the value of `$CLAUDE_PLUGIN_ROOT` (run `echo "$CLAUDE_PLUGIN_ROOT"` to read it). Then wait for the user — do not take the action until their line has run.
@@ -122,12 +122,13 @@ Fill `<PLUGIN_ROOT>` with the value of `$CLAUDE_PLUGIN_ROOT` (run `echo "$CLAUDE
 
 | User's action | Key | Tier |
 |---|---|---|
-| `git push` (any non-force) | `git-push` | yellow |
+| `git push` (any non-force; the block names the remote's class, read from its push URL: internal by a private address, suffix or `internal_push_hosts` in gate-config; PUBLIC by a known forge; unclassed reads as public) | `git-push` | yellow |
 | `git commit --amend` | `commit-amend` | yellow |
 | Any command with `--no-verify` | `no-verify` | yellow |
 | Any command with `--no-gpg-sign` | `no-gpg-sign` | yellow |
 | `git reset --hard` | `reset-hard` | yellow |
 | Run-governor hard-pause (long unattended run) | `run-governor` | yellow |
+| Destructive MCP op on a server the user listed as recoverable (`mcp_yellow_tool_prefix` in gate-config, e.g. a mail server's `delete_draft`) | `mcp-destructive` | yellow |
 | `git push --force` / `-f` / `--force-with-lease` | `force-push` | **RED** |
 | `git filter-repo` | `filter-repo` | **RED** |
 | `git filter-branch` | `filter-branch` | **RED** |
@@ -136,7 +137,7 @@ Fill `<PLUGIN_ROOT>` with the value of `$CLAUDE_PLUGIN_ROOT` (run `echo "$CLAUDE
 | `sudo rm -rf …` | `sudo-rm-rf` | **RED** |
 | `rm -rf` of the workspace / a repo root / `.git` / `.credentials` / `~/.claude` | `rm-rf-sole-copy` | **RED** |
 | Public publish (`gh release`, `twine upload`, `uv publish`, `hf upload`) | `public-publish` | **RED** |
-| Destructive MCP op on a production target (delete/rollback/prune, per gate-config) | `infra-destructive` | **RED** |
+| Destructive MCP op on a production target, or on any server not listed in gate-config (delete/rollback/prune) | `infra-destructive` | **RED** |
 | SQL `DROP TABLE …` | `drop-table` | **RED** |
 
 If the user's action isn't in this list, the gate isn't blocking it — no token needed.
