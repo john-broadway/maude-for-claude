@@ -1,5 +1,5 @@
-<!-- Version: 0.35.0 -->
-<!-- Revised: 2026-10-12 -->
+<!-- Version: 0.36.0 -->
+<!-- Revised: 2026-11-09 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Security Policy
@@ -34,6 +34,10 @@ We will acknowledge receipt within 48 hours and provide a timeline for resolutio
 - The trace JSONL leaking user content beyond what `/maude:check-on-claude` needs.
 - The `.maude/plugin/` closet escaping its workspace anchoring.
 - Any Maude artifact making outbound network calls without an explicit user-triggered command (session-end `/maude:rest` / `/maude:save` writing to a registered, authenticated destination is the only intentional Tier-2 path).
+
+## The gate's scope
+
+What `maude-gate.sh` promises to catch, what it catches without promising, and what is out of its reach by design is set in [`docs/gate-threat-model.md`](docs/gate-threat-model.md). A gate report is triaged against that page.
 
 ## Out of Scope
 

@@ -1,7 +1,7 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 0.35.0
-> **License:** Apache 2.0, Copyright John Broadway
+> **Version:** 0.36.0
+> **License:** AGPL-3.0-or-later, Copyright John Broadway (Apache-2.0 through v0.35.0)
 
 ## What Maude Is
 

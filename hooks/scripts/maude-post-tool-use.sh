@@ -32,18 +32,20 @@ case "$_FP" in
   # (a path that does not spell `.claude`) is missed. One missed whisper, never a false
   # one, which is the direction this rail fails in everywhere else (the 25th, MINOR-3).
   */.claude/projects/*/memory/MEMORY.md)
-    if [ -f "$_FP" ]; then
+    if [ -f "$_FP" ] && maude_is_memory_index "$_FP"; then
       _UNITS=""
       if maude_python3_ok; then
-        _UNITS="$(python3 -c 'import sys; print(len(open(sys.argv[1], encoding="utf-8", errors="replace").read().encode("utf-16-le")) // 2)' "$_FP" 2>/dev/null)"
+        _UNITS="$(maude_utf16_units "$_FP")"
       fi
       # Without python, characters are a floor, and not a close one: an emoji is two units
       # read as one (a file of them is silent at twice the limit), and invalid UTF-8 reads 0
       # (silent, not late). The no-python3 adopter's problem; the loader counts units.
       [ -n "$_UNITS" ] || _UNITS="$(wc -m < "$_FP" 2>/dev/null | tr -d ' ')"
-      if [ "${_UNITS:-0}" -ge 23500 ] 2>/dev/null; then
-        printf 'Maude: MEMORY.md is %s KB against Claude Code'"'"'s 24.4 KB load limit (UTF-16 units, the way the loader counts). Past it the tail never loads and nothing says so. Compact it: cut closed detail, never a law; archive the lines verbatim.\n' \
-          "$(awk -v u="$_UNITS" 'BEGIN{printf "%.1f", u/1024}')" >&2
+      # The one budget (maude_memory_budget): the pre-write rail refuses growth past it, and
+      # this says so after a write that still leaves the index over it (a trim not yet done).
+      if [ "${_UNITS:-0}" -gt "$(maude_memory_budget)" ] 2>/dev/null; then
+        printf 'Maude: MEMORY.md is %s KB, past its budget of %s units; Claude Code'"'"'s load limit is 24.4 KB (UTF-16 units, the way the loader counts) and past it the tail never loads. Compact it: cut closed detail, never a law; archive the lines verbatim.\n' \
+          "$(awk -v u="$_UNITS" 'BEGIN{printf "%.1f", u/1024}')" "$(maude_memory_budget)" >&2
       fi
     fi ;;
 esac

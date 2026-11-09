@@ -1,4 +1,4 @@
-<!-- Version: 0.35.0 -->
+<!-- Version: 0.36.0 -->
 <!-- Created: 2026-07-13 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
@@ -57,7 +57,7 @@ no tools. Almost always: silence.
 **4/**
 She is not loud. When she gets loud, listen.
 
-Apache 2.0. Install is two commands:
+AGPL-3.0-or-later. Install is two commands:
 
 /plugin marketplace add john-broadway/maude-for-claude
 /plugin install maude@maude
@@ -98,7 +98,7 @@ What she does, mechanically:
 She speaks in one voice — warm, composed, 1950s-household — and every line
 she says is signed, so you always know who's talking.
 
-Apache 2.0, on GitHub: github.com/john-broadway/maude-for-claude
+AGPL-3.0-or-later, on GitHub: github.com/john-broadway/maude-for-claude
 
 He writes the code. She notices.
 
@@ -111,7 +111,7 @@ workspace each session, watches Claude, and runs the gate before something
 irreversible. She pages the right note instead of dumping the index, blinks
 with her own small model every ~25 tool calls, whispers when Claude drifts,
 and leaves a note when a session ends with unsaved work. Markdown, JSON,
-bash, stdlib python — no daemon, no database, no backend. Apache 2.0.
+bash, stdlib python — no daemon, no database, no backend. AGPL-3.0-or-later.
 
 ---
 

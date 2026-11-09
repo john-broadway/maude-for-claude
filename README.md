@@ -1,13 +1,13 @@
-<!-- Version: 0.35.0 -->
+<!-- Version: 0.36.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-10-12 -->
+<!-- Revised: 2026-11-09 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
 
 <img src="press-kit/art/bulletin-banner.svg" alt="Maude — she keeps the house. Household engineering for your Claude." width="880"/>
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue.svg)](LICENSE)
 [![Status: Beta](https://img.shields.io/badge/Status-Beta-orange.svg)](#)
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/john-broadway) [![X](https://img.shields.io/badge/X-000000?logo=x&logoColor=white)](https://x.com/jebroadway)
@@ -106,6 +106,8 @@ And on demand, when you ask:
 
 <!-- Each entry's date is the UTC day of the version's release commit on canon (the day
      scripts/release.sh stamped it), never the day it reached the public repository. -->
+**v0.36.0 (2026-11-09) - the gate judges from the words bash will run, and every refusal says what it read.** The gate has a written threat model and a shell reader beside its patterns: it reads a command the way bash will run it, through wrappers, quotes, substitutions, heredocs and the words known only at run time (`$x git push`, `timeout $x 5 nice $y -n 5 git push`), keys every reading, and refuses what it could not read whole rather than pass it. A fuzzer runs the reader every night on the internal forge, the walk finishes inside the harness's kill for every padded shape the suite pins, under GNU awk and the BSD awk macOS ships, and a command that names the red-clear token file may only read it, with the refusal saying which word or redirect it read. Also in this release: she recalls by meaning when the house has an embedder and by her own word table when it does not, the tape holds only your words, the auto-memory index has a budget, and the license moves from Apache-2.0 to AGPL-3.0-or-later. Lens after lens shaped the gate work; every fold is pinned, and every pin was red first.
+
 **v0.35.0 (2026-10-12) - she sees the PR open, and says when no release will reach you.** Before a command that could open a PR runs (`gh pr create`, `tea pr create`, a push to `refs/for/`), Maude checks that an adversarial lens was pointed at the sha being pushed, and whispers when nothing shows it. She stays silent only where she reads the whole command, so a wrapper, a flag that puts the PR head on the forge, or a separator hidden inside quotes gets a whisper naming the step; she never touches the network and never posts a status. Ten review rounds turned a phrase match into a set of words read on the unstripped command. Also in this release: Claude Code only announces a plugin update for a marketplace with auto-update on, which is off by default for every marketplace that isn't Anthropic's, so at wake she says when hers is off and names the flip; the install section says the same.
 
 **v0.34.0 (2026-10-09) - the gate reads what bash will run, and now.md has one writer.** The gate strips a heredoc body before it matches, because a body is text, not commands. Nine review rounds each found one more line it read differently from bash, and several of those misreads hid a real force-push. The stripper is an allowlist now: it strips only after lines whose every token bash reads the same way, and the first line it cannot prove ends the stripping. Over 6,442 real heredoc commands, one is newly blocked and none newly passed. Every rule in it is now seen to fail by a test. It also closes a hole in v0.33.x: with an unquoted delimiter (`<<EOF`) bash runs `$(...)` and backticks inside the body, so `cat <<EOF` with a `$(git push --force)` line passed the gate. Such a body is read now, not stripped. The same was true inside double quotes: the gate erased a whole `"..."` span as text, so `echo "$(git push --force)"` passed while bash ran the push. Quotes are now read the way bash reads them, and a `$(...)` or backtick inside double quotes is checked like any other command. The live memory buffer, `now.md`, has one writer now: save and rest called it three different ways, so lanes stacked it and the wake greeted a day-old entry. The writer keeps one entry there, puts the history in the daily first, and archives whole anything it would replace that is not already saved.
@@ -115,8 +117,6 @@ And on demand, when you ask:
 **v0.33.0 (2026-10-04) - the gate learned whose house it is in.** A user hit a RED-gate refusal that told them to ask the maintainer by name. Whoever installed Maude owns the account, so every line she speaks now says so, and the red-clear flag is `--owner` (`--john` still works). A test now fails the build if a person's name reaches a user again. Also in this release: the gate reads a heredoc body as text and a flag against its own command. A torn line in a store is set aside instead of breaking the hook, and the undo ledger's prune is safe with five sessions at once. The vault recall pages each note once per session, in one line. The wake opens with her mark.
 
 **v0.32.0 (2026-09-14) - the fleet was one counter, and the whisper died by the clock.** A second site wrote down what Maude costs them, and two of the lines were defects in the plugin. The run governor kept one counter per project, so an overnight fleet of subagents pooled its calls into one ceiling and every worker was blocked together; each agent is now governed on its own count and its own clock, and a stopped agent drops its own slot. The eye's whisper expired after five wall-clock minutes but can only be delivered at your next prompt, so its age is now counted in tool calls (forty by default, `MAUDE_EYE_WHISPER_TTL_ACTIONS`) and the seconds ceiling is opt-in.
-
-**v0.31.0 (2026-09-03) - the law arrives at the moment the work touches its class.** Three rulebooks ship as static data: the thirty Laws of UX, Codd's thirteen rules with third normal form as the floor, and the laws of memory, human and machine (the last one a draft until John cuts it). A rail on hooks that already fire says the law once on the first write of a class, lints a schema on the spot for the shapes its own text can break, and asks once at the commit if no design named its laws. Kill switch `MAUDE_RULES=off`; `/maude:rules` prints the checklist.
 
 <div align="center"><img src="press-kit/art/chore-record.svg" alt="Maude's chore list on a recipe card — from the kitchen of Maude: wrote the handoff you didn't get to (41 sec, the small model), checked; clipped three coupons out of last week's papers, checked; a new gadget arrived, told you at the door, checked; still open — that CLAUDE.md hasn't been touched in a month, she'll keep mentioning it. Her margin note: I don't move a thing to the attic till you say so. —M." width="660"/></div>
 
@@ -198,4 +198,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Apache 2.0. See [LICENSE](LICENSE).
+AGPL-3.0-or-later. See [LICENSE](LICENSE). Copyright 2026 John Broadway. Releases through v0.35.0 were Apache-2.0 and stay Apache-2.0.

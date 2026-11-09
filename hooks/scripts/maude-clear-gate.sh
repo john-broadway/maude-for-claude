@@ -10,7 +10,7 @@
 #   force-push, git-push, no-verify, no-gpg-sign, reset-hard, filter-repo,
 #   filter-branch, commit-amend, rm-rf-root, rm-rf-glob, sudo-rm-rf,
 #   rm-rf-sole-copy, public-publish, infra-destructive, drop-table,
-#   run-governor
+#   run-governor, mcp-destructive
 
 set +e
 
@@ -116,6 +116,7 @@ Known keys:
   infra-destructive (destructive MCP op on a production target, per gate-config)
   drop-table       (DROP TABLE)
   run-governor     (run-length governor hard-pause — fresh budget)
+  mcp-destructive  (destructive MCP op on a server listed as recoverable, per gate-config)
 
 Default duration: 300 seconds (5 minutes). Token clears on first matching command.
 EOF

@@ -124,11 +124,27 @@ case "$BARE" in
 esac
 [ "$DESTRUCTIVE" -eq 0 ] && exit 0
 
+# ── Which gate: RED, or YELLOW for a server the person listed as recoverable ─
+# 2026-10-08, live: a mail server's `delete_draft` (a draft, recoverable from the
+# mailbox) was refused as `infra-destructive` against "a non-sandbox target (node=?
+# vmid=?)": the verb sweep matched the name, and the refusal spoke of hypervisor targets
+# the call never had. The 07-30 law stands, an unlisted server's destructive verb is RED
+# (a second live hypervisor must not pass unseen), so the gate does not guess: a server
+# under `mcp_yellow_tool_prefix` in gate-config gates YELLOW on `mcp-destructive`
+# (care.json, self-clearable through /maude:conscience), everything else stays RED, and
+# the red refusal for an unlisted server names that knob. A server in BOTH lists is
+# infra: RED wins.
+SERVER="${TOOL%"$BARE"}"
+KEY="infra-destructive"; TIER="red"
+if [ "$CONFIGURED" -eq 0 ] && maude_mcp_yellow_server "$SERVER"; then
+  KEY="mcp-destructive"; TIER="yellow"
+fi
+
 # One-shot override token? infra-destructive is a RED key (v0.10.1) — its token
 # lives in the dedicated, harness-locked care-redclear.json (written only by
-# John's ! line), not in care.json.
+# John's ! line), not in care.json. A yellow key's token lives in care.json.
 NOW=$(date +%s)
-CARE="$(maude_redclear_file)"
+if [ "$TIER" = "red" ]; then CARE="$(maude_redclear_file)"; else CARE="$(maude_self_dir)/care.json"; fi
 # RESERVE at PreToolUse, SPEND at PostToolUse, the split the YELLOW gate has had since
 # 09-06 and this RED gate lacked (lens 5, MAJOR): PreToolUse hooks run in parallel and the
 # run-governor (no matcher) can refuse the same call; PostToolUse never fires for a refused
@@ -139,42 +155,42 @@ if [ -f "$CARE" ] && command -v jq >/dev/null 2>&1; then
   FP="$(maude_call_fp "$INPUT")"
   if [ "$MODE" = "consume" ]; then
     # The call RAN. Spend the token this call reserved (or an unreserved one). Never blocks.
-    case "$(maude_care_consume_token "$CARE" "infra-destructive" "$FP" "$BARE" "$SID")" in
+    case "$(maude_care_consume_token "$CARE" "$KEY" "$FP" "$BARE" "$SID")" in
       spent)
-        maude_log_trace "infra-gate" "spent=infra-destructive tool=$BARE"
-        printf 'Maude: infra-destructive is spent; the gate is closed again.\n' >&2 ;;
+        maude_log_trace "infra-gate" "spent=$KEY tool=$BARE"
+        printf 'Maude: %s is spent; the gate is closed again.\n' "$KEY" >&2 ;;
       queued)
-        maude_log_trace "infra-gate" "spent-queued=infra-destructive tool=$BARE"
+        maude_log_trace "infra-gate" "spent-queued=$KEY tool=$BARE"
         printf 'Maude: %s ran; the token store was busy, so its spend is queued and lands on the next gate read. It will not pass again.\n' "$BARE" >&2 ;;
     esac
     exit 0
   fi
-  RES="$(maude_care_reserve_token "$CARE" "infra-destructive" "$SID" "$NOW" "$FP" "$BARE")"
+  RES="$(maude_care_reserve_token "$CARE" "$KEY" "$SID" "$NOW" "$FP" "$BARE")"
   case "${RES%%$'\037'*}" in
     live)
-      maude_log_trace "infra-gate" "passed=infra-destructive tool=$BARE"
-      printf 'Maude: infra-destructive passed on its token; it is spent when the call runs.\n' >&2
+      maude_log_trace "infra-gate" "passed=$KEY tool=$BARE"
+      printf 'Maude: %s passed on its token; it is spent when the call runs.\n' "$KEY" >&2
       exit 0 ;;
     reserved)
       IFS="$(printf '\037')" read -r _ RSID RLEFT RHEAD <<EOF
 $RES
 EOF
-      maude_log_trace "infra-gate" "blocked=infra-destructive reserved tool=$BARE"
-      printf 'Maude: infra-destructive has a live token, but it is reserved by another call (session %s: %s, %s s left). That exact call retried rides it; anything else waits for it to run, or clears again.\n' \
-        "${RSID:-?}" "${RHEAD:-?}" "${RLEFT:-?}" >&2
+      maude_log_trace "infra-gate" "blocked=$KEY reserved tool=$BARE"
+      printf 'Maude: %s has a live token, but it is reserved by another call (session %s: %s, %s s left). That exact call retried rides it; anything else waits for it to run, or clears again.\n' \
+        "$KEY" "${RSID:-?}" "${RHEAD:-?}" "${RLEFT:-?}" >&2
       printf '       (looked in: %s)\n' "$CARE" >&2
       exit 2 ;;
     inflight)
-      maude_log_trace "infra-gate" "blocked=infra-destructive inflight tool=$BARE"
-      printf 'Maude: infra-destructive has a live token, but a call of yours is already passing on it; one token opens one call.\n' >&2
+      maude_log_trace "infra-gate" "blocked=$KEY inflight tool=$BARE"
+      printf 'Maude: %s has a live token, but a call of yours is already passing on it; one token opens one call.\n' "$KEY" >&2
       exit 2 ;;
     unwritable)
-      maude_log_trace "infra-gate" "blocked=infra-destructive unwritable tool=$BARE"
-      printf 'Maude: infra-destructive has a live token, but its reservation could not be written to %s; nothing passes on a token that cannot be spent.\n' "$CARE" >&2
+      maude_log_trace "infra-gate" "blocked=$KEY unwritable tool=$BARE"
+      printf 'Maude: %s has a live token, but its reservation could not be written to %s; nothing passes on a token that cannot be spent.\n' "$KEY" "$CARE" >&2
       exit 2 ;;
     busy)
-      maude_log_trace "infra-gate" "blocked=infra-destructive busy tool=$BARE"
-      printf 'Maude: the token store is busy (another hook holds its lock); nothing was checked for infra-destructive. Retry the same call.\n' >&2
+      maude_log_trace "infra-gate" "blocked=$KEY busy tool=$BARE"
+      printf 'Maude: the token store is busy (another hook holds its lock); nothing was checked for %s. Retry the same call.\n' "$KEY" >&2
       exit 2 ;;
   esac
 fi
@@ -193,9 +209,26 @@ if maude_is_comanage_target "$NODE" "$VMID"; then
   exit 0
 fi
 
-maude_log_trace "infra-gate" "blocked=infra-destructive tool=$BARE node=$NODE vmid=$VMID"
-printf 'Maude [RED]: destructive infrastructure tool "%s" against a non-sandbox target (node="%s" vmid="%s"). Irreversible; configured sandbox targets are allowed automatically. %s\n' \
-  "$BARE" "${NODE:-?}" "${VMID:-?}" "$(maude_red_refusal_line infra-destructive)" >&2
+maude_log_trace "infra-gate" "blocked=$KEY tool=$BARE server=$SERVER node=$NODE vmid=$VMID"
+if [ "$TIER" = "yellow" ]; then
+  printf 'Maude: destructive MCP tool "%s" on %s, a server listed as recoverable (mcp_yellow_tool_prefix). One call needs a token: run /maude:conscience mcp-destructive, then retry.\n' \
+    "$BARE" "$SERVER" >&2
+elif [ "$CONFIGURED" -eq 1 ] || [ -n "$NODE$VMID" ]; then
+  printf 'Maude [RED]: destructive infrastructure tool "%s" against a non-sandbox target (node="%s" vmid="%s"). Irreversible; configured sandbox targets are allowed automatically. %s\n' \
+    "$BARE" "${NODE:-?}" "${VMID:-?}" "$(maude_red_refusal_line infra-destructive)" >&2
+elif ! command -v jq >/dev/null 2>&1; then
+  # Without jq no list can be read, so "in no list" would be untrue of a configured server
+  # (the lens, MINOR-2): say what is actually the case.
+  printf 'Maude [RED]: destructive MCP tool "%s" on %s, and jq is not on PATH, so no gate-config list can be read: every destructive verb is RED here. %s\n' \
+    "$BARE" "$SERVER" "$(maude_red_refusal_line infra-destructive)" >&2
+else
+  # No target shape and a server in no list: say which server, and name the knob that
+  # makes it yellow, instead of asking after a node and a vmid the call never had. The
+  # knob is the account owner's to turn (the security lens: it downgrades RED to YELLOW,
+  # so the refusal must not read as an instruction to the agent to edit the config).
+  printf 'Maude [RED]: destructive MCP tool "%s" on %s, a server in no gate-config list. A destructive verb on an unlisted server is RED: a second live hypervisor must not pass unseen. If its targets are recoverable, the account owner can list %s under mcp_yellow_tool_prefix in %s, after which its destructive calls gate YELLOW (mcp-destructive). Claude does not edit that file. %s\n' \
+    "$BARE" "$SERVER" "$SERVER" "$(maude_gate_config)" "$(maude_red_refusal_line infra-destructive)" >&2
+fi
 # NAME THE FILE WE LOOKED IN — the red-tier reader's twin of the line in
 # maude-gate.sh. The writer (maude-clear-red.sh) names where it wrote; without
 # this line a split between the two would show only as "cleared" then a refusal.

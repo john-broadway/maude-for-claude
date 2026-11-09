@@ -297,6 +297,142 @@ assert_contains "$ERR" "Maude [RED]:" "the tier is the first token"
 assert_not_contains "$ERR" "only intentionally" "no self-clear instruction"
 assert_contains "$ERR" "hand" "whose hand it is"
 
+# ── A listed recoverable server gates YELLOW; an unlisted one stays RED and says why ──
+# 2026-10-08, live: a mail server's `delete_draft` (a draft, recoverable) was refused as
+# `infra-destructive` against "a non-sandbox target (node=? vmid=?)": the verb sweep matched
+# the name and the refusal spoke of hypervisor targets the call never had. The 07-30 law
+# stands, an unlisted server's destructive verb is RED (a second live hypervisor must not
+# pass unseen), so the person declares which servers are recoverable: a destructive verb on
+# a server under `mcp_yellow_tool_prefix` gates on the YELLOW key `mcp-destructive`
+# (care.json, self-clearable through /maude:conscience), and the RED refusal for an
+# unlisted server names that knob instead of a target shape the call does not have.
+printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"],"mcp_yellow_tool_prefix":["mcp__mailsrv__"]}\n' > "$MAUDE_GATE_CONFIG"
+rm -f "$(care_path)" "$(redclear_path)"
+
+test_start "a destructive verb on a listed recoverable server blocks on the YELLOW key"
+run_infra "mcp__mailsrv__delete_thing" '{"id":"r123"}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "mcp-destructive" "names the yellow key"
+assert_contains "$ERR" "/maude:conscience mcp-destructive" "and the self-clear"
+assert_not_contains "$ERR" "[RED]" "not a red refusal"
+assert_not_contains "$ERR" "node=" "no hypervisor target talk"
+
+test_start "a read verb on the listed recoverable server passes"
+run_infra "mcp__mailsrv__list_things" '{}'
+assert_exit "$RC" "0" "read allowed"
+
+test_start "the yellow clear script clears mcp-destructive (Claude's own hand)"
+bash "$HOOKS_DIR/maude-clear-gate.sh" mcp-destructive >/dev/null 2>&1
+assert_exit "$?" "0" "cleared"
+[ "$(read_care '.gate_cleared["mcp-destructive"].until // 0')" -gt "$(date +%s)" ]
+assert_exit "$?" "0" "token in care.json"
+
+test_start "the listed server's destructive call passes on that token and reserves it"
+run_infra "mcp__mailsrv__delete_thing" '{"id":"r123"}'
+assert_exit "$RC" "0" "passed"
+assert_eq "$(read_care '.gate_cleared["mcp-destructive"].reserved.head // "none"')" "delete_thing" "reserved by this call"
+
+test_start "a different destructive call on the listed server waits behind the reservation"
+run_infra "mcp__mailsrv__delete_thing" '{"id":"r999"}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "reserved by another call" "says why"
+
+test_start "the PostToolUse leg spends the yellow token"
+run_infra_consume "mcp__mailsrv__delete_thing" '{"id":"r123"}'
+assert_exit "$RC" "0" "consume never blocks"
+assert_contains "$ERR" "is spent" "says so"
+assert_eq "$(read_care '.gate_cleared["mcp-destructive"] // "absent"')" "absent" "one-shot consumed"
+
+test_start "the next destructive call on the listed server blocks again"
+run_infra "mcp__mailsrv__delete_thing" '{"id":"r123"}'
+assert_exit "$RC" "2" "re-blocked"
+
+test_start "a yellow token does NOT open the RED infra key (one key each)"
+bash "$HOOKS_DIR/maude-clear-gate.sh" mcp-destructive >/dev/null 2>&1
+run_infra "mcp__testsrv__delete_thing" '{"node":"prod-x","vmid":777}'
+assert_exit "$RC" "2" "infra still red"
+assert_contains "$ERR" "Maude [RED]:" "red refusal"
+rm -f "$(care_path)"
+
+test_start "a RED token does NOT open the yellow key either"
+printf '{"gate_cleared":{"infra-destructive":{"until":%d}}}\n' $(($(date +%s)+600)) > "$(redclear_path)"
+run_infra "mcp__mailsrv__delete_thing" '{"id":"r123"}'
+assert_exit "$RC" "2" "yellow still blocked"
+rm -f "$(redclear_path)"
+
+test_start "a server in BOTH lists is infra: RED wins"
+printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"],"mcp_yellow_tool_prefix":["mcp__testsrv__","mcp__mailsrv__"]}\n' > "$MAUDE_GATE_CONFIG"
+run_infra "mcp__testsrv__delete_thing" '{"node":"prod-x"}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "Maude [RED]:" "red"
+assert_not_contains "$ERR" "mcp-destructive" "not the yellow key"
+
+test_start "the yellow list as a plain string works too"
+printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"],"mcp_yellow_tool_prefix":"mcp__mailsrv__"}\n' > "$MAUDE_GATE_CONFIG"
+run_infra "mcp__mailsrv__delete_thing" '{"id":"r1"}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "mcp-destructive" "yellow"
+
+test_start "a prefix that is only a PREFIX of the server name does not match (mcp__mail__ is not mcp__mailsrv__)"
+printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"],"mcp_yellow_tool_prefix":"mcp__mail__"}\n' > "$MAUDE_GATE_CONFIG"
+run_infra "mcp__mailsrv__delete_thing" '{"id":"r1"}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "Maude [RED]:" "unlisted, so red"
+
+test_start "a bare or malformed yellow entry lists nothing (the list cannot be widened by a short entry)"
+for bad in 'mcp__' 'mcp__mailsrv' 'mcp__*__' '' 'mcp____'; do
+  printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"],"mcp_yellow_tool_prefix":["%s"]}\n' "$bad" > "$MAUDE_GATE_CONFIG"
+  run_infra "mcp__mailsrv__delete_thing" '{"id":"r1"}'
+  assert_exit "$RC" "2" "blocked under entry '$bad'"
+  assert_contains "$ERR" "Maude [RED]:" "red under entry '$bad'"
+done
+
+test_start "the red refusal for an unlisted server addresses the account owner, not the agent"
+printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"]}\n' > "$MAUDE_GATE_CONFIG"
+run_infra "mcp__othermail__delete_thing" '{"id":"r1"}'
+assert_contains "$ERR" "account owner" "whose hand"
+assert_contains "$ERR" "Claude does not edit" "not an instruction to the agent"
+
+test_start "an UNLISTED server with no target shape is RED, names the knob and the config file, and says nothing of node/vmid"
+printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"]}\n' > "$MAUDE_GATE_CONFIG"
+run_infra "mcp__othermail__delete_thing" '{"id":"r1"}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "Maude [RED]:" "red"
+assert_contains "$ERR" "mcp_yellow_tool_prefix" "names the knob"
+assert_contains "$ERR" "$MAUDE_GATE_CONFIG" "and the file it lives in"
+assert_contains "$ERR" "mcp__othermail__" "and the server"
+assert_not_contains "$ERR" "node=" "no target shape it does not have"
+
+test_start "an unlisted server WITH a target shape still says which target"
+run_infra "mcp__othersrv__delete_thing" '{"node":"prod-x","vmid":777}'
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" 'node="prod-x"' "names the node"
+
+test_start "the sandbox exemption still applies on the listed recoverable server"
+printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"],"mcp_yellow_tool_prefix":["mcp__mailsrv__"]}\n' > "$MAUDE_GATE_CONFIG"
+run_infra "mcp__mailsrv__delete_thing" '{"node":"test-node-a"}'
+assert_exit "$RC" "0" "sandbox target passes"
+
+test_start "without jq a destructive verb on the listed server still fails CLOSED (the list is unreadable)"
+ERR="$(make_mcp_tool_input "mcp__mailsrv__delete_thing" '{"id":"r1"}' \
+  | PATH="$(make_nojq_bin)" bash "$GATE" 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "2" "no-jq → closed"
+assert_contains "$ERR" "jq is not on PATH" "and says why"
+assert_not_contains "$ERR" "in no gate-config list" "does not call it unlisted (nothing could be read)"
+
+test_start "a 2,000-entry yellow list is read inside the hook budget"
+jq -nc '{infra_tool_prefix:"mcp__testsrv__",infra_destructive_tools:["delete_thing"],infra_sandbox_nodes:["test-node-a"],infra_sandbox_vmids:["9001"],mcp_yellow_tool_prefix:([range(2000)|"mcp__s\(.)__"]+["mcp__mailsrv__"])}' > "$MAUDE_GATE_CONFIG"
+t0=$(date +%s)
+run_infra "mcp__mailsrv__delete_thing" '{"id":"r1"}'
+t1=$(date +%s)
+assert_exit "$RC" "2" "blocked"
+assert_contains "$ERR" "mcp-destructive" "yellow, found at the end of the list"
+[ $((t1 - t0)) -le 3 ]
+assert_exit "$?" "0" "under 3 s (took $((t1 - t0)) s; the hook budget is 5)"
+
+printf '{"infra_tool_prefix":"mcp__testsrv__","infra_destructive_tools":["delete_thing","wipe_store"],"infra_sandbox_nodes":["test-node-a"],"infra_sandbox_vmids":["9001"]}\n' > "$MAUDE_GATE_CONFIG"
+rm -f "$(care_path)" "$(redclear_path)"
+
 print_summary
 teardown_test_env
 exit $FAILED

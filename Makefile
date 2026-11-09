@@ -1,8 +1,11 @@
-.PHONY: test test-py verify lint release smoke mac-shape
+.PHONY: test test-py verify lint release smoke mac-shape fuzz
 
 test-py:
-	@if command -v pytest >/dev/null 2>&1; then PYTHONPATH=. pytest tests/vault tests/eye tests/tape tests/marker tests/rules -q; \
+	@if command -v pytest >/dev/null 2>&1; then PYTHONPATH=. pytest tests/vault tests/eye tests/tape tests/marker tests/rules tests/shell tests/recall -q; \
 	else echo "pytest not installed — skipping python vault tests"; fi
+
+fuzz:
+	@PYTHONPATH=. MAUDE_FUZZ_ITERS=$${MAUDE_FUZZ_ITERS:-20000} MAUDE_FUZZ_SEED=$${MAUDE_FUZZ_SEED:-$$(date +%s)} python3 -m pytest tests/shell/test_judge_fuzz.py -q -p no:cacheprovider
 
 test: test-py
 	bash tests/run.sh

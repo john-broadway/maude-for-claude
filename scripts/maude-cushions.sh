@@ -66,6 +66,18 @@ is_parked() {
 printf 'Maude cushions: %s\n' "$PROJ"
 printf '%s\n' "----------------------------------------"
 
+# The roots the repo walk covers: the project, then any dir named one per line in
+# <user-dir>/cushion-roots (blank and # lines skipped) or in MAUDE_CUSHION_ROOTS
+# (colon-separated). A box's hooks repo lives outside every project and held a month of
+# unpushed main unseen (2026-11-04); a root that does not exist is skipped, never an error.
+cushion_roots() {
+  printf '%s\n' "$PROJ"
+  local f; f="$(maude_user_dir)/cushion-roots"
+  [ -f "$f" ] && grep -v '^[[:space:]]*\(#\|$\)' "$f"
+  [ -n "${MAUDE_CUSHION_ROOTS:-}" ] && printf '%s\n' "${MAUDE_CUSHION_ROOTS//:/$'\n'}"
+  return 0
+}
+
 # ─── Cushion 1: git repos — uncommitted, unpushed, local-only ────────
 printf '\n## Repos\n'
 REPO_COUNT=0
@@ -92,14 +104,23 @@ while IFS= read -r gitdir; do
   # Commits on no remote anywhere: unpushed if a remote exists, local-only
   # (sole-copy risk) if none does.
   if [ -n "$(git -C "$repo" remote 2>/dev/null)" ]; then
-    unp="$(git -C "$repo" log --branches --not --remotes --oneline 2>/dev/null | wc -l | tr -d ' ')"
-    [ "$unp" -gt 0 ] && emit "$rel_repo — $unp unpushed commit(s)"
+    # The count with the OLDEST commit's date: a month of unpushed main read the same as an
+    # hour's until the date was on the line (2026-11-04, a box's hooks repo, 4 commits).
+    # Branches, and a detached HEAD (a commit there is on no branch and `--branches`
+    # left it out: the lens on c898dca, m5); an unborn HEAD errors and adds nothing.
+    unp_dates="$({ git -C "$repo" log --branches --not --remotes --format=%cs 2>/dev/null
+                   git -C "$repo" log HEAD --not --remotes --branches --format=%cs 2>/dev/null; })"
+    unp="$(printf '%s\n' "$unp_dates" | grep -c .)"
+    oldest="$(printf '%s\n' "$unp_dates" | grep . | sort | head -n 1)"
+    [ "$unp" -gt 0 ] && emit "$rel_repo — $unp unpushed commit(s), oldest $oldest"
   else
     n="$(git -C "$repo" rev-list --all --count 2>/dev/null | tr -d ' ')"
     [ "${n:-0}" -gt 0 ] && emit "$rel_repo — LOCAL-ONLY repo ($n commits exist nowhere else)"
   fi
   [ "$unc" -gt 0 ] && emit "$rel_repo — $unc uncommitted file(s)"
-done < <(find "$PROJ" -maxdepth 4 -type d -name .git -not -path '*/.git/*' 2>/dev/null | sort)
+done < <(cushion_roots | while IFS= read -r r; do
+  [ -n "$r" ] && [ -d "$r" ] && find "$r" -maxdepth 4 -type d -name .git -not -path '*/.git/*' 2>/dev/null
+done | sort -u)
 printf '  %d repo(s) checked\n' "$REPO_COUNT"
 
 # ─── Cushion 2: aging scratch — old enough to be forgotten, big enough to matter ──

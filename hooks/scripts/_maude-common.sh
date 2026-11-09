@@ -497,14 +497,16 @@ maude_redact() {
   # as an IP), and the PEM range keeps
   # the BEGIN line and rewrites it to the marker instead of using `c\`.
   # The IP substitution runs twice: `g` can't re-match an adjacent quad whose
-  # leading boundary char was consumed by the previous match.
+  # leading boundary char was consumed by the previous match. A quad ending a
+  # sentence ("at 192.0.2.4.") is masked: a trailing dot counts as an edge when no
+  # digit follows it (2026-10-30; before, the dot let it through).
   local ip='((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])'
   sed -E \
     -e 's#(https?://)[^/:@[:space:]]+:[^/@[:space:]]+@#\1[redacted-creds]@#g' \
     -e 's#(sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[abprs]-|AKIA|AIza)[A-Za-z0-9_-]{8,}#[redacted-secret]#g' \
     -e 's#eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+#[redacted-jwt]#g' \
-    -e "s#(^|[^0-9.])${ip}(\$|[^0-9.])#\\1[redacted-ip]\\5#g" \
-    -e "s#(^|[^0-9.])${ip}(\$|[^0-9.])#\\1[redacted-ip]\\5#g" \
+    -e "s#(^|[^0-9.])${ip}(\$|[^0-9.]|\\.\$|\\.[^0-9])#\\1[redacted-ip]\\5#g" \
+    -e "s#(^|[^0-9.])${ip}(\$|[^0-9.]|\\.\$|\\.[^0-9])#\\1[redacted-ip]\\5#g" \
     -e '/-----BEGIN[A-Z ]*PRIVATE KEY-----/,/-----END[A-Z ]*PRIVATE KEY-----/{' \
     -e '/-----BEGIN/!d' \
     -e 's#.*#[redacted-key]#' \
@@ -665,7 +667,7 @@ maude_call_fp() {  # <hook-input-json>
   if command -v cksum >/dev/null 2>&1; then printf '%s' "$canon" | cksum 2>/dev/null | awk '{print $1}'
   elif command -v shasum >/dev/null 2>&1; then printf '%s' "$canon" | shasum 2>/dev/null | awk '{print $1}'
   elif command -v sum >/dev/null 2>&1; then printf '%s' "$canon" | sum 2>/dev/null | awk '{print $1}'
-  elif maude_python3_ok; then printf '%s' "$canon" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:16])' 2>/dev/null
+  elif maude_python3_ok; then printf '%s' "$canon" | python3 -I -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest()[:16])' 2>/dev/null
   else printf ''
   fi
 }
@@ -1170,7 +1172,7 @@ maude_file_size() {
 # gates in one hook pay the interpreter start once.
 maude_python3_ok() {
   if [ -z "${_MAUDE_PY3_OK:-}" ]; then
-    if python3 -c 'pass' >/dev/null 2>&1; then _MAUDE_PY3_OK=y; else _MAUDE_PY3_OK=n; fi
+    if python3 -I -c 'pass' >/dev/null 2>&1; then _MAUDE_PY3_OK=y; else _MAUDE_PY3_OK=n; fi
   fi
   [ "$_MAUDE_PY3_OK" = "y" ]
 }
@@ -1180,7 +1182,7 @@ maude_python3_ok() {
 # plugin floor already requires. Never prints a placeholder: a digest both sides could
 # vacuously agree on is worse than no digest.
 maude_file_digest() {
-  python3 -c 'import hashlib, sys
+  python3 -I -c 'import hashlib, sys
 try:
     print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())
 except OSError:
@@ -1238,31 +1240,34 @@ maude_epoch_iso() {
 # straight through to the child on both paths.
 maude_timeout() {
   local t="$1"; shift
-  if command -v timeout >/dev/null 2>&1; then  # portability-shim (GNU/util-linux)
+  # MAUDE_TIMEOUT_FALLBACK=1 takes the bash path even where timeout(1) exists: the tests' stand-in
+  # for timeout(1) is this function, and a PATH that holds a planted `timeout` shim calling the
+  # stand-in would otherwise find the shim again, without end (2026-11-09).
+  if [ -z "${MAUDE_TIMEOUT_FALLBACK:-}" ] && command -v timeout >/dev/null 2>&1; then  # portability-shim (GNU/util-linux)
     timeout "$t" "$@"                          # portability-shim
   else
-    # GNU-parity contract: 124 on overrun, 125 on a bad duration, 127 when the
-    # command can't start. The child gets its own session and the WHOLE process
-    # group dies on overrun — subprocess.run alone only kills the direct child
-    # and orphans anything the runner shelled out to.
-    python3 -c 'import os, signal, subprocess, sys
-try:
-    limit = float(sys.argv[1])
-except ValueError:
-    sys.exit(125)
-try:
-    p = subprocess.Popen(sys.argv[2:], start_new_session=True)
-except OSError:
-    sys.exit(127)
-try:
-    sys.exit(p.wait(timeout=limit))
-except subprocess.TimeoutExpired:
-    try:
-        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
-    except OSError:
-        p.kill()
-    p.wait()
-    sys.exit(124)' "$t" "$@"
+    # GNU-parity contract: 124 on overrun, 125 on a bad duration, 127 when the command can't
+    # start, and the WHOLE process group dies on overrun (a runner that shells out leaves no
+    # orphan). Pure bash, no python3: the fallback ran in python3 until v0.36.0's public macOS
+    # leg (PR #90) showed the timer cannot be the thing it times; a python3 slow to start, or
+    # hung, held the judge's 2 s cut for as long as it hung. In a subshell, so job control
+    # (set -m: the child leads its own process group) never reaches the caller.
+    case "$t" in ''|.|*[!0-9.]*|*.*.*) return 125 ;; esac
+    (
+      exec 3>&2 2>/dev/null   # the command keeps the caller's stderr (fd 3); job notices go nowhere
+      set -m
+      "$@" <&0 2>&3 3>&- &
+      pid=$!
+      ( exec >/dev/null 2>&1 </dev/null; sleep "$t"; kill -KILL -- -"$pid" 2>/dev/null && exit 9; exit 0 ) &
+      wd=$!
+      wait "$pid" 2>/dev/null; rc=$?
+      if kill -0 "$wd" 2>/dev/null; then
+        kill -KILL -- -"$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+      else
+        wait "$wd" 2>/dev/null; [ $? -eq 9 ] && rc=124
+      fi
+      exit "$rc"
+    )
   fi
 }
 
@@ -1437,7 +1442,7 @@ maude_files_equal() {
   if command -v cmp >/dev/null 2>&1; then
     cmp -s "$1" "$2"
   else
-    python3 -c 'import sys, filecmp; sys.exit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else 1)' \
+    python3 -I -c 'import sys, filecmp; sys.exit(0 if filecmp.cmp(sys.argv[1], sys.argv[2], shallow=False) else 1)' \
       "$1" "$2" 2>/dev/null
   fi
 }
@@ -1802,6 +1807,36 @@ maude_greeting() {
 # + any .git; the infra-gate is INERT (no tools declared → nothing gated).
 maude_gate_config() { printf '%s' "${MAUDE_GATE_CONFIG:-$(maude_user_dir)/gate-config.json}"; }
 
+# The auto-memory index budget, in UTF-16 units (the loader's unit). Claude Code loads
+# <slug>/memory/MEMORY.md whole at every session start and cuts it past 25,000 units, so the
+# default sits just under that cut; a person who wants a lean index sets
+# "memory_index_budget" in gate-config. Anything but a whole number >= 1,000 is ignored.
+maude_memory_budget() {
+  local cfg v
+  cfg="$(maude_gate_config)"
+  if [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; then
+    v="$(jq -r 'if (.memory_index_budget | type) == "number" and .memory_index_budget == (.memory_index_budget | floor) and .memory_index_budget >= 1000 then (.memory_index_budget | floor | tostring) else empty end' "$cfg" 2>/dev/null)"
+  fi
+  # jq spells 1e4 as 10000 but 1e16 as 1e+16, and a long literal as up to 20 digits
+  # (12345678901234567890 prints as 12345678901234567000, past a shell integer's 19).
+  # Digits only, at most 18 of them, or the default: never a number a later [ -gt ]
+  # cannot read.
+  case "$v" in ''|*[!0-9]*) v="" ;; esac
+  [ "${#v}" -le 18 ] || v=""
+  printf '%s' "${v:-23500}"
+}
+
+# The auto-memory index itself: <anything>/.claude/projects/<slug>/memory/MEMORY.md, where a
+# slug holds no slash. One definition for every rail that reads it.
+maude_is_memory_index() {
+  [[ "$1" =~ /\.claude/projects/[^/]+/memory/MEMORY\.md$ ]]
+}
+
+# A file's length in UTF-16 units, the way Claude Code's loader counts (\r\n is two).
+maude_utf16_units() {
+  python3 -I -c 'import sys; print(len(open(sys.argv[1], encoding="utf-8", errors="replace", newline="").read().encode("utf-16-le")) // 2)' "$1" 2>/dev/null
+}
+
 # Escape ERE metacharacters in a literal path so it can sit inside a gate pattern.
 maude_ere_escape() { printf '%s' "$1" | sed -E 's/[][\*^$()+?{|]/\\&/g'; }
 
@@ -1839,6 +1874,52 @@ maude_public_publish_re() {
   printf '%s' '(gh[[:space:]]+release[[:space:]]+(create|upload)|twine[[:space:]]+upload|uv[[:space:]]+publish|(hf|huggingface-cli)[[:space:]]+upload)'
 }
 
+# The shell parser's verdict on a command (maude_shell/judge.py): one line, "block KEY WORDS",
+# "pass" or "unreadable"; nothing at all when python3 is missing or the read outruns its
+# 2 s, and the gate then keeps its regex verdict. `python3 -I` with the plugin root put first
+# on the path by hand: a hook's working directory is the user's project, and a plain
+# `python3 -m` would let a module sitting there (re.py) answer for the gate. -I drops that
+# entry, the user site and every PYTHON* variable, back to the 3.8 floor, with no cd; -S
+# skips site and a distro's sitecustomize. This runs on every Bash call, so it costs one
+# interpreter, not two: a python3 that cannot run prints nothing, which is the same answer.
+maude_shell_judge() {  # <command> [<seconds>] → the judge's lines: one per key hit, or "pass" / "unreadable"
+  # No presence check: `command -v` finds a python3 that cannot run (test-python-probe.sh),
+  # and the call below is the probe. A missing or broken one prints nothing, and nothing
+  # leaves the tables' verdict standing.
+  local root cfg p
+  local -a args=(--proj "$(maude_project_dir | tr -s '/')")
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)" || return 0
+  [ -f "$root/maude_shell/judge.py" ] || return 0
+  cfg="$(maude_gate_config)"
+  if [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; then
+    while IFS= read -r p; do [ -n "$p" ] && args+=(--sole "$p"); done < <(jq -r '.sole_copy_paths[]?' "$cfg" 2>/dev/null)
+  fi
+  # Only a clean run (0) is a read. A cut (124) prints nothing, and nothing read as "no
+  # hits, read whole" let a yellow token open the command (lens 2 on 98a4413); any other
+  # failure is the same (lens 3 on 652bbd9, minor 2). Each says unreadable. A python3
+  # that cannot start (127) says nothing, and the tables' verdict stands.
+  local out rc body
+  out="$(printf '%s' "$1" | MAUDE_JUDGE_MARK=1 maude_timeout "${2:-2}" python3 -I -S -c 'import sys
+sys.path.insert(0, sys.argv[1])
+from maude_shell.judge import main
+sys.exit(main(sys.argv[2:]))' "$root" "${args[@]}" 2>/dev/null; printf 'rc=%s' "${PIPESTATUS[1]}")"
+  rc="${out##*rc=}"; body="${out%rc=*}"
+  # A cut says so by name, and the gate reads a cut on a command with no key as red
+  # (parser-budget): the clock's cut (124), and a judge that STARTED (its first line is
+  # "read", asked for by MAUDE_JUDGE_MARK) and died, by a crash on crafted text or a kill
+  # under load; `env -C <dir> git push` passed rc 0 that way once in a loaded suite
+  # (2026-11-04). A python3 that never started leaves no line: 127 says nothing, and the
+  # tables' verdict stands; any other start failure says unreadable, as before.
+  case "$rc" in
+    0) ;;
+    124) printf 'cut\nunreadable\n' ;;
+    *) case "$body" in read*) printf 'cut\nunreadable\n' ;; *) [ "$rc" = 127 ] || printf 'opaque\n' ;; esac ;;
+  esac
+  [ "$rc" = 0 ] || maude_log_trace "gate" "parser-rc=$rc"
+  printf '%s' "${body#read
+}" | head -n 64
+}
+
 # Destructive MCP tool BARE names (space-delimited) from config; empty if none.
 maude_infra_destructive_tools() {
   local cfg; cfg="$(maude_gate_config)"
@@ -1851,6 +1932,94 @@ maude_infra_tool_prefix() {
   local cfg; cfg="$(maude_gate_config)"
   { [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; } || { printf ''; return; }
   jq -r '.infra_tool_prefix // ""' "$cfg" 2>/dev/null
+}
+
+# Servers whose destructive ops are RECOVERABLE, declared in config as
+# `mcp_yellow_tool_prefix` (a string or an array of mcp__name__ prefixes). A destructive
+# verb on one of them gates YELLOW (`mcp-destructive`, self-clearable) instead of RED.
+# The 07-30 law stands for everything else: an UNLISTED server's destructive verb is RED,
+# because a second live hypervisor must not pass unseen (2026-10-08: a mail server's
+# delete_draft, a draft recoverable from the mailbox, was refused as a hypervisor op with
+# "node=? vmid=?"; the person declares which servers are recoverable, the gate does not
+# guess). Unreadable config or no jq → nothing is listed → RED.
+# ── The push label: which class of remote a `git push` aims at (2026-11-04) ──────────
+# "Public, irreversible." on every push trained clearing without reading: four pushes to the
+# internal forge in one night, each cleared on a label that was wrong. The block is the same
+# block; the LABEL names the class of the remote's push URL. It fails toward the scary word:
+# "internal" only on a positive read, anything else is public.
+#
+# Hosts the person declared internal: `internal_push_hosts` in gate-config (a string or an
+# array of host names, matched whole, case-folded). Unreadable config or no jq → none.
+maude_internal_push_hosts() {
+  local cfg; cfg="$(maude_gate_config)"
+  { [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; } || { printf ''; return; }
+  jq -r '(.internal_push_hosts // empty) | if type=="array" then .[] else . end' "$cfg" 2>/dev/null
+}
+# maude_push_url_host <url> → the host of a git remote URL, never its userinfo (an https URL
+# can carry a token before the @, and the host is all the label ever prints). Nothing for a
+# URL it cannot read, which the caller reads as "unknown", never as internal.
+maude_push_url_host() {
+  local u="$1" h a
+  # A URL that can be read two ways is read neither way: `https://github.com?@x.lan/r`
+  # ends its authority at the `?` for git and curl, and a host read past the `@` would
+  # say x.lan (the commit review on c898dca). A `?`, `#`, `%`, a backslash or a second `@`
+  # has no place in a remote the label will vouch for.
+  case "$u" in *'?'*|*'#'*|*'%'*|*'\'*) printf ''; return ;; esac
+  a="${u//[!@]/}"; [ "${#a}" -le 1 ] || { printf ''; return; }
+  case "$u" in
+    *://*) h="${u#*://}"; h="${h%%/*}"; h="${h##*@}"; h="${h%%:*}" ;;  # scheme://[user[:pw]@]host[:port]/
+    *@*:*) h="${u%%:*}"; h="${h##*@}" ;;                               # scp-like user@host:path
+    *)     h="" ;;
+  esac
+  case "$h" in ''|*[!A-Za-z0-9.-]*) printf ''; return ;; esac
+  printf '%s' "$h"
+}
+# maude_push_class <url> → internal | public | unknown. Public: a known public forge, by host.
+# Internal: a local path or file://, localhost, a loopback or RFC1918 address, a host under a
+# private suffix (.lan .local .internal .home.arpa .localdomain), or a host the person listed.
+# Everything else is unknown, and the gate reads unknown as public.
+maude_push_class() {
+  local u="$1" h lh e
+  case "$u" in file://*|/*|./*|../*) printf 'internal'; return ;; esac
+  h="$(maude_push_url_host "$u")"
+  [ -n "$h" ] || { printf 'unknown'; return; }
+  lh="$(printf '%s' "$h" | tr 'A-Z' 'a-z')"
+  case "$lh" in
+    github.com|*.github.com|gitlab.com|*.gitlab.com|bitbucket.org|*.bitbucket.org|codeberg.org|*.codeberg.org|sr.ht|*.sr.ht|huggingface.co|*.huggingface.co)
+      printf 'public'; return ;;
+    localhost|*.localhost|*.lan|*.local|*.internal|*.home.arpa|*.localdomain)
+      printf 'internal'; return ;;
+  esac
+  if [[ "$lh" =~ ^(127\.[0-9]+\.[0-9]+\.[0-9]+|10\.[0-9]+\.[0-9]+\.[0-9]+|192\.168\.[0-9]+\.[0-9]+|172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+)$ ]]; then
+    printf 'internal'; return
+  fi
+  while IFS= read -r e; do
+    [ -n "$e" ] || continue
+    [ "$lh" = "$(printf '%s' "$e" | tr 'A-Z' 'a-z')" ] && { printf 'internal'; return; }
+  done < <(maude_internal_push_hosts)
+  printf 'unknown'
+}
+
+maude_mcp_yellow_tool_prefixes() {
+  local cfg; cfg="$(maude_gate_config)"
+  { [ -f "$cfg" ] && command -v jq >/dev/null 2>&1; } || { printf ''; return; }
+  jq -r '(.mcp_yellow_tool_prefix // empty) | if type=="array" then .[] else . end' "$cfg" 2>/dev/null
+}
+# 0 (true) if <server> (the tool's `mcp__name__` segment) is a listed recoverable server.
+# Exact equality against a prefix of the shape `mcp__<name>__`, never a glob: a listed
+# `mcp__mail__` is not `mcp__mailsrv__`, and a bare or malformed entry (`mcp__`, `mcp__x`)
+# lists nothing (the security lens on this change: the list downgrades RED to YELLOW, so
+# it must not be widenable by a short entry). This file is the person's gate-config, which
+# the agent can write like the sandbox lists beside it; the harness deny-rules are the lock.
+maude_mcp_yellow_server() {  # <server>
+  local p
+  for p in $(maude_mcp_yellow_tool_prefixes); do
+    # One pattern test, no fork per entry (the lens: 2.4 ms an entry on a 10,000-entry list).
+    case "$p" in mcp__*__) ;; *) continue ;; esac
+    case "${p#mcp__}" in ''|__|*[!A-Za-z0-9_-]*) continue ;; esac
+    [ "$1" = "$p" ] && return 0
+  done
+  return 1
 }
 
 # Co-manage sandbox membership from config. Returns 0 ONLY on a positive match;
@@ -1889,8 +2058,14 @@ maude_is_comanage_target() {
 # split into a character array once (substr() is O(n) per call in one-true-awk, the awk
 # macOS ships, so a char-at-a-time substr scan ran past 60 s there), the recursion walks
 # index ranges of that array, and output goes through a small flushed buffer.
+# MAUDE_SQ_MARK=1: a quoted span is dropped as always, and one \001 byte marks where it
+# stood, so a caller can see that a quote stood INSIDE an unquoted word, or in command
+# position, without reading its content (ported from fix/gate-false-pass, 2026-11-03: the
+# red-clear rule reads it). A substitution inside double quotes is still walked, marked or
+# not: the review on b18802e found echo "$(rm FILE)" read as a read when the marked span
+# was opaque, so the mark changes nothing about what is read, only adds the byte.
 maude_strip_quotes() {
-  printf '%s' "$1" | tr '\n' ';' | LC_ALL=C awk '
+  printf '%s' "$1" | tr '\n' ';' | LC_ALL=C awk -v mark="${MAUDE_SQ_MARK:-}" '
     function emit(c) { buf = buf c; if (++bl >= 512) { printf "%s", buf; buf = ""; bl = 0 } }
     function raw(lo, hi,   k) { for (k = lo; k <= hi; k++) emit(a[k]) }
     # closer(p, hi, ch, esc): index of the next ch in p..hi, or 0. A backslash escapes
@@ -1960,6 +2135,7 @@ maude_strip_quotes() {
         if (c == "\047") {
           j = sq_end(i, hi)
           if (j == 0) { raw(i, hi); return }    # unterminated: the rest stays raw
+          if (mark) emit("\001")
           i = j + 1; continue
         }
         if (c != "\"") { emit(c); i++; continue }
@@ -1979,6 +2155,7 @@ maude_strip_quotes() {
           }
         }
         if (i > hi) { raw(q, hi); return }      # unterminated "
+        if (mark) emit("\001")
         i++
       }
     }
@@ -1994,6 +2171,20 @@ maude_strip_quotes() {
 # match MORE, never introduce a new bypass.
 maude_unquote() {
   printf '%s' "$1" | tr '\n' ';' | tr -d "\"'"
+}
+
+# The gate's content-kept view: maude_unquote, then $HOME and a tilde expanded to the home
+# directory so a quoted path still resolves. A tilde is expanded only where bash expands
+# one, at the start of a word (after a blank, an operator, `=` or `:`) and followed by `/`
+# or the word's end: every `~` used to be replaced, so a line of 4,000 tildes grew by HOME's
+# length before every grep, outside the clock, and 240 KB of them killed the hook (lens 7
+# on fc838c1, B1). Run twice, because one match's trailing boundary is the next one's
+# leading boundary (`~ ~`). HOME is escaped for the replacement (`\`, `&`, the delimiter).
+maude_home_view() {  # <command>
+  local h b='(^|[[:space:]=:;&|(<>])' e='(/|$|[[:space:];&|)<>])'
+  # escaped by sed, not by ${h//…}: bash 5.2 gives `&` a meaning in that replacement
+  h="$(printf '%s' "$HOME" | sed 's/[\\&#]/\\&/g')"
+  maude_unquote "$1" | sed -E "s#$b~$e#\\1$h\\2#g; s#$b~$e#\\1$h\\2#g; s#\\\$HOME#$h#g"
 }
 
 # Canonicalise the PATH-matching view of a command string so obfuscated rm
@@ -2314,12 +2505,74 @@ maude_heredoc_line_ok() {
   return 0
 }
 
+# Besides printing the stripped text it leaves, for an in-process caller: MAUDE_HD_STRIPPED
+# (the same text) and the bodies it took out, MAUDE_HD_BODIES[i] recorded under
+# MAUDE_HD_BODY_IDX[i] = the index of its opener line IN THE STRIPPED TEXT (several openers on
+# one line share it). A body cut short by a stop is recorded as far as it went; a body that
+# never closes is handed back in the text and recorded nowhere.
+MAUDE_HD_STRIPPED=""
+MAUDE_HD_BODIES=()
+MAUDE_HD_BODY_IDX=()
+# The walks below are bash, per character, and worse than linear in a line's quotes: one
+# 20 KB line of `"a" "a" …` cost the stripper 6.9 s, and the hook budget is 5 s, after
+# which a killed hook blocks nothing (lens 6 on 8a0de19). No count of lines bounds that,
+# so the bound is the clock: a caller that has a budget marks its start in MAUDE_WALK_T0
+# (whole seconds since its shell began, `$SECONDS`, which bash 3.2 has) and the seconds it
+# can spend in MAUDE_WALK_BUDGET; every walk asks per line and, overdue, stops CLOSED
+# (the rest of the command handed back whole). Unset, there is no deadline: a test or a
+# hook that has already run for seconds would otherwise find every walk overdue at once.
+# `$SECONDS` ticks on the wall clock's second, so a budget of N fires after N-1 to N
+# seconds of real time; the gate's 3 leaves room for one more line and the greps.
+# Both values are read only when they are plain digits (base 10: `08` is octal to bash
+# arithmetic): an inherited `1;rm` made the arithmetic fail and the stripper print nothing
+# but the error, a fail-open read, and a negative T0 made every walk overdue at once
+# (lens 7 on fc838c1, M3). Anything else means no deadline.
+# Microseconds since the walks' start by the real clock, or 1 (and a nonzero status) when
+# the clock cannot be read: EPOCHREALTIME is written with the locale's decimal separator,
+# so only its digits are read (a comma locale made the arithmetic fail and the clock read
+# "not overdue"; the commit review on c898dca), and a clock that went backwards reads as
+# overdue rather than as time to spare. The whole-second clock stands in on an older bash.
+maude_walk_elapsed_us() {
+  local now t0
+  if [ -n "${EPOCHREALTIME:-}" ] && [ -n "${MAUDE_WALK_T0_US:-}" ]; then
+    now="${EPOCHREALTIME//[!0-9]/}"; t0="${MAUDE_WALK_T0_US//[!0-9]/}"
+    if [ -z "$now" ] || [ -z "$t0" ] || [ "${#now}" -gt 18 ] || [ "${#t0}" -gt 18 ] || [ $(( 10#$now - 10#$t0 )) -lt 0 ]; then
+      printf '%s' 999999999; return 1
+    fi
+    printf '%s' $(( 10#$now - 10#$t0 ))
+    return 0
+  fi
+  printf '%s' $(( (SECONDS - ${MAUDE_WALK_T0:-$SECONDS}) * 1000000 ))
+}
+maude_walk_overdue() {
+  case "${MAUDE_WALK_BUDGET:-3}" in ''|*[!0-9]*) return 1 ;; esac
+  # By the real clock when the gate set one (MAUDE_WALK_T0_US): SECONDS turns on the
+  # shell's own second boundary, so the whole-second read was overdue anywhere from 2.0 to
+  # 3.0 s real, and a walk of 3.7 s was not refused (2026-11-04). The whole-second clock
+  # stands in for an older bash.
+  if [ -n "${EPOCHREALTIME:-}" ] && [ -n "${MAUDE_WALK_T0_US:-}" ]; then
+    # In-process, no fork: this is asked between every pattern of the walk. The same read
+    # as maude_walk_elapsed_us: digits only, and a clock it cannot read, or one that went
+    # backwards, is overdue.
+    local now="${EPOCHREALTIME//[!0-9]/}" t0="${MAUDE_WALK_T0_US//[!0-9]/}"
+    { [ -n "$now" ] && [ -n "$t0" ] && [ "${#now}" -le 18 ] && [ "${#t0}" -le 18 ]; } || return 0
+    [ $(( 10#$now - 10#$t0 )) -lt 0 ] && return 0
+    [ $(( 10#$now - 10#$t0 )) -ge $(( 10#${MAUDE_WALK_BUDGET:-3} * 1000000 )) ]
+    return
+  fi
+  case "${MAUDE_WALK_T0:-}" in ''|*[!0-9]*) return 1 ;; esac
+  [ $((SECONDS - 10#$MAUDE_WALK_T0)) -ge $((10#${MAUDE_WALK_BUDGET:-3})) ]
+}
 maude_strip_heredocs() {
-  local input="$1" out="" line logical join="" bs pend="" tab=$'\t' stop="" j
-  local -a q=() qdash=() qquot=() nq nd nt
+  local input="$1" out="" line logical join="" bs pend="" tab=$'\t' stop="" j nout=0
+  local -a q=() qdash=() qquot=() qidx=() nq nd nt
   local h=0
+  MAUDE_HD_BODIES=(); MAUDE_HD_BODY_IDX=()
   while IFS= read -r line || [ -n "$line" ]; do
     if [ -n "$stop" ]; then out+="$line"$'\n'; continue; fi
+    # Overdue (see maude_walk_overdue): this line and every later one are handed back,
+    # the body in progress with them, unread.
+    if maude_walk_overdue; then stop=1; out+="$pend$line"$'\n'; pend=""; continue; fi
     if [ "$h" -lt "${#q[@]}" ]; then
       pend+="$line"$'\n'
       logical="$join$line"; join=""
@@ -2333,20 +2586,28 @@ maude_strip_heredocs() {
         # `$(git pu\` then `sh --force)` is one push, and neither piece reads as one.
         # (${ and $[ run nothing without a $( or ` inside, so they are not reasons to read.)
         case "$logical" in *'$('*|*'`'*)
-          stop=1; out+="$logical"$'\n'; pend=""; continue ;;
+          stop=1; out+="$logical"$'\n'
+          MAUDE_HD_BODIES+=("${pend%"$line"$'\n'}"); MAUDE_HD_BODY_IDX+=("${qidx[$h]}"); pend=""; continue ;;
         esac
       fi
       [ "${qdash[$h]}" = "-" ] && logical="${logical#"${logical%%[!$tab]*}"}"
-      if [ "$logical" = "${q[$h]}" ]; then h=$((h + 1)); pend=""; fi
+      if [ "$logical" = "${q[$h]}" ]; then
+        MAUDE_HD_BODIES+=("${pend%"$line"$'\n'}"); MAUDE_HD_BODY_IDX+=("${qidx[$h]}")
+        h=$((h + 1)); pend=""
+      fi
       continue   # drop body lines AND the closing delimiter line
     fi
     join=""
-    if ! maude_heredoc_line_ok "$line"; then stop=1; out+="$line"$'\n'; continue; fi
+    # A command line past 4 KB is handed back unread, as an opener line past 4 KB is in
+    # the gate: the per-character walk below is what the budget cannot afford on it.
+    if [ "${#line}" -gt 4096 ] || ! maude_heredoc_line_ok "$line"; then stop=1; out+="$line"$'\n'; continue; fi
     read -r -a nq <<< "$MAUDE_HD_Q"; read -r -a nd <<< "$MAUDE_HD_DASH"; read -r -a nt <<< "$MAUDE_HD_QUOT"
-    for j in "${!nq[@]}"; do q+=("${nq[$j]}"); qdash+=("${nd[$j]}"); qquot+=("${nt[$j]}"); done
-    out+="$line"$'\n'
+    for j in "${!nq[@]}"; do q+=("${nq[$j]}"); qdash+=("${nd[$j]}"); qquot+=("${nt[$j]}"); qidx+=("$nout"); done
+    out+="$line"$'\n'; nout=$((nout + 1))
   done <<< "$input"
   [ "$h" -lt "${#q[@]}" ] && out+="$pend"
+  # shellcheck disable=SC2034   # read by maude-gate.sh after an in-process call
+  MAUDE_HD_STRIPPED="$out"
   printf '%s' "$out"
 }
 
@@ -2384,13 +2645,14 @@ maude_match_gate_pattern() {
 # gate would under-block — but the skeleton always retains a command-position
 # rm whenever the rm itself is unquoted (only the path may be quoted away), which
 # is the only shape that reaches a destructive delete.
-maude_rm_in_command_position() {
+maude_rm_in_command_position() {  # <command> [<its body-stripped, quote-stripped view>]
   local skeleton
   # Excise heredoc bodies (data, not shell) BEFORE quote-stripping/flattening so
   # documentation prose in a `git commit -F -` body cannot read as a subshell rm.
-  skeleton="$(maude_strip_quotes "$(maude_strip_heredocs "$1")")"
+  # A caller that holds that view already passes it: the stripper walks every line.
+  skeleton="${2:-$(maude_strip_quotes "$(maude_strip_heredocs "$1")")}"
   printf '%s' "$skeleton" | grep -qE -- \
-    '(^|[;&|(`])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|command[[:space:]]+|sudo[[:space:]]+)*(/[^[:space:]]*/)?rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]]*[rR][[:alnum:]]*|--recursive)'
+    '(^|[;&|(`])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+|command[[:space:]]+|sudo[[:space:]]+|(\$([A-Za-z_][A-Za-z0-9_]*|[0-9@*#?$!-]|\{[^}[:space:];&|]*\}|\(\([^();&|]*\)\)|\([^();&|]*\))|`[^`;&|]*`)+[[:space:]]+)*(/[^[:space:]]*/|(\$\{[^}[:space:];&|]*\}|\$\([^();&|]*\)|`[^`;&|]*`)+(/[^[:space:]]*/)?)?rm([[:space:]]+(-[^[:space:]]+|--[a-z-]+))*[[:space:]]+(-[[:alnum:]]*[rR][[:alnum:]]*|--recursive)'
 }
 
 # ─── Gate-key severity tiers (v0.10.0) ────────────────────────────────────
@@ -2405,7 +2667,7 @@ maude_rm_in_command_position() {
 #   script (unknown keys are refused) but only an enumerated red key gets the
 #   John's-hand path.
 maude_yellow_keys() {
-  printf '%s' 'git-push commit-amend no-verify no-gpg-sign reset-hard run-governor'
+  printf '%s' 'git-push commit-amend no-verify no-gpg-sign reset-hard run-governor mcp-destructive'
 }
 maude_red_keys() {
   printf '%s' 'rm-rf-root rm-rf-glob sudo-rm-rf rm-rf-sole-copy sole-copy-target public-publish force-push filter-repo filter-branch infra-destructive drop-table'
@@ -2420,6 +2682,15 @@ maude_red_refusal_line() {  # <key>
 # 0 (true) if $1 is a red key.
 maude_is_red_key() {
   case " $(maude_red_keys) " in *" $1 "*) return 0 ;; *) return 1 ;; esac
+}
+# 0 (true) if $1 ranks red in the gate: a red key, one of the two backstop keys about red
+# keys (red-self-clear, redclear-write), parser-depth (a command too deep to read) or
+# parser-budget (a table walk cut by the gate's clock). None is in the red list and no
+# clear script mints them; their tokens are read from the red file only, so a yellow key
+# never stands in for one and care.json never opens one.
+maude_gate_key_red() {
+  case "$1" in red-self-clear|redclear-write|parser-depth|parser-budget|parser-unread) return 0 ;; esac
+  [ -n "$1" ] && maude_is_red_key "$1"
 }
 # 0 (true) if $1 is a known gate key (yellow OR red).
 maude_is_known_key() {
@@ -2513,3 +2784,320 @@ maude_has_opaque_wrap() {
   printf '%s' "$cmd" | grep -qE "$_eval_bare"         && return 0
   return 1
 }
+
+# maude_redclear_fold <content view>: the view with simple NAME=LITERAL assignments folded
+# into the words that use $NAME or ${NAME}, in assignment order, each value folded against
+# the assignments before it, and a `cd DIR` folded onto the relative words after it. For the
+# name check only, and only ever to ADD a match: the caller checks the raw view too (lens 4,
+# 2026-11-03: p=DIR/care-red; cat /tmp/f > ${p}clear.json spelled no stem in any view, and
+# neither did d=/x/.maude/plug; … ${d}in/${p}clear.json). Only a value that is a pure
+# literal once folded (no $, no backtick) registers: a value holding an expansion stays
+# unfolded, so the $ it leaves in a word is the built-name net's to read, and a value can
+# never re-enter its own fold (p=${p}x). Each replacement removes one $, so the loops end.
+# A name assigned twice, or mentioned bare anywhere (for p, read p, printf -v p, unset p),
+# is never folded: its run-time value is not the literal, and a use of it where .maude
+# is spelled is OVER (the second review on adf94aa). Where .maude is spelled, a builtin
+# that binds a name anywhere in the command turns the fold off for every name and makes
+# any $ use OVER, and the names the shell itself binds (REPLY, PWD, _, BASH_*, …) are
+# OVER on use (the review on 4274bdc), and so is any expansion that is not a folded
+# literal, a special parameter included (the review on dd75ced). The cost, owned: a read
+# of the token file beside a read builtin, a for, a $PWD or a $? is refused; split it, or
+# read with a tool, not the shell.
+# Bounded (the review on e69db43): a value past 4 KB, a word past 64 KB, or more than 64
+# assignments prints OVER and the caller refuses; so does a fold that prints nothing, and
+# so does a relative shell-built word after ANY cd, pushd or popd, in a command that
+# spells .maude anywhere (the reviews on adf94aa and dd75ced: cd -P DIR bound the option,
+# pushd was not cd, cd a; cd b never chained, and pushd +1, popd, a bare cd and CDPATH move
+# where no fold can follow). The literal cd tracking only adds a stem match.
+# maude_redclear_join: a backslash-newline continuation, which the views carry as
+# backslash+newline or backslash+; (unquote maps a newline to ;), is joined the way bash
+# joins it before any view is read (the review on dd75ced: care-red\<newline>clear.json
+# spelled no stem in any view). Only an odd run of backslashes continues: an even run is an
+# escaped backslash and the separator after it is real (the review on dbd9120: a blanket
+# join read echo \\; rm FILE as one echo).
+# Linear in the bytes: the text is split at its backslashes (a run of k yields k-1 empty
+# fields) and only the runs are walked, never each character. The per-character loop this
+# replaces was 1.5 s at the byte cap, three calls a command, with the hook killed at 5 s
+# (the padding bypass).
+maude_redclear_join() {  # <text>: only an odd run of backslashes before a newline or ; continues
+  # One record at a time, each piece printed as it is made: a run of backslashes never
+  # spans a newline, so a run that ends a line is held until the next line says whether a
+  # newline follows it. Growing one string by appending is quadratic in BSD awk (macOS),
+  # which copies the string on every append: the whole text, then every run, was that
+  # (the macOS-shaped suite on the v0.36.0 release; GNU awk appends in place).
+  printf '%s' "$1" | LC_ALL=C awk '
+    function bs(k,  r) { if (k <= 0) return ""; r = "\\"; while (length(r) < k) r = r r; return substr(r, 1, k) }
+    {   # every byte kept: a marker is never a separator (the review on 17bdbdd)
+      if (NR > 1) { if (tail % 2 == 1) printf "%s", bs(tail - 1); else printf "%s\n", bs(tail) }
+      tail = 0
+      m = split($0, f, /\\/); printf "%s", f[1]; p = 2
+      while (p <= m) {
+        run = 1
+        while (p < m && f[p] == "") { run++; p++ }
+        if (p == m && f[p] == "") { tail = run; break }   # the run ends the line
+        nxt = substr(f[p], 1, 1)
+        if (run % 2 == 1 && nxt == ";") printf "%s%s", bs(run - 1), substr(f[p], 2)
+        else printf "%s%s", bs(run), f[p]
+        p++
+      }
+    }
+    END { if (tail > 0) printf "%s", bs(tail) }'
+}
+
+maude_redclear_fold() {  # <content view, JOINED by the caller (maude_redclear_touch joins both views first)>
+  # No join here: the touch has joined this view already, and a second pass over a joined
+  # view changes only a trailing newline, which the tr below erases (the padding bypass:
+  # three joins of a 129 KB view were a third of the hook's time).
+  printf '%s' "$1" | tr '\n' ' ' | tr -d '\\' | LC_ALL=C awk '
+    # Output is built in a small buffer flushed to a table every 4 KB, never one string
+    # grown per word (BSD awk, as on macOS, copies a string on every append) and never a
+    # table of one entry per word (its table growth made 60,000 entries cost 1.2 s where
+    # 64,000 cost 0.3 s): the macOS-shaped suite on the v0.36.0 release.
+    function app(x) { buf = buf " " x; blen += 1 + length(x); olen += 1 + length(x); if (blen > 4096) { o[++no] = buf; buf = ""; blen = 0 } }
+    function fold(t,   k, p) {
+      for (k = 1; k <= nv; k++) {   # in assignment order: $p$q folds $p first, never gluing $q to it
+        while ((p = index(t, "${" names[k] "}")) > 0) {
+          t = substr(t, 1, p - 1) vals[k] substr(t, p + length(names[k]) + 3)
+          if (length(t) > 65536) { print "OVER cap"; exit }
+        }
+        while (match(t, "\\$" names[k] "([^A-Za-z0-9_]|$)")) {
+          t = substr(t, 1, RSTART - 1) vals[k] substr(t, RSTART + 1 + length(names[k]))
+          if (length(t) > 65536) { print "OVER cap"; exit }
+        }
+      }
+      return t
+    }
+    { n = split($0, tok, /[[:space:];&|()`]+/); cd = ""; no = 0; olen = 0; buf = ""; blen = 0; want = 0; unknown = 0
+      maude = ($0 ~ /\.maude/)
+      # pass 1: a name folds only when its ONE mention is its plain NAME=LITERAL. A mention
+      # is any word holding the name as an identifier (p, p+=, p[0]=, -vp, p>f): for p, read
+      # p, printf -v p, unset p, local p, getopts … p, mapfile -t p, p+=x rebind it at run
+      # time (the second review on adf94aa, the review on b865c4d). Where .maude is spelled,
+      # declare/typeset/local -n, let, (( and ${NAME=/${NAME:= end the fold outright.
+      # where .maude is spelled, a builtin that binds a name anywhere in the command (by any
+      # spelling, a nameref, a built operand, a printf -v) means no literal can be trusted:
+      # the fold is off for every name and any $ use is OVER (the review on 4274bdc)
+      bind = (maude && $0 ~ /declare|typeset|local|export|readonly|readarray|mapfile|getopts|unset|printf[[:space:]]+-[A-Za-z]*v|(^|[^A-Za-z0-9_])(read|let|eval|for|select|set)([^A-Za-z0-9_]|$)|\(\(|\$\{[A-Za-z_][A-Za-z0-9_]*:?=/)   # portability-name-only: builtins matched by name, never run here
+      # The mentions are read only for names the command assigns (every read of bare is
+      # keyed by a name in cnt), so cnt is collected first and only those names are
+      # counted; with no assignment the count is skipped. The same verdict, by construction;
+      # the work it saves was most of the fold under BSD awk (macOS), where a table of
+      # 60,000 mention keys went superlinear and the fold took 1.8 s of a 3.5 s hook.
+      nasg = 0
+      for (i = 1; i <= n; i++) if (tok[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { cnt[substr(tok[i], 1, index(tok[i], "=") - 1)]++; nasg++ }
+      for (i = 1; i <= n && nasg; i++) {
+        t = tok[i]; if (t == "") continue
+        if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) w = substr(t, index(t, "=") + 1); else w = t
+        # every identifier in the rest of the word (its value, or the word itself) that is not
+        # a $use is a mention: split on everything but identifier characters, drop $-prefixed
+        gsub(/\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/, " ", w)
+        # the pieces are read by a match loop, not split(): a split into a fresh array per
+        # word went superlinear in BSD awk beside the large word array (60,000 words with an
+        # assignment and .maude: 3.3 s, the fifth lens on the release). Same pieces: the
+        # maximal runs of identifier characters; one that starts with a digit is no name.
+        while (match(w, /[A-Za-z0-9_]+/)) { kw = substr(w, RSTART, RLENGTH); w = substr(w, RSTART + RLENGTH); if (kw in cnt) bare[kw]++ }
+        # an option word with a name glued on (printf -vp, read -rp): every suffix is a mention
+        if (t ~ /^-[A-Za-z_][A-Za-z0-9_]*$/) for (j = 2; j <= length(t); j++) if (substr(t, j) in cnt) bare[substr(t, j)]++
+      }
+      for (i = 1; i <= n; i++) {
+        t = tok[i]; if (t == "") continue
+        # the folded view is bounded as a whole, not only per word: a 4 KB value used 25,000
+        # times folded to 100 MB under the per-word cap and the touch outran the hook (the
+        # advisor on fix/gate-time-budget). Past twice the byte cap the fold is OVER.
+        # (a running length and an array of pieces, not one growing string: BSD awk copies
+        # the string on every append and measures it on every length(), so 60,000 words
+        # took 7.4 s under the macOS-shaped suite, past the 5 s kill of the hook)
+        if (olen > 262144) { print "OVER cap"; exit }
+        # a use of a name the fold may not read (assigned twice, or mentioned anywhere else)
+        # in a command that spells .maude anywhere: refused outright; the check reads every
+        # word, the value of an assignment included (the review on b865c4d). No apostrophe
+        # may appear in this program: it sits in shell single quotes.
+        if (maude && t ~ /\$/) {
+          if (bind) { print "OVER"; exit }
+          if (t ~ /\$\{?(_|REPLY|PWD|OLDPWD|OPTARG|OPTIND|MAPFILE|DIRSTACK|BASH_[A-Z_]*|RANDOM|SECONDS|LINENO|IFS|PIPESTATUS|FUNCNAME)([^A-Za-z0-9_]|$)/) { print "OVER"; exit }
+          for (nm in cnt) if ((cnt[nm] > 1 || (nm in bare)) && (index(t, "$" nm) || index(t, "${" nm))) { print "OVER"; exit }
+          # any expansion that is not a folded literal: a name never assigned here, a special
+          # parameter ($1 $@ $? $$ $! $# $* $-): OVER (the review on dd75ced). $( and $" are
+          # left to the built-name net: a substitution in the token directory is a built word.
+          # No apostrophe may appear in this program: it sits in shell single quotes.
+          u = t
+          while (match(u, /\$(\{[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*|\{?[0-9@*#?$!-])/)) {
+            e = substr(u, RSTART + 1, RLENGTH - 1); sub(/^\{/, "", e); ok = 0
+            for (k = 1; k <= nv; k++) if (names[k] == e) ok = 1
+            if (!ok) { print "OVER"; exit }
+            u = substr(u, RSTART + RLENGTH)
+          }
+        }
+        if (t ~ /^[A-Za-z_][A-Za-z0-9_]*=/) {
+          e = index(t, "="); nm = substr(t, 1, e - 1); vl = substr(t, e + 1); if (nv && index(vl, "$")) vl = fold(vl)
+          if (length(vl) > 4096) { print "OVER cap"; exit }
+          app(nm "=" vl)
+          if (!bind && vl !~ /[$`]/ && cnt[nm] == 1 && !(nm in bare)) { if (++nv > 64) { print "OVER cap"; exit }; names[nv] = nm; vals[nv] = vl }
+          continue
+        }
+        if (nv && index(t, "$")) t = fold(t)   # fold only replaces a $ use: a word without one, or no name to fold, is itself
+        # the directory: cd and pushd take the next operand, options skipped (cd -P DIR); a
+        # relative operand resolves against the current one; an operand that is no literal
+        # (cd -, cd $d, cd `…`) or a popd makes it UNKNOWN (the review on adf94aa)
+        # any change of directory at all (a bare cd, pushd +N, popd, CDPATH) can move to a
+        # directory the fold cannot model: from here a relative shell-built word is OVER
+        # where .maude is spelled; the literal tracking below only ADDS a stem match
+        if (t == "cd" || t == "pushd") { want = 1; unknown = 1; app(t); continue }
+        if (t == "popd" || t ~ /^CDPATH=/) { unknown = 1; cd = ""; app(t); continue }
+        if (want) {
+          if (t ~ /^-./ && t != "--") { app(t); continue }   # an option: the operand is still to come
+          want = 0
+          if (t == "--") { want = 1; continue }
+          if (t == "-" || t ~ /^[+~]/ || t ~ /[$`]/) cd = ""; else cd = (t ~ /^\// || cd == "") ? t : cd "/" t
+          app(t); continue
+        }
+        if (cd != "" && t !~ /^\//) t = cd "/" t
+        # after an unknown directory, a relative word the shell builds, in a command that
+        # spells .maude anywhere, could be the token: refused outright
+        if (unknown && maude && t !~ /^\// && t ~ /[$`{}?*[]/) { print "OVER"; exit }
+        app(t)
+      }
+      if (no == 0 && buf == "") print " "
+      else { for (q = 1; q <= no; q++) printf "%s", o[q]; printf "%s\n", buf } }'
+}
+
+# ── The red-clear token file: a command that names it may only read it ──────────────────
+# maude_redclear_touch <content view> [<skeleton>]: 0 when the command names the token file
+# and is not a plain read of it; 1 otherwise. The CONTENT view (quotes dropped, their text
+# kept, ~ and $HOME expanded, literal assignments and a cd folded in by maude_redclear_fold)
+# decides whether the file is named: by its STEM, "care-redclear",
+# case-folded and with backslashes dropped, so care-redclear.js\on, CARE-REDCLEAR.JSON,
+# $'…\x6fn', jso${e}n, .js?n and a=care-redclear; … $a.json all count as naming it (lens 2,
+# 2026-11-03: the full name let every one of those through). The SKELETON (quoted spans
+# erased whole, maude_strip_quotes) is what the redirect check and the command-word walk
+# read, so a `|` in a jq filter or a `>` in a grep pattern is not a pipe or a redirect
+# (they were, and jq -r '.a | keys[]' FILE was refused). On the skeleton a redirect into
+# the file reads as `> …care-redclear…`; into a quoted target as a bare `>` with nothing
+# after it; into a target the shell builds ($a, {x,y}, a glob, ~) or quoted in part
+# (DIR/"care-redclear.json" is DIR/ and a marker) as an odd character after the `>`: all
+# four refuse. Then every command word must be a plain reader, and in a pipe every
+# segment's first word is one (cat FILE | cut is read; cat FILE | python3 is not). A reader
+# is a tool that cannot write a file or run one from its arguments or environment: sort
+# (-o), uniq and xxd (a second operand), less and more (LESSOPEN, -o) are not readers,
+# the review on ae87414 found each writes the token when its operand is the file. Without a
+# skeleton (the gate reads a raw command whole) the content view stands in for it. The
+# skeleton the gate passes is MARKED (MAUDE_SQ_MARK=1): an erased quoted span leaves one
+# \001 byte, which is an odd character in a redirect target (`> /x/.maude/plugin/"…"`) and a
+# non-reader in command position (`"rm" FILE`, `""cat x; "rm" FILE`), so a quote can hide
+# neither (the commit security review on fd6851e found both seams in the unmarked skeleton).
+# What this view cannot see, and the harness deny on the path is for: a glob that never
+# spells the stem and sits outside its directory's spelling (care-red* is still read: a
+# built word inside .maude/plugin names the token), a move or rm of the directory above
+# the file, an interpreter heredoc (python3 - <<PY … open(path, "w")), text decoded or
+# evaluated at run time (base64 -d | bash, eval "$(…)", sh < file, xargs -a file).
+# Collateral, by design: any file whose name holds the stem (care-redclear-notes.json) is
+# read as the token; a read inside a shell-fed heredoc (bash <<EOF cat FILE EOF) refuses,
+# bash is no reader; a text heredoc into an extensionless path beside a read refuses, its
+# body's words walk as commands; (( a > b )) beside a read refuses, the `>` is a redirect
+# to the walk.
+# Why it refused, for the label (2026-11-05; the lens on 1e4618d reshaped it): MAUDE_REDCLEAR_WHY is
+#   unread          the fold could not read something beside `.maude` (a $(…), a ${X:-…}, a
+#                   name it did not see assigned, a binding builtin, a cd) and no write stood
+#                   before that point; the write checks read the clean prefix of the skeleton
+#                   first, so `rm <token> $1` says "write", and a write past the first
+#                   expansion is not read (the label says so)
+#   redirect:<how>  a redirect into the token, or into a quoted or shell-built target
+#   word:<how>:<w>  a command word beside the token that is not a plain reader
+# where <how> is "stem" (the token's name is spelled) or "built" (a word inside
+# .maude/plugin the shell builds at run time, read as the token by the rule), and <w> is
+# what maude_redclear_word allows on stderr. One label said "names the token file" for all
+# of these, and most of a day's refusals named no token at all: a refusal that states the
+# wrong reason is a lying refusal.
+MAUDE_REDCLEAR_WHY=""
+maude_redclear_touch() {  # <content view> [<skeleton>]
+  local v s f named over bad
+  MAUDE_REDCLEAR_WHY=""
+  set -- "$(maude_redclear_join "$1")" "$(maude_redclear_join "${2-}")"
+  # named by its stem, or by a word inside its directory that the shell builds at run time
+  # (an expansion, a brace, a glob, a backtick, a quoted span the skeleton marks): a name the
+  # view cannot read whole inside .maude/plugin is read as the token (review on fd6851e).
+  # Read on the raw view AND on the folded view (literal assignments and a cd folded in):
+  # the fold only ever adds a match (review on e69db43). A fold past its bound, or one
+  # that prints nothing, is OVER: refused outright, after the write checks on the raw view
+  # have had their say (a write beside an unread expansion is a write).
+  over=""
+  f="$(maude_redclear_fold "$1")" || f="OVER"
+  [ -n "$f" ] || f="OVER"
+  # the fold's own caps (64 names, a 4 KB value, 64 KB of text) are OVER too, and the
+  # label says so: an "unread" that tells the person to move an expansion out of a
+  # command that holds none cannot be followed (lens 5 on 238e1c9, finding 4)
+  case "$f" in "OVER cap"*) over=cap; f="" ;; OVER*) over=1; f="" ;; esac
+  named=""
+  for v in "$1" ${f:+"$f"}; do
+    v="$(printf '%s' "$v" | tr -d '\\' | tr '[:upper:]' '[:lower:]')"
+    case "$v" in
+      *care-redclear*) named="stem" ;;
+      *.maude/plugin*) printf '%s' "$v" | tr ';&|()' '\n' | tr -s '[:space:]' '\n' \
+        | grep -qE -- '\.maude/plugin[^[:space:]]*[$`{}?*[]|[$`{}?*[][^[:space:]]*\.maude/plugin' && { [ "$named" = stem ] || named="built"; } ;;
+    esac
+  done
+  if [ -n "$named" ]; then
+    s="${2-}"; [ -n "$s" ] || s="$1"
+    s="$(printf '%s' "$s" | tr -d '\\' | tr '[:upper:]' '[:lower:]' | sed -E 's/[0-9]*[<>]&([0-9]+|-)([[:space:];&|()]|$)/\2/g')"
+    # On a command the fold could not read, the write checks read the CLEAN PREFIX of the
+    # skeleton alone: the text before its first `$`, backtick, `{`, `(`, `#` or `}`. There
+    # every `;` `&` `|` is a real boundary and every word is one bash runs; past that point
+    # a `;` may sit inside `${x:-a;rm b}` or a comment, a word may be a fragment the seams
+    # cut from an expansion, and a loop that re-read the skeleton per refused word went
+    # quadratic and outran the hook (lens 3 on 601ff37, BLOCKING: 620 fragments, 6 s; the
+    # hook is killed at 5 s and a killed hook blocks nothing). One pass, bounded by the
+    # command's bytes. Cost, named: a write after the first expansion on an unread command
+    # (`cat ${MAP:-x} <token>; rm <token>`) is refused unread, and the label says a write
+    # past that point was not read, which is true; it does not say "not caught writing".
+    if [ -n "$over" ]; then
+      s="${s%%[\$\`{(#]*}"   # a `}` cannot sit in the bracket (bash would close the expansion there):
+      s="${s%%\}*}"            # it is cut in a second step
+    fi
+    printf '%s' "$s" | grep -qE -- '>[|]?[[:space:]]*[^[:space:];&|()<>`]*care-redclear|>[|]?[[:space:]]*([;&|()]|$)|>[|]?[[:space:]]*[a-z0-9_./+:@%,=-]*[^a-z0-9_./+:@%,=[:space:];&|()<>-]' && { MAUDE_REDCLEAR_WHY="redirect:$named"; return 0; }
+    # ${NAME} is one word to bash: read as $NAME before the split on braces (a brace group
+    # is a seam); ${x:-rm} is not an identifier and still splits, fail closed. The first
+    # word refused is printed, for the label; a marker word prints as "a quoted word".
+    bad="$(printf '%s' "$s" | sed -E 's/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/$\1/g' | tr ';&|(){}`' '[\n*]' | awk -v M="$(printf '\001')" '
+      { n = split($0, f, /[[:space:]]+/); i = (f[1] == "") ? 2 : 1
+        while (i <= n && (f[i] ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || f[i] ~ /^(if|then|else|elif|do|while|until|!|time)$/)) i++
+        w = (i <= n) ? f[i] : ""
+        # a word that is only markers: the residue of an erased span after a seam when it is
+        # the LAST word (echo "$(cat FILE)" -> echo ;cat FILE;\001); followed by words it is a
+        # command word bash would run from the quote ("rm" cat FILE runs rm): a non-reader
+        if (w ~ ("^" M "+$")) { if (i < n && !bad) { bad = 1; first = M }; w = "" } }
+      w != "" && w !~ /^(cat|head|tail|wc|grep|egrep|fgrep|jq|ls|stat|file|shasum|sha1sum|sha256sum|sha512sum|md5sum|b2sum|cksum|test|\[|\[\[|\]\]|diff|cmp|echo|printf|readlink|realpath|basename|dirname|du|cd|true|false|:|for|case|fi|done|esac|cut|tr|column|nl|rev|fold|paste|comm|od|strings|read)$/ { if (!bad) first = w; bad = 1 }   # portability-name-only: readers matched by name, never run here
+      END { if (bad) print first; exit bad ? 0 : 1 }')"
+    if [ -n "$bad" ]; then
+      # shellcheck disable=SC2034   # read by maude-gate.sh after an in-process call
+      MAUDE_REDCLEAR_WHY="word:$named:$(maude_redclear_word "$bad")"
+      return 0
+    fi
+  fi
+  [ -n "$over" ] || return 1
+  # shellcheck disable=SC2034   # read by maude-gate.sh after an in-process call
+  MAUDE_REDCLEAR_WHY="unread"
+  # shellcheck disable=SC2034   # read by maude-gate.sh after an in-process call
+  [ "$over" = cap ] && MAUDE_REDCLEAR_WHY="unread:cap"
+  return 0
+}
+
+# maude_redclear_word <word as the walk read it> → what the label may print of it. The walk's
+# view is lowercased with quotes erased to one marker byte, so a word holding a marker was
+# quoted in part or whole (`"r"m`, `""cat`) and prints as "a quoted word": the gate cannot
+# tell what the quote held. Anything outside [a-z0-9_./+-] or past 40 characters is not
+# printed either: a URL-shaped word carried a credential to stderr, an ESC byte carried a
+# terminal escape (the lens on 1e4618d). Cost, named: the word prints lowercased (Rscript
+# as rscript), since that is the view the rule read.
+maude_redclear_word() {
+  local m
+  m="$(printf '\001')"
+  case "$1" in
+    *"$m"*) printf 'a quoted word' ;;
+    # LC_ALL=C: under a UTF-8 locale [a-z] takes accented and fullwidth letters too, and a
+    # lookalike of `rm` printed as the command run (lens 2 on f03f02e, finding 3); in C
+    # the class is the 26 letters and a byte past them is refused
+    *) if printf '%s' "$1" | LC_ALL=C grep -qE -- '^[a-z0-9_./+-]{1,40}$' && [ "$(printf '%s' "$1" | wc -l)" -eq 0 ]; then printf '%s' "$1"
+       else printf 'a word the label does not print (outside [a-z0-9_./+-], or past 40 characters)'; fi ;;
+  esac
+}
+
