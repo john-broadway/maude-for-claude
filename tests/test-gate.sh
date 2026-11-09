@@ -258,16 +258,14 @@ example: foo | rm -rf / is the bug
 EOF"
 assert_exit "$RC" "0" "heredoc pipe-prose passes"
 
-# Intentional consequence of excising heredoc bodies (option B): an rm inside a
-# heredoc fed to a SHELL is now uniformly uncaught — this is the already-
-# documented shell-wrapping limitation (#3), not a new gap. The bare
-# `bash <<EOF\nrm -rf /\nEOF` was ALREADY missed; only the separator-prefixed
-# variant accidentally blocked. Now both pass, consistently.
-test_start "gate PASSES rm -rf inside a bash heredoc (shell-wrapping, limitation #3)"
+# Excising heredoc bodies (option B) left an rm inside a heredoc fed to a SHELL
+# uncaught (limitation #3). The shell parser closes it: bash reads that body as its
+# program, so it is a command, not a mention (docs/gate-threat-model.md).
+test_start "gate BLOCKS rm -rf inside a bash heredoc (limitation #3, closed by the parser)"
 run_gate "bash <<EOF
 echo hi; rm -rf /
 EOF"
-assert_exit "$RC" "0" "shell-heredoc rm is limitation #3, not blocked"
+assert_exit "$RC" "2" "the body bash runs is read"
 
 # v0.27.0 — the QUOTED-TEXT half of old limitation #7 is CLOSED: quoted spans
 # are blanked before opener detection (with <<'EOF' delimiter-quoting protected
@@ -336,13 +334,13 @@ EOF
 git push origin main'
 assert_exit "$RC" "2" "real push after heredoc still blocks"
 
-# Conscious pin: a push inside a heredoc-fed SHELL is limitation #3 —
-# uniformly uncaught for every pattern family, stated in the gate's notes.
-test_start "gate PASSES git push inside a bash heredoc (limitation #3, pinned)"
+# Was a conscious pin (limitation #3, uncaught for every pattern family); the shell
+# parser reads the body a shell is fed, so it blocks now.
+test_start "gate BLOCKS git push inside a bash heredoc (limitation #3, closed by the parser)"
 run_gate 'bash <<EOF
 git push origin main
 EOF'
-assert_exit "$RC" "0" "shell-heredoc push is limitation #3"
+assert_exit "$RC" "2" "the body bash runs is read"
 
 # v0.27.0 — two heredocs on ONE line are legal shell; the delimiter QUEUE
 # keeps body B as data (the old single-slot tracker read it as live commands).
@@ -492,6 +490,25 @@ test_start "consume with the SAME bytes and NO session_id spends it: that comman
 seed_reserved "$(care_path)" git-push f4ba50d9 0 "git push origin main"
 make_bash_tool_input "git push origin main" | bash "$GATE" consume >/dev/null 2>&1
 assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "spent on the bytes, not the session"
+rm -f "$(care_path)"
+
+test_start "a spend run held past the walks' clock still spends under the key it reserved (the commit review on 177319d)"
+# The blocking run's table walk is cut on the clock as parser-budget; the spend run's is
+# not: a cut there would key parser-budget, read the red file, and leave the yellow
+# reservation for its 5 minutes. A grep on PATH holds the first table grep 3 s.
+SLOWG="$TEST_TMP/slowgrep-consume"; mkdir -p "$SLOWG"; REALGREP="$(command -v grep)"
+cat > "$SLOWG/grep" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "-qE" ] && [ ! -e "$TEST_TMP/slowgrep-consume.once" ]; then : > "$TEST_TMP/slowgrep-consume.once"; sleep 3; fi
+exec "$REALGREP" "\$@"
+EOF
+chmod +x "$SLOWG/grep"
+rm -f "$TEST_TMP/slowgrep-consume.once"
+seed_reserved "$(care_path)" git-push default 0 "git push origin main"
+ERR="$(make_bash_tool_input "git push origin main" | PATH="$SLOWG:$PATH" bash "$GATE" consume 2>&1 >/dev/null)"; RC=$?
+assert_exit "$RC" "0" "consume never blocks"
+assert_eq "$(read_care '.gate_cleared["git-push"].until // "absent"')" "absent" "the reservation is spent, not left"
+assert_contains "$ERR" "is spent" "the spend is spoken"
 rm -f "$(care_path)"
 
 # A corrupt care.json must not blind the OTHER token file: red keys live in one and yellow
@@ -896,6 +913,507 @@ assert_exit "$RC" "0" "reading the redclear file is fine"
 test_start "gate still PASSES a grep of care-redclear.json (read)"
 run_gate 'grep until /x/.maude/plugin/care-redclear.json'
 assert_exit "$RC" "0" "grepping the redclear file is fine"
+
+# ── The token file: a command that names it may only READ it (10-19) ──────────────
+# The writer net was a list of verbs and redirects, and lens 8 on a19b8a0 walked past it with
+# sed -i, >|, tee -a: the denylist shape that lost twice on 09-28. Now an allowlist: when a
+# command names care-redclear.json, every command word in it must be a plain reader and no
+# redirect may point into the file. Anything else is refused, the honest cost included.
+test_start "redclear: sed -i rewrites it in place is refused"
+run_gate 'sed -i s/a/b/ /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "sed -i rewrites it in place"
+test_start "redclear: perl -pi rewrites it in place is refused"
+run_gate 'perl -pi -e s/a/b/ /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "perl -pi rewrites it in place"
+test_start "redclear: a clobber redirect is refused"
+run_gate 'echo x >|/x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a clobber redirect"
+test_start "redclear: an &> redirect is refused"
+run_gate 'echo x &>/x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "an &> redirect"
+test_start "redclear: a >& redirect is refused"
+run_gate 'echo x >&/x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a >& redirect"
+test_start "redclear: a read-write open is refused"
+run_gate 'cat <>/x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a read-write open"
+test_start "redclear: tee with a flag before the file is refused"
+run_gate 'echo {} | tee -a /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "tee with a flag before the file"
+test_start "redclear: a plain rm is refused"
+run_gate 'rm /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a plain rm"
+test_start "redclear: the name handed to xargs is refused"
+run_gate 'echo /x/.maude/plugin/care-redclear.json | xargs rm'
+assert_exit "$RC" "2" "the name handed to xargs"
+test_start "redclear: the name handed out of a substitution is refused"
+run_gate 'rm $(echo /x/.maude/plugin/care-redclear.json)'
+assert_exit "$RC" "2" "the name handed out of a substitution"
+test_start "redclear: the name parked in a variable is refused"
+run_gate 'F=/x/.maude/plugin/care-redclear.json; sed -i s/a/b/ $F'
+assert_exit "$RC" "2" "the name parked in a variable"
+test_start "redclear: a reader redirected into it is refused"
+run_gate 'cat /tmp/t.json > /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a reader redirected into it"
+test_start "redclear: an interpreter is refused"
+run_gate 'python3 -c "open('\''/x/.maude/plugin/care-redclear.json'\'','\''w'\'').write('\''x'\'')"'
+assert_exit "$RC" "2" "an interpreter"
+test_start "redclear: a reader wrapping a writer in a substitution is refused"
+run_gate 'cat $(sed -i s/a/b/ /x/.maude/plugin/care-redclear.json)'
+assert_exit "$RC" "2" "the writer inside the reader's substitution"
+test_start "redclear: a reader wrapping a writer in backticks is refused"
+run_gate 'cat `rm /x/.maude/plugin/care-redclear.json`'
+assert_exit "$RC" "2" "the writer inside backticks"
+test_start "redclear: a read beside other work is refused (split it into its own call)"
+run_gate 'cat /x/.maude/plugin/care-redclear.json; rm -f /tmp/x'
+assert_exit "$RC" "2" "a read and an rm in one command"
+test_start "redclear: jq reads it still passes"
+run_gate 'jq . /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "jq reads it"
+test_start "redclear: a read piped to a reader still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json | jq .'
+assert_exit "$RC" "0" "a read piped to a reader"
+test_start "redclear: two reads still passes"
+run_gate 'ls -la /x/.maude/plugin/care-redclear.json; wc -c /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "two reads"
+test_start "redclear: a checksum still passes"
+run_gate 'cksum /x/.maude/plugin/care-redclear.json; shasum -a 256 /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "a checksum"
+test_start "redclear: a test still passes"
+run_gate 'test -s /x/.maude/plugin/care-redclear.json && echo yes'
+assert_exit "$RC" "0" "a test"
+test_start "redclear: a read redirected elsewhere still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json > /tmp/copy.json'
+assert_exit "$RC" "0" "a read redirected elsewhere"
+test_start "redclear: a read with stderr to null still passes"
+run_gate 'grep -c until /x/.maude/plugin/care-redclear.json 2>/dev/null'
+assert_exit "$RC" "0" "a read with stderr to null"
+# A read is still a read when it wears the shell's grammar: an fd dup, a cd, a keyword,
+# an assignment prefix (lens 9 on d247dba, M1). A keyword is skipped to the word after it.
+test_start "redclear: an fd dup is not a command word still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json 2>&1 | head'
+assert_exit "$RC" "0" "an fd dup is not a command word"
+test_start "redclear: a read sent to stderr still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json >&2'
+assert_exit "$RC" "0" "a read sent to stderr"
+test_start "redclear: a cd before the read still passes"
+run_gate 'cd /x/.maude/plugin && cat care-redclear.json'
+assert_exit "$RC" "0" "a cd before the read"
+test_start "redclear: a read inside if still passes"
+run_gate 'if [ -f /x/.maude/plugin/care-redclear.json ]; then cat /x/.maude/plugin/care-redclear.json; fi'
+assert_exit "$RC" "0" "a read inside if"
+test_start "redclear: a read inside a for loop is refused since round 14 (the cost, owned: for binds a name)"
+run_gate 'for f in /x/.maude/plugin/care-redclear.json; do cat $f; done'
+assert_exit "$RC" "2" "a read inside a for loop (refused: for binds a name)"
+test_start "redclear: an assignment prefix on a reader still passes"
+run_gate 'LC_ALL=C cat /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "an assignment prefix on a reader"
+test_start "redclear: the name parked in a variable, then read still passes"
+run_gate 'f=/x/.maude/plugin/care-redclear.json; cat $f'
+assert_exit "$RC" "0" "the name parked in a variable, then read"
+test_start "redclear: a write inside a for loop (a keyword is skipped, not allowed) is refused"
+run_gate 'for f in /x/.maude/plugin/care-redclear.json; do rm $f; done'
+assert_exit "$RC" "2" "a write inside a for loop (a keyword is skipped, not allowed)"
+test_start "redclear: a write after then is refused"
+run_gate 'if true; then rm /x/.maude/plugin/care-redclear.json; fi'
+assert_exit "$RC" "2" "a write after then"
+test_start "redclear: an assignment prefix on a writer is refused"
+run_gate 'LC_ALL=C rm /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "an assignment prefix on a writer"
+test_start "redclear: a read behind time still passes"
+run_gate 'time cat /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "a read behind time"
+test_start "redclear: a write behind time is refused"
+run_gate 'time rm /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a write behind time"
+# Skipping an assignment let the name ride a variable into a redirect: a write redirect
+# must point at a plain name (a security review of 4e4f09d).
+test_start "redclear: the name parked in a variable, then written by a redirect is refused"
+run_gate 'f=/x/.maude/plugin/care-redclear.json; echo x > $f'
+assert_exit "$RC" "2" "the name parked in a variable, then written by a redirect"
+test_start "redclear: a redirect into the loop variable is refused"
+run_gate 'for f in /x/.maude/plugin/care-redclear.json; do echo x > $f; done'
+assert_exit "$RC" "2" "a redirect into the loop variable"
+test_start "redclear: an append into the variable is refused"
+run_gate 'f=/x/.maude/plugin/care-redclear.json; printf x >> $f'
+assert_exit "$RC" "2" "an append into the variable"
+test_start "redclear: a read-write redirect into the variable is refused"
+run_gate 'f=/x/.maude/plugin/care-redclear.json; cat $f 1<>$f'
+assert_exit "$RC" "2" "a read-write redirect into the variable"
+test_start "redclear: a redirect into a substitution is refused"
+run_gate 'echo x > `echo /x/.maude/plugin/care-redclear.json`'
+assert_exit "$RC" "2" "a redirect into a substitution"
+test_start "redclear: a redirect into a dollar substitution is refused"
+run_gate 'echo x > $(echo /x/.maude/plugin/care-redclear.json)'
+assert_exit "$RC" "2" "a redirect into a dollar substitution"
+test_start "redclear: a redirect into a glob is refused"
+run_gate 'cat /x/.maude/plugin/care-redclear.json > /x/.maude/plugin/care-red*'
+assert_exit "$RC" "2" "a redirect into a glob"
+test_start "redclear: a read copied to a plain file still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json > /tmp/copy'
+assert_exit "$RC" "0" "a read copied to a plain file"
+test_start "redclear: a read sent to /dev/null still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json >/dev/null 2>&1'
+assert_exit "$RC" "0" "a read sent to /dev/null"
+test_start "redclear: a read with stdout closed still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json >&-'
+assert_exit "$RC" "0" "a read with stdout closed"
+test_start "redclear: the cost, named: a one-line commit message that spells the file is refused, and the refusal says why"
+run_gate 'git commit -m "the gate reads care-redclear.json"'
+assert_exit "$RC" "2" "a commit message naming the token file"
+assert_contains "$ERR" "may only read it" "the refusal names the rule, not a write"
+
+# lens 2 on the port (2026-11-03): spellings the full-name check let through, reads it refused
+test_start "redclear: an uppercase spelling is refused"
+run_gate 'echo x > /x/.maude/plugin/CARE-REDCLEAR.JSON'
+assert_exit "$RC" "2" "an uppercase spelling is refused"
+test_start "redclear: a backslash inside the name is refused"
+run_gate 'echo x > /x/.maude/plugin/care-red\\clear.json'
+assert_exit "$RC" "2" "a backslash inside the name is refused"
+test_start "redclear: an ANSI-C byte in the name is refused"
+run_gate 'echo x > $'"'"'/x/.maude/plugin/care-redclear.js\\x6fn'"'"''
+assert_exit "$RC" "2" "an ANSI-C byte in the name is refused"
+test_start "redclear: an empty expansion inside the name is refused"
+run_gate 'echo x > /x/.maude/plugin/care-redclear.jso${e}n'
+assert_exit "$RC" "2" "an empty expansion inside the name is refused"
+test_start "redclear: the stem parked in a variable, then the name built, is refused"
+run_gate 'a=care-redclear; echo x > /x/.maude/plugin/$a.json'
+assert_exit "$RC" "2" "the stem parked in a variable, then the name built, is refused"
+test_start "redclear: a one-character glob in the name is refused"
+run_gate 'echo x > /x/.maude/plugin/care-redclear.js?n'
+assert_exit "$RC" "2" "a one-character glob in the name is refused"
+test_start "redclear: fallocate is not a reader though it spells cat (the allowlist is anchored)"
+run_gate 'fallocate -l 0 /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "fallocate is not a reader though it spells cat (the allowlist is anchored)"
+test_start "redclear: a read copied into a quoted path is refused (the cost, named)"
+run_gate 'cat /x/.maude/plugin/care-redclear.json > "/tmp/a b"'
+assert_exit "$RC" "2" "a read copied into a quoted path is refused (the cost, named)"
+test_start "redclear: a quoted redirect into the file is refused"
+run_gate 'echo x > "/x/.maude/plugin/care-redclear.json"'
+assert_exit "$RC" "2" "a quoted redirect into the file is refused"
+test_start "redclear: a negated read still passes"
+run_gate '! cat /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "a negated read still passes"
+test_start "redclear: a read inside case still passes"
+run_gate 'case x in x) cat /x/.maude/plugin/care-redclear.json;; esac'
+assert_exit "$RC" "0" "a read inside case still passes"
+test_start "redclear: a [[ test still passes"
+run_gate '[[ -f /x/.maude/plugin/care-redclear.json ]] && echo yes'
+assert_exit "$RC" "0" "a [[ test still passes"
+test_start "redclear: a read or true still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json || true'
+assert_exit "$RC" "0" "a read or true still passes"
+test_start "redclear: a jq filter with a pipe still passes"
+run_gate 'jq -r '"'"'.gate_cleared | keys[]'"'"' /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "a jq filter with a pipe still passes"
+test_start "redclear: a grep for a > still passes"
+run_gate 'grep '"'"'>'"'"' /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "a grep for a > still passes"
+test_start "redclear: sha256sum still passes"   # portability-name-only: the gate reads the name, nothing runs it
+run_gate 'sha256sum /x/.maude/plugin/care-redclear.json'   # portability-name-only
+assert_exit "$RC" "0" "sha256sum still passes"   # portability-name-only
+
+# the commit security review on fd6851e (2026-11-03): three parser-differential seams, closed by the marked skeleton
+test_start "redclear: a quoted name right after the directory is refused"
+run_gate 'echo x > /x/.maude/plugin/"care-redclear.json"'
+assert_exit "$RC" "2" "a quoted name right after the directory is refused"
+test_start "redclear: a quoted command word before the file is refused"
+run_gate '"rm" /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a quoted command word before the file is refused"
+test_start "redclear: an erased span in command position cannot hide a writer"
+run_gate '""cat /tmp/x; "rm" /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "an erased span in command position cannot hide a writer"
+test_start "redclear: an expansion inside the stem is refused"
+run_gate 'echo x > /x/.maude/plugin/care-red${x}clear.json'
+assert_exit "$RC" "2" "an expansion inside the stem is refused"
+test_start "redclear: a brace inside the stem is refused"
+run_gate 'echo x > /x/.maude/plugin/care-red{clear,x}.json'
+assert_exit "$RC" "2" "a brace inside the stem is refused"
+test_start "redclear: a quoted fragment of the stem is refused"
+run_gate 'echo x > /x/.maude/plugin/"care-red"clear.json'
+assert_exit "$RC" "2" "a quoted fragment of the stem is refused"
+test_start "redclear: a quoted span in a read's own options still passes"
+run_gate 'grep -c "until" /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "a quoted span in a read's own options still passes"
+test_start "redclear: a quoted plain path beside a read of another file still passes"
+run_gate 'cat /x/.maude/plugin/"care.json"'
+assert_exit "$RC" "0" "a quoted plain path beside a read of another file still passes"
+
+# the review on b18802e (2026-11-03): a substitution inside a quoted span is walked, marked or not
+test_start "redclear: a writer inside a quoted substitution is refused"
+run_gate 'echo "$(rm /x/.maude/plugin/care-redclear.json)"'
+assert_exit "$RC" "2" "a writer inside a quoted substitution is refused"
+test_start "redclear: a writer inside quoted backticks is refused"
+run_gate 'echo "`rm /x/.maude/plugin/care-redclear.json`"'
+assert_exit "$RC" "2" "a writer inside quoted backticks is refused"
+test_start "redclear: a writer inside a quoted substitution behind a reader is refused"
+run_gate 'cat "$(sed -i s/a/b/ /x/.maude/plugin/care-redclear.json)"'
+assert_exit "$RC" "2" "a writer inside a quoted substitution behind a reader is refused"
+test_start "redclear: a read inside a quoted substitution still passes"
+run_gate 'echo "$(cat /x/.maude/plugin/care-redclear.json)"'
+assert_exit "$RC" "0" "a read inside a quoted substitution still passes"
+
+# round 5 (2026-11-03): lens 3 on fd6851e and the review on a3ece74
+test_start "redclear: a quoted command word followed by words is a writer (review on a3ece74)"
+run_gate '"rm" cat /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a quoted command word followed by words is a writer (review on a3ece74)"
+test_start "redclear: an empty quote before a reader and the file is refused"
+run_gate '"" cat /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "an empty quote before a reader and the file is refused"
+test_start "redclear: a colon redirected into a partly quoted name is refused (lens 3 B1)"
+run_gate ': > /x/.maude/plugin/"care-redclear.json"'
+assert_exit "$RC" "2" "a colon redirected into a partly quoted name is refused (lens 3 B1)"
+test_start "redclear: a name quoted from the middle is refused (lens 3 B1)"
+run_gate 'echo x > /x/.maude/plugin/care-"redclear.json"'
+assert_exit "$RC" "2" "a name quoted from the middle is refused (lens 3 B1)"
+test_start "redclear: a brace inside the stem fed to tee is refused (lens 3 B2)"
+run_gate 'echo x | tee /x/.maude/plugin/care-{redclear,x}.json'
+assert_exit "$RC" "2" "a brace inside the stem fed to tee is refused (lens 3 B2)"
+test_start "redclear: rm of a brace inside the stem is refused (lens 3 B2)"
+run_gate 'rm /x/.maude/plugin/care-{redclear,x}.json'
+assert_exit "$RC" "2" "rm of a brace inside the stem is refused (lens 3 B2)"
+test_start "redclear: a stem split across two variables is refused (lens 3 B2)"
+run_gate 'a=care-red; b=clear; echo x > /x/.maude/plugin/$a$b.json'
+assert_exit "$RC" "2" "a stem split across two variables is refused (lens 3 B2)"
+test_start "redclear: a glob inside the stem is refused (lens 3 B2)"
+run_gate 'echo x > /x/.maude/plugin/care-redcl?ar.json'
+assert_exit "$RC" "2" "a glob inside the stem is refused (lens 3 B2)"
+test_start "redclear: a bracket inside the stem is refused (lens 3 B2)"
+run_gate 'echo x > /x/.maude/plugin/care-red[c]lear.json'
+assert_exit "$RC" "2" "a bracket inside the stem is refused (lens 3 B2)"
+test_start "redclear: a write inside a bash-fed heredoc is refused (the content view stands in)"
+run_gate 'bash <<'"'"'EOF'"'"'
+echo x > /x/.maude/plugin/care-redclear.json
+EOF'
+assert_exit "$RC" "2" "a write inside a bash-fed heredoc is refused (the content view stands in)"
+test_start "redclear: a checksum piped to cut still passes"   # portability-name-only
+run_gate 'sha256sum /x/.maude/plugin/care-redclear.json | cut -c1-8'   # portability-name-only
+assert_exit "$RC" "0" "a checksum piped to cut still passes"   # portability-name-only
+test_start "redclear: a read piped to nl still passes"
+run_gate 'cat /x/.maude/plugin/care-redclear.json | nl'
+assert_exit "$RC" "0" "a read piped to nl still passes"
+test_start "redclear: sort -o into the file is refused (sort is no reader)"
+run_gate 'sort -o /x/.maude/plugin/care-redclear.json /tmp/forged'
+assert_exit "$RC" "2" "sort -o into the file is refused (sort is no reader)"
+test_start "redclear: uniq with the file as its second operand is refused"
+run_gate 'uniq /tmp/forged /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "uniq with the file as its second operand is refused"
+test_start "redclear: xxd -r into the file is refused"
+run_gate 'xxd -r /tmp/forged.hex /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "xxd -r into the file is refused"
+test_start "redclear: less with a log file is refused (less is no reader)"
+run_gate 'less -o /x/.maude/plugin/care-redclear.json /tmp/forged'
+assert_exit "$RC" "2" "less with a log file is refused (less is no reader)"
+test_start "redclear: a read loop over the file is refused since round 12 (the cost, owned: read is a binding builtin)"
+run_gate 'while read -r l; do echo "$l"; done < /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "a read loop over the file is refused since round 12 (the cost, owned: read is a binding builtin)"
+test_start "redclear: a read inside a quoted substitution still passes (the lone marker)"
+run_gate 'echo "$(cat /x/.maude/plugin/care-redclear.json)"'
+assert_exit "$RC" "0" "a read inside a quoted substitution still passes (the lone marker)"
+
+# round 7 (2026-11-03): lens 4 on ae87414, a name assembled across statement seams
+test_start "redclear: the stem split across an assignment seam, written by cat, is refused (lens 4)"
+run_gate 'p=/x/.maude/plugin/care-red; cat /tmp/f > ${p}clear.json'
+assert_exit "$RC" "2" "the stem split across an assignment seam, written by cat, is refused (lens 4)"
+test_start "redclear: the stem split across an assignment seam, replaced by mv, is refused (lens 4)"
+run_gate 'p=/x/.maude/plugin/care-red; mv /tmp/forged.json ${p}clear.json'
+assert_exit "$RC" "2" "the stem split across an assignment seam, replaced by mv, is refused (lens 4)"
+test_start "redclear: the stem split across an assignment seam, fed to tee, is refused (lens 4)"
+run_gate 'p=/x/.maude/plugin/care-red; tee ${p}clear.json < /tmp/forged.json'
+assert_exit "$RC" "2" "the stem split across an assignment seam, fed to tee, is refused (lens 4)"
+test_start "redclear: a cd into the directory, then a split name, is refused (lens 4)"
+run_gate 'cd /x/.maude/plugin/; p=care-red; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a cd into the directory, then a split name, is refused (lens 4)"
+test_start "redclear: two variables making the name are refused (lens 4)"
+run_gate 'p=/x/.maude/plugin/care-red; q=clear.json; echo x > $p$q'
+assert_exit "$RC" "2" "two variables making the name are refused (lens 4)"
+test_start "redclear: the directory itself split across variables is refused (lens 4)"
+run_gate 'd=/x/.maude/plug; p=care-red; echo x > ${d}in/${p}clear.json'
+assert_exit "$RC" "2" "the directory itself split across variables is refused (lens 4)"
+test_start "redclear: a chained assignment making the directory is refused (lens 4)"
+run_gate 'a=/x; b=$a/.maude; c=$b/plugin; echo x > $c/care-redclear.json'
+assert_exit "$RC" "2" "a chained assignment making the directory is refused (lens 4)"
+test_start "redclear: a split name read by cat still passes (lens 4's companion)"
+run_gate 'p=/x/.maude/plugin/care-red; cat ${p}clear.json'
+assert_exit "$RC" "0" "a split name read by cat still passes (lens 4's companion)"
+test_start "redclear: the whole name in a variable read by cat still passes (lens 4's companion)"
+run_gate 'p=/x/.maude/plugin/care-redclear.json; cat $p'
+assert_exit "$RC" "0" "the whole name in a variable read by cat still passes (lens 4's companion)"
+test_start "redclear: a cd into the directory then a plain read still passes"
+run_gate 'cd /x/.maude/plugin/ && cat care-redclear.json'
+assert_exit "$RC" "0" "a cd into the directory then a plain read still passes"
+
+# round 8 (2026-11-03): the review on e69db43, the fold only ever adds a match
+test_start "redclear: a backtick-built word in the directory is refused on the raw view (review on e69db43)"
+run_gate 'echo x > /x/.maude/plugin/`cat /tmp/n`'
+assert_exit "$RC" "2" "a backtick-built word in the directory is refused on the raw view (review on e69db43)"
+test_start "redclear: a self-referential value in braces ends the fold and is refused"
+run_gate 'p=${p}x; echo x > /x/.maude/plugin/${p}'
+assert_exit "$RC" "2" "a self-referential value in braces ends the fold and is refused"
+test_start "redclear: a value holding a substitution is not folded, and its use in the directory is refused"
+run_gate 'p=$(echo care-red); echo x > /x/.maude/plugin/${p}clear.json'
+assert_exit "$RC" "2" "a value holding a substitution is not folded, and its use in the directory is refused"
+test_start "redclear: a self-referential value ends the fold and is refused"
+run_gate 'p=${p}x; echo x > /x/.maude/plugin/$p'
+assert_exit "$RC" "2" "a self-referential value ends the fold and is refused"
+test_start "redclear: more than 64 assignments is refused outright"
+run_gate 'v0=x; v1=x; v2=x; v3=x; v4=x; v5=x; v6=x; v7=x; v8=x; v9=x; v10=x; v11=x; v12=x; v13=x; v14=x; v15=x; v16=x; v17=x; v18=x; v19=x; v20=x; v21=x; v22=x; v23=x; v24=x; v25=x; v26=x; v27=x; v28=x; v29=x; v30=x; v31=x; v32=x; v33=x; v34=x; v35=x; v36=x; v37=x; v38=x; v39=x; v40=x; v41=x; v42=x; v43=x; v44=x; v45=x; v46=x; v47=x; v48=x; v49=x; v50=x; v51=x; v52=x; v53=x; v54=x; v55=x; v56=x; v57=x; v58=x; v59=x; v60=x; v61=x; v62=x; v63=x; v64=x; v65=x; v66=x; v67=x; v68=x; v69=x; echo x > /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "more than 64 assignments is refused outright"
+test_start "redclear: a fold that grows past its length is refused outright"
+run_gate 'a=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; b=$a$a$a$a$a$a$a$a; c=$b$b$b$b$b$b$b$b; d=$c$c$c$c$c$c$c$c; e=$d$d$d$d$d$d$d$d; echo x > /x/.maude/plugin/care-red$e'
+assert_exit "$RC" "2" "a fold that grows past its length is refused outright"
+test_start "redclear: a cd into the directory then an unset variable in the name is refused"
+run_gate 'cd /x/.maude/plugin/; echo x > care-red${q}'
+assert_exit "$RC" "2" "a cd into the directory then an unset variable in the name is refused"
+
+# round 9 (2026-11-03): the review on adf94aa, the cd fold fails closed
+test_start "redclear: cd with an option before the directory is refused (review on adf94aa)"
+run_gate 'cd -P /x/.maude/plugin/; echo x > care-red${q}'
+assert_exit "$RC" "2" "cd with an option before the directory is refused (review on adf94aa)"
+test_start "redclear: pushd into the directory is cd"
+run_gate 'pushd /x/.maude/plugin/; echo x > care-red${q}'
+assert_exit "$RC" "2" "pushd into the directory is cd"
+test_start "redclear: a chain of relative cds into the directory is refused"
+run_gate 'cd /x; cd .maude; cd plugin; echo x > care-red${q}'
+assert_exit "$RC" "2" "a chain of relative cds into the directory is refused"
+test_start "redclear: a cd the fold cannot read, then a built relative name, is refused outright"
+run_gate 'cd /x/.maude; cd $(cat /tmp/d); echo x > care-red${q}'
+assert_exit "$RC" "2" "a cd the fold cannot read, then a built relative name, is refused outright"
+test_start "redclear: a popd then a built relative name is refused outright"
+run_gate 'cd /x/.maude/plugin/; popd; echo x > care-red${q}'
+assert_exit "$RC" "2" "a popd then a built relative name is refused outright"
+test_start "redclear: a cd the fold cannot read, then an absolute read, still passes"
+run_gate 'cd $(cat /tmp/d) && cat /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "0" "a cd the fold cannot read, then an absolute read, still passes"
+test_start "redclear: cd -- then the directory, then a plain read, still passes"
+run_gate 'cd -- /x/.maude/plugin/ && cat care-redclear.json'
+assert_exit "$RC" "0" "cd -- then the directory, then a plain read, still passes"
+
+# round 10 (2026-11-03): the second review on adf94aa, a stale literal binding never folds
+test_start "redclear: a name assigned twice is not folded and its use is refused (second review on adf94aa)"
+run_gate 'p=/tmp/safe; p=/x/.maude/plugin/care-red; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a name assigned twice is not folded and its use is refused (second review on adf94aa)"
+test_start "redclear: a name rebound by read is not folded and its use is refused"
+run_gate 'p=/tmp/safe; read -r p < /x/.maude/d; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a name rebound by read is not folded and its use is refused"
+test_start "redclear: a name rebound by for is not folded and its use is refused"
+run_gate 'p=/tmp/safe; for p in /x/.maude/plugin/care-red; do echo x > ${p}clear.json; done'
+assert_exit "$RC" "2" "a name rebound by for is not folded and its use is refused"
+test_start "redclear: a name rebound by printf -v is not folded and its use is refused"
+run_gate 'p=/tmp/safe; printf -v p %s /x/.maude/plugin/care-red; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a name rebound by printf -v is not folded and its use is refused"
+test_start "redclear: a name assigned once, used in a read, still passes"
+run_gate 'p=/x/.maude/plugin/care-redclear.json; cat $p && cat $p'
+assert_exit "$RC" "0" "a name assigned once, used in a read, still passes"
+test_start "redclear: a reassigned name in a command that never spells .maude is not the gate's"
+run_gate 'x=1; x=2; echo $x > /tmp/out'
+assert_exit "$RC" "0" "a reassigned name in a command that never spells .maude is not the gate's"
+
+# round 11 (2026-11-03): the review on b865c4d, the fold fails closed by construction
+test_start "redclear: a name grown by += is not folded and its use is refused (review on b865c4d)"
+run_gate 'p=/tmp/safe; p+=x; echo x > ${p}clear.json; cat /x/.maude/d'
+assert_exit "$RC" "2" "a name grown by += is not folded and its use is refused (review on b865c4d)"
+test_start "redclear: a name rebound by -v glued to it is not folded and its use is refused"
+run_gate 'p=/tmp/safe; printf -vp %s /x/.maude/plugin/care-red; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a name rebound by -v glued to it is not folded and its use is refused"
+test_start "redclear: a name used inside another assignment's value is checked there too"
+run_gate 'p=/tmp/safe; read -r p < /x/.maude/d; q=${p}clear.json; echo x > $q'
+assert_exit "$RC" "2" "a name used inside another assignment's value is checked there too"
+test_start "redclear: a declare -n in a command that spells .maude ends the fold outright"
+run_gate 'declare -n p=q; q=/x/.maude/plugin/care-red; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a declare -n in a command that spells .maude ends the fold outright"
+test_start "redclear: a let in a command that spells .maude ends the fold outright"
+run_gate 'let i=1; p=/x/.maude/plugin/care-red; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a let in a command that spells .maude ends the fold outright"
+test_start "redclear: a ${NAME:=} in a command that spells .maude ends the fold outright"
+run_gate 'echo ${p:=/x/.maude/plugin/care-red}; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a ${NAME:=} in a command that spells .maude ends the fold outright"
+test_start "redclear: a once-assigned name whose value reads another once-assigned name still passes"
+run_gate 'd=/x/.maude/plugin/; p=${d}care-redclear.json; cat $p'
+assert_exit "$RC" "0" "a once-assigned name whose value reads another once-assigned name still passes"
+
+# round 12 (2026-11-03): the review on 4274bdc, a binding builtin ends the fold
+test_start "redclear: a declare by any spelling ends the fold where .maude is spelled (review on 4274bdc)"
+run_gate 'declare -x p=/x/.maude/plugin/care-red; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a declare by any spelling ends the fold where .maude is spelled (review on 4274bdc)"
+test_start "redclear: a binding builtin given a built name ends the fold"
+run_gate 'n=p; p=/tmp/safe; printf -v $n %s /x/.maude/plugin/care-red; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a binding builtin given a built name ends the fold"
+test_start "redclear: a shell-managed name in the token directory is refused"
+run_gate 'echo x > /x/.maude/plugin/${REPLY}'
+assert_exit "$RC" "2" "a shell-managed name in the token directory is refused"
+test_start "redclear: a backslash cannot hide the binding builtin"
+run_gate 'p=/tmp/safe; re\\ad -r p < /x/.maude/d; echo x > ${p}clear.json'
+assert_exit "$RC" "2" "a backslash cannot hide the binding builtin"
+test_start "redclear: a read of the file beside a read builtin is refused (the cost, owned)"
+run_gate 'cat /x/.maude/plugin/care-redclear.json; read -r x < /tmp/y; echo $x'
+assert_exit "$RC" "2" "a read of the file beside a read builtin is refused (the cost, owned)"
+test_start "redclear: a plain read with no binding builtin and no shell-managed name still passes"
+run_gate 'd=/x/.maude/plugin/; cat ${d}care-redclear.json | nl'
+assert_exit "$RC" "0" "a plain read with no binding builtin and no shell-managed name still passes"
+
+# round 13 (2026-11-03): the review on dd75ced, any directory change fails closed
+test_start "redclear: the directory stack cannot reach the token (review on dd75ced)"
+run_gate 'pushd /x/.maude/plugin/; pushd /tmp; pushd +1; echo x > care-red${q}'
+assert_exit "$RC" "2" "the directory stack cannot reach the token (review on dd75ced)"
+test_start "redclear: a bare cd then a built relative name is refused"
+run_gate 'cd /x/.maude/plugin/; cd; echo x > care-red${q}'
+assert_exit "$RC" "2" "a bare cd then a built relative name is refused"
+test_start "redclear: CDPATH then a built relative name is refused"
+run_gate 'CDPATH=/x/.maude; cd plugin; echo x > care-red${q}'
+assert_exit "$RC" "2" "CDPATH then a built relative name is refused"
+test_start "redclear: a cd then a built ABSOLUTE read still passes"
+run_gate 'cd /tmp && cat /x/.maude/plugin/care-redclear.json | nl'
+assert_exit "$RC" "0" "a cd then a built ABSOLUTE read still passes"
+
+# round 14 (2026-11-03): the second review on dd75ced, any expansion not folded is OVER; continuations joined
+test_start "redclear: a backslash-newline inside the stem is joined and refused (review on dd75ced)"
+run_gate 'echo x > /x/.maude/plugin/care-red\
+clear.json'
+assert_exit "$RC" "2" "a backslash-newline inside the stem is joined and refused (review on dd75ced)"
+test_start "redclear: a backslash-newline inside the stem, with a reader, is refused"
+run_gate ': > /x/.maude/plugin/care-red\
+clear.json'
+assert_exit "$RC" "2" "a backslash-newline inside the stem, with a reader, is refused"
+test_start "redclear: a positional parameter in the name is refused"
+run_gate 'echo x > /x/.maude/plugin/care-red$1'
+assert_exit "$RC" "2" "a positional parameter in the name is refused"
+test_start "redclear: a name never assigned here, used in the directory, is refused"
+run_gate 'echo x > /x/.maude/plugin/care-red$zz'
+assert_exit "$RC" "2" "a name never assigned here, used in the directory, is refused"
+test_start "redclear: a for over the name ends the fold"
+run_gate 'p=/x/.maude/plugin/care-red; for q in x; do echo x > ${p}clear.json; done'
+assert_exit "$RC" "2" "a for over the name ends the fold"
+test_start "redclear: a read beside a special parameter is refused (the cost, owned)"
+run_gate 'cat /x/.maude/plugin/care-redclear.json; echo $?'
+assert_exit "$RC" "2" "a read beside a special parameter is refused (the cost, owned)"
+test_start "redclear: a folded literal used in a read still passes"
+run_gate 'p=/x/.maude/plugin/care-redclear.json; cat $p'
+assert_exit "$RC" "0" "a folded literal used in a read still passes"
+
+# round 15 (2026-11-03): the review on dbd9120, only an odd backslash run continues
+test_start "redclear: an escaped backslash before a separator is not a continuation (review on dbd9120)"
+run_gate 'echo \\; rm /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "an escaped backslash before a separator is not a continuation (review on dbd9120)"
+test_start "redclear: an escaped backslash before a newline is not a continuation"
+run_gate 'echo \\
+rm /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "an escaped backslash before a newline is not a continuation"
+test_start "redclear: a real continuation in the stem is still joined"
+run_gate 'echo x > /x/.maude/plugin/care-red\
+clear.json'
+assert_exit "$RC" "2" "a real continuation in the stem is still joined"
+
+# round 16 (2026-11-03): the review on 17bdbdd, the join never drops a marker
+test_start "redclear: two adjacent quoted spans making the name are refused (review on 17bdbdd)"
+run_gate 'echo x > /x/.maude/plugin/'"'"'care-red'"'"''"'"'clear.json'"'"''
+assert_exit "$RC" "2" "two adjacent quoted spans making the name are refused (review on 17bdbdd)"
+test_start "redclear: two adjacent empty quotes before the name are refused"
+run_gate 'echo x > /x/.maude/plugin/'"'"''"'"'""care-redclear.json'
+assert_exit "$RC" "2" "two adjacent empty quotes before the name are refused"
+test_start "redclear: a name quoted whole, with a marker pair elsewhere, is refused"
+run_gate 'echo '"'"''"'"' '"'"''"'"' > /x/.maude/plugin/"care-redclear.json"'
+assert_exit "$RC" "2" "a name quoted whole, with a marker pair elsewhere, is refused"
 
 # ── Newline-separated commands must still block (CMD_START bypass — fixed 2026-06-30) ──
 # A command on its own line is a real, separate command. maude_strip_quotes / maude_unquote
@@ -2004,6 +2522,895 @@ run_gate 'echo "$(printf "%s" "step; git push --force")"'
 assert_exit "$RC" "0" "passes"
 
 rm -f "$(care_path)"
+
+# ── The red backstops read text as text (2026-10-08, live) ──────────────────────────
+# A vault note written through a heredoc carried the clear line for a RED key, and the
+# red-self-clear backstop blocked the note: it grepped the quote-stripped command with the
+# heredoc BODIES still in it, while every pattern in the table had read a body as data since
+# v0.27.0. Documenting the trap sprang it. The two red backstops now read the same
+# body-stripped view the table reads, and keep the bodies only where a shell is fed the
+# heredoc (that body runs). The plain invocation stays blocked: that is the control.
+CR='/x/hooks/scripts/maude-clear-red.sh'
+
+test_start "control: the plain red self-clear invocation is still blocked"
+run_gate "bash $CR infra-destructive --marker abc"
+assert_exit "$RC" "2" "plain invocation blocked"
+
+test_start "a note heredoc QUOTING the red clear line passes (the 10-08 vault note)"
+run_gate "cat >> note.md <<'EOF'
+Six failed commands. The line he was handed:
+  ! bash $CR infra-destructive --marker <link>
+EOF"
+assert_exit "$RC" "0" "heredoc text passes"
+
+test_start "the same text with the key in a plain line after the heredoc is still blocked"
+run_gate "cat >> note.md <<'EOF'
+notes
+EOF
+bash $CR infra-destructive --marker abc"
+assert_exit "$RC" "2" "the command after the body is read"
+
+test_start "a heredoc FED TO A SHELL carrying the red clear line is blocked (that body runs)"
+run_gate "bash <<'EOF'
+bash $CR infra-destructive --marker abc
+EOF"
+assert_exit "$RC" "2" "shell-fed body blocked"
+
+test_start "a python heredoc that prints the red clear line passes"
+run_gate "python3 - <<'EOF'
+print(\"bash $CR sole-copy-target --owner\")
+EOF"
+assert_exit "$RC" "0" "interpreter body is text"
+
+test_start "a note heredoc mentioning a redirect into care-redclear.json passes"
+run_gate "cat >> note.md <<'EOF'
+the gate blocks: echo {} > /x/.maude/plugin/care-redclear.json
+EOF"
+assert_exit "$RC" "0" "redclear-write backstop reads the body as text"
+
+test_start "control: the redirect itself is still blocked"
+run_gate 'echo {} > /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "redclear write blocked"
+
+test_start "control: a redirect into care-redclear.json after a text heredoc is still blocked"
+run_gate "cat >> note.md <<'EOF'
+notes
+EOF
+echo {} > /x/.maude/plugin/care-redclear.json"
+assert_exit "$RC" "2" "the command after the body is read"
+
+test_start "the backstop still expands ~ on the stripped view (quoted tilde path)"
+run_gate "echo {} > \"~/.maude/plugin/care-redclear.json\""
+assert_exit "$RC" "2" "tilde path still resolves"
+
+# The lens on the change above: a body written INTO A RUNNABLE FILE is the moment for the
+# reflex rail (the second step, `bash f.sh`, carries no clear line); main blocked these by
+# accident and the first cut passed them. An allowlist of doc shapes keeps the note text.
+test_start "a heredoc that writes the red clear line into a .sh file is blocked at write time"
+run_gate "cat > f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "script authoring blocked"
+
+test_start "a Makefile authored with the clear line and run in the same command is blocked"
+run_gate "cat > Makefile <<'EOF'
+a:
+	bash $CR force-push --marker abc
+EOF
+make a"
+assert_exit "$RC" "2" "blocked"
+
+test_start "a heredoc into ~/.bashrc carrying the clear line is blocked"
+run_gate "cat <<'EOF' > ~/.bashrc
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "blocked"
+
+test_start "a heredoc into a path held in a variable keeps its body (cannot read the target: closed)"
+run_gate "cat <<'EOF' > \"\$OUT\"
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "blocked"
+
+test_start "a heredoc tee'd into a script file is blocked"
+run_gate "cat <<'EOF' | tee x.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "blocked"
+
+test_start "control: the same body into a .txt note is text"
+run_gate "cat >> notes.txt <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "doc-shaped target passes"
+
+test_start "control: a .sh heredoc that does NOT carry a clear line passes"
+run_gate "cat > f.sh <<'EOF'
+echo hello
+EOF"
+assert_exit "$RC" "0" "ordinary script authoring passes"
+
+test_start "a note heredoc mentioning cp into care-redclear.json passes (the verb net reads the stripped view)"
+run_gate "cat >> note.md <<'EOF'
+do not run: cp staged.json /x/.maude/plugin/care-redclear.json
+EOF"
+assert_exit "$RC" "0" "text"
+
+test_start "control: the cp itself is still blocked"
+run_gate 'cp staged.json /x/.maude/plugin/care-redclear.json'
+assert_exit "$RC" "2" "verb net holds"
+
+test_start "the red key LAST, followed by ; or a newline, is still the red key (UNQUOTED joins lines with ;)"
+run_gate "bash $CR --marker abc force-push; echo hi"
+assert_exit "$RC" "2" "separator after the key"
+run_gate "bash $CR --marker abc force-push
+echo hi"
+assert_exit "$RC" "2" "newline after the key"
+run_gate "bash $CR --marker abc force-push && echo hi"
+assert_exit "$RC" "2" "&& after the key"
+run_gate "(bash $CR --marker abc force-push)"
+assert_exit "$RC" "2" ") after the key"
+run_gate "bash $CR --marker abc force-push | cat"
+assert_exit "$RC" "2" "| after the key"
+run_gate "{ bash $CR --marker abc force-push;}"
+assert_exit "$RC" "2" "; } after the key"
+run_gate "x=\`bash $CR --marker abc force-push\`"
+assert_exit "$RC" "2" "backtick after the key"
+
+# The security lens on the fold: every redirect target on the opener line counts, a sink is
+# not a file, and a doc-shaped file the same command runs is run.
+test_start "a script target hidden behind a doc-shaped stderr redirect is still a script"
+run_gate "cat <<'EOF' > f.sh 2> err.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "blocked"
+
+test_start "a script target after a pipe to cat, or after 2>&1, is still a script"
+run_gate "cat <<'EOF' | cat > f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "| cat > f.sh blocked"
+run_gate "cat <<'EOF' 2>&1 > f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "2>&1 > f.sh blocked"
+run_gate "cat <<'EOF' &> f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "&> f.sh blocked"
+run_gate "cat <<'EOF' >| f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" ">| f.sh blocked"
+
+test_start "the csh spelling >& f.sh, tee with a second operand, sudo tee, sponge, dd: all scripts"
+run_gate "cat <<'EOF' >& f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" ">& f.sh blocked"
+run_gate "cat <<'EOF' | tee notes.md f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "tee second operand blocked"
+run_gate "cat <<'EOF' | sudo tee f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "sudo tee blocked"
+run_gate "cat <<'EOF' | sponge f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "sponge blocked"
+run_gate "cat <<'EOF' | dd of=f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "dd blocked"
+
+test_start "a doc-shaped file run on the SAME line as its opener keeps its body"
+run_gate "cat <<'EOF' > notes.md; bash notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "blocked"
+
+test_start "a doc-shaped target written with no space (>notes.md) and run afterwards is still seen"
+run_gate "cat <<'EOF' >notes.md; bash notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "blocked"
+
+test_start "readers that can write, and an interpreter with -c, are closed"
+run_gate "cat <<'EOF' | sed 'w f.sh'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "sed w blocked"
+run_gate "cat <<'EOF' | sort -o f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "sort -o blocked"
+run_gate "cat <<'EOF' | python3 -c 'import sys,os; open(\"f.sh\",\"w\").write(sys.stdin.read())'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "python -c blocked"
+run_gate "cat <<'EOF' >&1x
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "&1x is a file, not an fd"
+run_gate "cat <<'EOF' | tee -- -f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "tee -- -f.sh blocked"
+run_gate "cat <<'EOF' | tee --bogus notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "an unknown dash word is a possible file: closed"
+
+# Lens round 2: the one-line greedy scan was wrong in both directions. Text shapes one
+# quote or one stderr redirect away from the 10-08 note blocked; a writer BEFORE the
+# heredoc passed. The scan is a quote-aware walk of the opener lines only now.
+test_start "a QUOTED doc target is still a doc (the 10-08 note, one quote away)"
+run_gate "cat >> \"note.md\" <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "double-quoted"
+run_gate "cat >> 'note.md' <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "single-quoted"
+run_gate "cat <<'EOF' >>\"\$HOME/memory/now_x.md\"
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "a variable path ending in .md"
+
+test_start "a stderr redirect carries no body: 2>>err.log and 2>/tmp/x.sh beside a note are text"
+run_gate "cat <<'EOF' >> notes.md 2>>err.log
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "2>>err.log"
+run_gate "cat >> note.md 2>/tmp/x.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "2>/tmp/x.sh"
+
+test_start "plain text names a note takes are text: README, NOTE.MD, page.html, run.log"
+for tgt in README NOTE.MD page.html run.log NOTES; do
+  run_gate "cat <<'EOF' > $tgt
+bash $CR force-push --marker abc
+EOF"
+  assert_exit "$RC" "0" "$tgt passes"
+done
+
+test_start "a BODY line that documents a heredoc into a script is text (only opener lines are read)"
+run_gate "cat >> note.md <<'EOF'
+the trap: cat <<X > run.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "body line is not an opener"
+
+test_start "a quoted -> or > on the opener line is not a redirect"
+run_gate "gh pr create --title \"a -> b\" --body-file - <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "quoted arrow"
+run_gate "git commit -m \"x << y > z\" -F - <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "quoted angle"
+
+test_start "a WRITER before the heredoc takes the body: tee, dd of=, sponge, cp /dev/stdin"
+run_gate "tee f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "tee f.sh"
+run_gate "dd of=f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "dd of="
+run_gate "sponge f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "sponge"
+run_gate "cp /dev/stdin f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "cp /dev/stdin"
+
+test_start "stdout dup'd onto a file-backed fd (2>f.sh >&2, 3>f.sh >&3) is a script"
+run_gate "cat <<'EOF' 2>f.sh >&2
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "2>f.sh >&2"
+run_gate "cat <<'EOF' >&3 3>f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" ">&3 3>f.sh (dup before the file)"
+
+test_start "stdout sent to /dev/stderr beside 2>f.sh, an ANSI-C quoted target, a writer behind sudo or an assignment, exec, a group closer: all scripts"
+run_gate "cat <<'EOF' >/dev/stderr 2>f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" ">/dev/stderr 2>f.sh"
+run_gate "cat <<'EOF' > \$'f.sh\\x00.md'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "ANSI-C quoted name"
+run_gate "sudo -u root tee f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "sudo -u root tee"
+run_gate "FOO=1 nice -n 5 tee f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "assignment + nice -n"
+run_gate "exec 3>f.sh
+cat <<'EOF' >&3
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "exec on an earlier line"
+run_gate "if true; then exec 3>f.sh; fi
+cat <<'EOF' >&3
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "exec after a keyword"
+run_gate "sudo --user root unknowncmd f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "a wrapper peeled down to an unknown word is closed"
+run_gate "sudo --user root cat <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "a wrapper peeled down to anything but a writer is closed (sudo cat)"
+run_gate "sudo -n tee f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "a wrapper option of unknown arity is closed"
+run_gate "cat <<'EOF' >/dev/fd/../../tmp/f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "a traversal through /dev/fd is a path, not an alias"
+run_gate "ex\"\"ec 3>f.sh
+cat <<'EOF' >&3
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "exec spelled through quotes"
+run_gate "cat <<'EOF' >&3
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "a dup onto an fd the line does not open is closed"
+run_gate "cat <<'EOF' 3>notes.md >&3
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "control: a dup onto an fd the line opens on a note is text"
+run_gate "cat <<'EOF' 3>&4 4>f.sh >&3
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "an fd chain above 2 is closed"
+run_gate "time -a tee f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "time -a takes no argument: tee is the word"
+# A heredoc opened inside a group is never stripped (maude_strip_heredocs reads `{ cat <<EOF`
+# as no opener), so the backstops read it whole: blocked whatever the closer redirects to.
+# Fail-closed and older than this change; pinned so a stripper change cannot open it unseen.
+run_gate "{ cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+} > f.sh"
+assert_exit "$RC" "2" "group closer redirect"
+
+test_start "control: the same shapes into a note are text"
+run_gate "sudo -u root tee -a notes.md <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "sudo tee -a notes.md"
+run_gate "cat <<'EOF' >/dev/stdout
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "/dev/stdout alone"
+
+test_start "control: stdout dup'd onto a doc-backed fd, or onto stderr with no file, is text"
+run_gate "cat <<'EOF' 2>notes.md >&2
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "2>notes.md >&2"
+run_gate "cat <<'EOF' >&2
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" ">&2 alone"
+
+# Lens round 3 on the tokenizer: the five that were still live.
+test_start "the upper-case doc names (LICENSE, CHANGELOG, AUTHORS) are docs"
+for tgt in LICENSE CHANGELOG AUTHORS NOTICE; do
+  run_gate "cat <<'EOF' >> $tgt
+bash $CR force-push --marker abc
+EOF"
+  assert_exit "$RC" "0" "$tgt passes"
+done
+
+test_start "a note whose BODY names its own file is still a note (the 10-08 shape, self-referencing)"
+run_gate "cat >> now_maude.md <<'EOF'
+see now_maude.md for the rest
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "body mention is not a run"
+# RESIDUAL, pinned: a later command that merely NAMES the file (`git add notes.md`,
+# `cat notes.md`) reads as "named again" and closes. Telling a runner word from a reader
+# word there is a decision not yet made; fail-closed, and only when the body carries the
+# red line. (Lens round 3, M2.)
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+git add notes.md"
+assert_exit "$RC" "2" "a later git add still closes (pinned residual)"
+
+test_start "the named-again count is what catches a non-shell runner on a later line"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+python3 notes.md"
+assert_exit "$RC" "2" "python3 notes.md"
+
+test_start "a body handed to xargs or a scheduler before the heredoc is closed"
+run_gate "xargs tee f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "xargs tee"
+run_gate "crontab - <<'EOF'
+* * * * * bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "crontab -"
+run_gate "at now <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "at now"
+
+test_start "a redirect on a loop or if closer line takes the body"
+run_gate "while true; do cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+break; done > f.sh"
+assert_exit "$RC" "2" "done > f.sh"
+run_gate "if true; then cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+fi > f.sh"
+assert_exit "$RC" "2" "fi > f.sh"
+run_gate "while true; do
+cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+done > f.sh"
+assert_exit "$RC" "2" "opener on its own line inside a loop, closer at line start"
+run_gate "cat <<'EOF' \\
+> f.sh
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "a continued opener line is one line"
+run_gate "cat <<'EOF' >> notes.md
+bash $CR force-push --marker abc
+EOF
+echo done > summary.txt"
+assert_exit "$RC" "0" "control: the word done inside a later command is not a closer"
+
+# ── the security review on c7cfaa6 (2026-10-16), folded 2026-10-18 ───────────────────
+test_start "a closer word glued to its operator is still a closer (review 1: done>f.sh)"
+# (An opener on the `do`/`then` line is closed by the compound-opener rule already; the
+# opener stands on its own line here so the closer arm is what decides.)
+run_gate "while true; do
+cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+done>f.sh"
+assert_exit "$RC" "2" "done>f.sh"
+run_gate "if true; then
+cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+fi>f.sh"
+assert_exit "$RC" "2" "fi>f.sh"
+run_gate "if true; then
+cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+fi|tee f.sh"
+assert_exit "$RC" "2" "fi|tee f.sh"
+run_gate "while true; do
+cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+done&>f.sh"
+assert_exit "$RC" "2" "done&>f.sh"
+run_gate "while true; do
+cat <<'EOF'
+bash $CR force-push --marker abc
+EOF
+done>notes.md"
+assert_exit "$RC" "0" "control: done>notes.md is a doc"
+
+test_start "a backslash on a command line ends the stripping, odd or even: the body is read raw (review 2)"
+# The stripper's allowlist admits no backslash outside a delimiter, so a continued line and
+# an escaped backslash alike hand every later line back whole; the runnable-file reader's
+# line join therefore never decides a verdict. Pinned here so the join can be measured.
+run_gate "cat <<'EOF' \\\\
+> notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "an even run of backslashes: read raw, closed"
+run_gate "cat <<'EOF' \\
+> notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "an odd run: read raw, closed"
+# The one line the stripper admits with a trailing backslash is a COMMENT, and bash never
+# joins a comment line: a join here glued the next opener into the comment's segment and
+# lost its writer (the advisor on this fold, 2026-10-18).
+run_gate "echo # \\
+tee f.sh <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "a comment ending in a backslash does not swallow the next opener"
+run_gate "echo # \\
+tee notes.md <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "control: the same with a doc target passes"
+
+test_start "a doc-shaped file named by ANOTHER body is run, not read (review 3: the interpreter body)"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+python3 - <<'PY'
+import os; os.system('bash notes.md')
+PY"
+assert_exit "$RC" "2" "a python body that names the note"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+cat <<'EOF2' >> MEMORY.md
+- [x](notes.md)
+EOF2"
+assert_exit "$RC" "2" "pinned cost: a second note that links the first closes when the first carries the red line"
+run_gate "cat <<'EOF' > notes.md
+a note with no red line
+EOF
+cat <<'EOF2' >> MEMORY.md
+- [x](notes.md)
+EOF2"
+assert_exit "$RC" "0" "control: the same two-note write without a red line passes"
+run_gate "cat >> now_maude.md <<'EOF'
+see now_maude.md for the rest
+bash $CR force-push --marker abc
+EOF
+git commit -am \"\$(cat <<'MSG'
+docs: the note, in one command with its commit
+MSG
+)\""
+assert_exit "$RC" "0" "control: a self-naming note plus a commit-message heredoc is still the 10-08 shape"
+run_gate "cat >> now_maude.md <<'EOF'
+see now_maude.md for the rest
+bash $CR force-push --marker abc
+EOF
+git commit -am \"\$(cat <<'MSG'
+docs: now_maude.md
+MSG
+)\""
+assert_exit "$RC" "2" "found 2026-10-18: a commit message that names the note closes it (with the red line)"
+
+# ── lens round 4 on 9ea6c00: two openers on one line, the body loop's cost, `<` as a prefix ──
+test_start "two openers on one line: which body the redirect takes is not traced, so both count (lens 4, B1)"
+run_gate "cat <<'A' > notes.md; python3 - <<'B'
+bash $CR force-push --marker abc
+A
+import os; os.system('bash notes.md')
+B"
+assert_exit "$RC" "2" "the python body on the same opener line counts"
+run_gate "python3 - <<'B'; cat <<'A' > notes.md
+import os; os.system('bash notes.md')
+B
+bash $CR force-push --marker abc
+A"
+assert_exit "$RC" "2" "the openers swapped"
+run_gate "cat <<'A' > notes.md; cat <<'B' > other.md
+bash $CR force-push --marker abc
+A
+nothing here names the first
+B"
+assert_exit "$RC" "0" "control: two notes on one line, neither naming the other, pass"
+run_gate "cat <<'A' > notes.md; cat <<'B' > other.md
+see notes.md
+bash $CR force-push --marker abc
+A
+text
+B"
+assert_exit "$RC" "2" "cost, named: a self-naming note sharing its opener line with another heredoc is read"
+
+test_start "a mention bash runs through a redirect or a split quote counts (lens 4, M1)"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+python3 - <<'PY'
+import os; os.system('bash<notes.md')
+PY"
+assert_exit "$RC" "2" "bash<notes.md"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+python3 - <<'PY'
+import os; os.system(\"bash n''otes.md\")
+PY"
+assert_exit "$RC" "2" "n''otes.md"
+
+test_start "more than 32 heredocs is closed unread: the body count is the attacker's path to the 5 s budget (lens 4, B2)"
+MANY=""; for i in $(seq 32); do MANY+="cat <<'E$i' >> n$i.md
+line
+E$i
+"; done
+run_gate "${MANY}cat <<'E33' >> n33.md
+bash $CR force-push --marker abc
+E33"
+assert_exit "$RC" "2" "the 33rd note, quoting the red line, is read: closed unread"
+run_gate "${MANY}cat <<'E33' >> n33.md
+line
+E33
+echo done"
+assert_exit "$RC" "0" "control: 33 notes and no red line pass"
+MANY=""; for i in $(seq 32); do MANY+="cat <<'E$i' >> n$i.md
+bash $CR force-push --marker abc
+E$i
+"; done
+run_gate "${MANY}echo done"
+assert_exit "$RC" "0" "control: 32 notes each quoting the red line are 32 notes (and fit the clock)"
+
+test_start "the other-bodies set is the current line's, not the first line's (the mutation that survived)"
+# Two doc targets on two lines: the first body names the second file, the second carries the
+# red line. On the second line the OTHER body is the first one, which names it: run, closed.
+run_gate "cat <<'A' > notes.md
+see other.md
+A
+cat <<'B' > other.md
+bash $CR force-push --marker abc
+B"
+assert_exit "$RC" "2" "the first body names the second file: the second is read"
+# And the mirror: a stale set from the first line would hold the SECOND body, whose own
+# self-mention would then count against itself.
+run_gate "cat <<'A' > notes.md
+bash $CR force-push --marker abc
+A
+cat <<'B' > other.md
+see other.md
+B"
+assert_exit "$RC" "0" "a self-naming second note is still a note when the first names nothing"
+
+# ── lens round 5 on 8bfd395: a quoted list argv, and the budget on a long command ──────
+test_start "a mention whose only prefix is a quote survives the unquoting (lens 5, B1)"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+python3 - <<'PY'
+import subprocess; subprocess.run([\"bash\",\"notes.md\"])
+PY"
+assert_exit "$RC" "2" "a python list argv, double quotes"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+python3 - <<'PY'
+import os; os.execvp('bash',['bash','notes.md'])
+PY"
+assert_exit "$RC" "2" "a python list argv, single quotes"
+
+test_start "a command past the line caps is closed unread, within the hook budget (lens 5, B2)"
+# The per-line walks (the stripper on every command line, the shell-fed scan on every line
+# the stripper hands back) each cost milliseconds a line; a 700-line plain command and a
+# 5,000-line heredoc that never closes both outran the 5 s budget, which blocks nothing.
+# (the three heredoc lines count: 2,046 + 3 = 2,049 lines, one over the cap)
+LONG="$(for i in $(seq 2046); do printf 'echo line %s\n' "$i"; done)"
+run_gate "$LONG
+cat <<'EOF' >> notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "2,049 command lines: the note is read whole (closed), not stripped"
+LONG="$(for i in $(seq 300); do printf 'echo line %s\n' "$i"; done)"
+run_gate "$LONG
+cat <<'EOF' >> notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "cost, named: 300 command lines hand back more than the scan cap, so the note is read"
+LONG="$(for i in $(seq 200); do printf 'echo line %s\n' "$i"; done)"
+run_gate "$LONG
+cat <<'EOF' >> notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "control: 200 command lines and a note, under both caps, the note is still a note"
+LONG="$(for i in $(seq 2046); do printf 'echo line %s\n' "$i"; done)"
+_t0="$(t_now_us)"
+run_gate "$LONG
+bash $CR force-push --marker abc"
+_ms=$(( ($(t_now_us) - $_t0) / 1000 ))
+assert_exit "$RC" "2" "2,046 plain lines then the red line: blocked"
+assert_exit "$([ "$_ms" -lt 5000 ] && echo 0 || echo 1)" "0" "and inside the 5 s budget (${_ms} ms)"
+# Past the command cap the stripper must not walk at all, and nothing below may walk the
+# command for it either (the table and the guards take the one view made here): without
+# the cap, or with any of them stripping again, 8,000 lines cost ~0.7 ms each per walk.
+LONG="$(for i in $(seq 8000); do printf 'echo line %s\n' "$i"; done)"
+_t0="$(t_now_us)"
+run_gate "$LONG
+bash $CR force-push --marker abc"
+_ms=$(( ($(t_now_us) - $_t0) / 1000 ))
+assert_exit "$RC" "2" "8,000 plain lines then the red line: blocked"
+assert_exit "$([ "$_ms" -lt 5000 ] && echo 0 || echo 1)" "0" "and inside the 5 s budget (${_ms} ms)"
+
+test_start "the walks are bounded by the clock, not by a line count (lens 6 on 8a0de19)"
+# The stripper's quote-carrying walk is per character and worse than linear in a line's
+# quotes: one 20 KB line of `"a" "a" …` cost it 6.9 s, twelve 3.5 KB ones would cost 8 s,
+# and twenty 3.9 KB opener lines cost the opener walk 5 s, every one under both line caps.
+QH="$(for i in $(seq 2500); do printf '"a" '; done)"      # ~10 KB of quote pairs
+run_timed() { _t0="$(t_now_us)"; run_gate "$1"; _ms=$(( ($(t_now_us) - $_t0) / 1000 )); }
+run_timed "echo $QH$QH
+bash $CR force-push --marker abc"
+assert_exit "$RC" "2" "one 20 KB quote-heavy line then the red line: blocked"
+assert_exit "$([ "$_ms" -lt 5000 ] && echo 0 || echo 1)" "0" "and inside the 5 s budget (${_ms} ms)"
+Q3="${QH:0:3500}"
+run_timed "$(for i in $(seq 12); do printf 'echo %s\n' "$Q3"; done)
+bash $CR force-push --marker abc"
+assert_exit "$RC" "2" "twelve 3.5 KB quote-heavy lines then the red line: blocked"
+assert_exit "$([ "$_ms" -lt 5000 ] && echo 0 || echo 1)" "0" "and inside the 5 s budget (${_ms} ms)"
+PAD="$(printf 'x%.0s' $(seq 3900))"
+run_timed "$(for i in $(seq 20); do printf "echo %s <<'E%s' >> n%s.md\nbody\nE%s\n" "$PAD" "$i" "$i" "$i"; done)
+bash $CR force-push --marker abc"
+assert_exit "$RC" "2" "twenty 3.9 KB opener lines then the red line: blocked"
+assert_contains "$ERR" "[RED]" "and red (the force-push row, or the clock's own refusal)"
+assert_exit "$([ "$_ms" -lt 5000 ] && echo 0 || echo 1)" "0" "and inside the 5 s budget (${_ms} ms)"
+# The control is two openers, not twenty. Since 2026-11-04 a walk that runs past its
+# budget leaves the judge unrun, and that is refused red on a command with no key (a cut
+# judge passed `env -C <dir> git push`). The dev box is a container on a shared host, and
+# with the host at load 30 the twenty walked for 3 s, the budget itself, and twelve did
+# too; the budget is the budget on a slow day, and the named cost is a refusal with "retry".
+# The control wants margin from it, not a seat on it; the twenty with the red line block
+# above, inside the budget, which is the claim in this test's name. Four openers walked for
+# 2.2 s on that day: the opener walk is dear per line, a performance item of its own.
+run_timed "$(for i in $(seq 2); do printf "echo %s <<'E%s' >> n%s.md\nbody\nE%s\n" "$PAD" "$i" "$i" "$i"; done)
+echo done"
+assert_exit "$RC" "0" "control: two of the same, no red line, pass (${_ms} ms)"
+
+test_start "the views expand a tilde where bash does, at a word's start (lens 7, B1)"
+# Every `~` was replaced by $HOME, so a line of 4,000 tildes grew by HOME's length before
+# every grep, twice, outside the clock: 240 KB of them killed the hook (lens 7 on fc838c1).
+# Bash expands only a word-initial `~` (and after `=` or `:`); the views now do the same.
+# (built with python: 240 KB is past jq's argv cap, and a harness that never reached the
+# gate read as a pass the first time this test ran)
+# (30 lines, under the byte cap: the cap would refuse 60 before any view was built. The
+# tilde rule itself is pinned in test-_maude-common.sh, on maude_home_view.)
+J="$(python3 -c 'import json;print(json.dumps({"tool_name":"Bash","tool_input":{"command":("~"*4000+"\n")*30+"bash /x/hooks/scripts/maude-clear-red.sh force-push --marker abc\n"},"hook_event_name":"PreToolUse"}))')"
+_t0="$(t_now_us)"; printf '%s' "$J" | bash "$GATE" >/dev/null 2>&1; RC=$?; _ms=$(( ($(t_now_us) - $_t0) / 1000 ))
+assert_exit "$RC" "2" "30 lines of 4,000 tildes then the red line: blocked"
+assert_exit "$([ "$_ms" -lt 5000 ] && echo 0 || echo 1)" "0" "and inside the 5 s budget (${_ms} ms)"
+run_gate "rm -rf ~/.claude"; assert_exit "$RC" "2" "control: a word-initial ~/ still resolves (rm -rf ~/.claude)"
+run_gate "echo x > ~/.maude/plugin/care-redclear.json"; assert_exit "$RC" "2" "control: ~/ in a redirect target still resolves"
+run_gate "cp x.json ~/.maude/plugin/care-redclear.json"; assert_exit "$RC" "2" "control: ~/ as a later operand still resolves"
+
+test_start "a command past 128 KB is refused whole, before any walk (lens 7, B2)"
+# Nothing bounded the total: after the clock stops the walks, the whole-command reads (the
+# table, the views, the backstop greps) still cost per byte, and ~1.5 MB of plain lines
+# outran the 5 s budget. Past the cap the gate reads nothing and refuses: split it.
+BIG="$(head -c 135000 /dev/zero | tr '\0' x | fold -w 80)"
+J="$(printf '%s\necho done\n' "$BIG" | python3 -c 'import sys,json;print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.stdin.read()},"hook_event_name":"PreToolUse"}))')"
+_t0="$(t_now_us)"; ERR="$(printf '%s' "$J" | bash "$GATE" 2>&1 >/dev/null)"; RC=$?; _ms=$(( ($(t_now_us) - $_t0) / 1000 ))
+assert_exit "$RC" "2" "a 135 KB command with no red line: refused"
+BIG="$(head -c 120000 /dev/zero | tr '\0' x | fold -w 80)"
+J="$(printf '%s\necho done\n' "$BIG" | python3 -c 'import sys,json;print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.stdin.read()},"hook_event_name":"PreToolUse"}))')"
+printf '%s' "$J" | bash "$GATE" >/dev/null 2>&1; RC2=$?
+assert_exit "$RC2" "0" "control: a 120 KB command with no red line passes"
+case "$ERR" in *split*) _pass ;; *) _fail "the refusal does not say to split it: $ERR" ;; esac
+assert_exit "$([ "$_ms" -lt 1000 ] && echo 0 || echo 1)" "0" "and fast (${_ms} ms)"
+HM="$(for i in $(seq 1600); do printf '$HOME/x '; done)"
+J="$(for i in $(seq 9); do printf 'echo %s\n' "$HM"; done | python3 -c 'import sys,json;print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.stdin.read()+"bash /x/hooks/scripts/maude-clear-red.sh force-push --marker abc\n"},"hook_event_name":"PreToolUse"}))')"
+_t0="$(t_now_us)"; printf '%s' "$J" | bash "$GATE" >/dev/null 2>&1; RC=$?; _ms=$(( ($(t_now_us) - $_t0) / 1000 ))
+assert_exit "$RC" "2" "just under the cap, every word a \$HOME (the other amplifier), then the red line: blocked"
+assert_exit "$([ "$_ms" -lt 5000 ] && echo 0 || echo 1)" "0" "and inside the 5 s budget (${_ms} ms)"
+# (1,200 raw lines: jq's argv cap stops the harness near 128 KB; the hook itself has none)
+RAW="$(head -c 96000 /dev/zero | tr '\0' x | fold -w 80)"
+_t0="$(t_now_us)"
+run_gate "cat <<'EOF' >> notes.md
+$RAW
+bash $CR force-push --marker abc"
+_ms=$(( ($(t_now_us) - $_t0) / 1000 ))
+assert_exit "$RC" "2" "a 1,200-line heredoc that never closes is read raw: blocked"
+assert_exit "$([ "$_ms" -lt 5000 ] && echo 0 || echo 1)" "0" "and inside the 5 s budget (${_ms} ms)"
+run_gate "cat >> now_maude.md <<'EOF'
+see now_maude.md for the rest
+bash $CR force-push --marker abc
+EOF
+cat >> now_maude.md <<'EOF'
+and now_maude.md again
+EOF"
+# PINNED COST (pre-existing, found 2026-10-18): the named-again count reads the opener
+# mentions too, so two writes to ONE doc in one command count as "named again" and the
+# bodies are read; it costs a block only when a body carries the red line. Splitting the
+# writers by operand grammar would put the writer list in two places; not done.
+assert_exit "$RC" "2" "pinned cost: two appends to the same note in one command, with the red line, close"
+
+test_start "an opener line past 4 KB is closed unread (the hook budget), and one with no red line passes"
+LONG="$(printf 'x%.0s' $(seq 4200))"
+run_gate "cat <<'EOF' >> notes.md # $LONG
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "closed, not walked"
+run_gate "cat <<'EOF' >> notes.md # $LONG
+plain prose
+EOF"
+assert_exit "$RC" "0" "nothing to block"
+
+test_start "control: tee -a notes.md before the heredoc is text"
+run_gate "tee -a notes.md <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "passes"
+
+test_start "a script target with a doc-shaped stderr beside it is still a script"
+run_gate "cat <<'EOF' > f.sh 2>notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "> f.sh 2>notes.md"
+run_gate "cat > f.sh 2>err.txt <<'EOF'
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "2" "> f.sh 2>err.txt"
+
+test_start "control: a body piped to a reader or an interpreter is text"
+run_gate "cat <<'EOF' | jq .
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "jq passes"
+run_gate "cat <<'EOF' | python3 -
+print(\"bash $CR force-push --marker abc\")
+EOF"
+assert_exit "$RC" "0" "python passes"
+run_gate "cat <<'EOF' | tee -a notes.md | grep x
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "tee to a note then grep passes"
+
+test_start "control: a note piped through cat into a .md is text, and so is 2>&1 into a .md"
+run_gate "cat <<'EOF' | cat >> notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "passes"
+run_gate "cat <<'EOF' 2>&1 >> notes.md
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "passes"
+
+test_start "control: a note with stderr to /dev/null is still text"
+run_gate "cat <<'EOF' > notes.md 2>/dev/null
+bash $CR force-push --marker abc
+EOF"
+assert_exit "$RC" "0" "passes"
+
+test_start "a doc-shaped file written and then run in the same command keeps its body"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+bash notes.md"
+assert_exit "$RC" "2" "blocked"
+run_gate "cat <<'EOF' > Makefile.txt
+a:
+	bash $CR force-push --marker abc
+EOF
+make -f Makefile.txt"
+assert_exit "$RC" "2" "blocked"
+
+test_start "the opener need not be the first line: a later heredoc's doc-shaped file run afterwards keeps its body"
+run_gate "echo start
+cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+bash notes.md"
+assert_exit "$RC" "2" "blocked"
+
+test_start "control: a doc-shaped file written and then merely mentioned in prose passes"
+run_gate "cat <<'EOF' > notes.md
+bash $CR force-push --marker abc
+EOF
+echo wrote the notes"
+assert_exit "$RC" "0" "passes"
 
 print_summary
 teardown_test_env

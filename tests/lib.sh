@@ -91,6 +91,20 @@ PASSED=0
 FAILED=0
 TEST_NAME=""
 
+# ── clocks and kills a stock Mac has (v0.36.0's public macOS leg, PR #90) ──
+# bash 3.2 has no EPOCHREALTIME and macOS ships no timeout(1); tests that timed with one and
+# killed with the other read "( ms)" and rc 127 there. These stand in, the same everywhere.
+t_now_us() {  # microseconds since the epoch, digits only
+  if [ -n "${EPOCHREALTIME:-}" ]; then printf '%s' "${EPOCHREALTIME//[!0-9]/}"
+  else python3 -c 'import time; print(int(time.time() * 1000000))'; fi
+}
+t_timeout_bin() {  # the path of an executable that behaves as timeout(1): the real one, or Maude's fallback
+  local t; t="$(command -v timeout 2>/dev/null)" && { printf '%s' "$t"; return; }   # portability-shim
+  t="${TEST_TMP:-${TMPDIR:-/tmp}}/maude-t-timeout"
+  [ -x "$t" ] || { printf '#!/usr/bin/env bash\n. "%s/_maude-common.sh"\nMAUDE_TIMEOUT_FALLBACK=1 maude_timeout "$@"\n' "$HOOKS_DIR" > "$t"; chmod +x "$t"; }
+  printf '%s' "$t"
+}
+
 setup_test_env() {
   TEST_TMP="$(mktemp -d "$(_tmp_base_of "${TMPDIR:-}")/maude-test.XXXXXX")" || {
     printf 'tests/lib.sh: mktemp -d failed under TMPDIR=%s; a test without its own dir does not run\n' "${TMPDIR:-<unset>}" >&2
@@ -210,10 +224,14 @@ assert_file_absent() {
 
 # Build a Bash tool input JSON envelope.
 # Usage: make_bash_tool_input "<command>"
-make_bash_tool_input() {
-  local cmd="$1"
+make_bash_tool_input() {  # <cmd> [cwd] — cwd rides along as the harness sends it, when given
+  local cmd="$1" cwd="${2:-}"
   if command -v jq >/dev/null 2>&1; then
-    jq -nc --arg cmd "$cmd" '{tool_name:"Bash", tool_input:{command:$cmd}, hook_event_name:"PreToolUse"}'
+    if [ -n "$cwd" ]; then
+      jq -nc --arg cmd "$cmd" --arg cwd "$cwd" '{tool_name:"Bash", tool_input:{command:$cmd}, cwd:$cwd, hook_event_name:"PreToolUse"}'
+    else
+      jq -nc --arg cmd "$cmd" '{tool_name:"Bash", tool_input:{command:$cmd}, hook_event_name:"PreToolUse"}'
+    fi
   else
     printf '{"tool_name":"Bash","tool_input":{"command":"%s"},"hook_event_name":"PreToolUse"}\n' \
       "$(printf '%s' "$cmd" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
@@ -398,6 +416,10 @@ make_nojq_bin() {
 # for exercising absent-tool degradation paths (macOS ships no flock(1),
 # timeout(1), or md5sum). Unlike make_nojq_bin this INCLUDES jq and python3.
 # Usage: D="$(make_no_binary_bin flock)"; PATH="$D" bash "$SCRIPT"
+# ⚠ The dir this returns is LINKS to real binaries. Writing to "$d/<name>" writes THROUGH the
+# link into the system binary (/usr/bin/sleep was overwritten that way on 2026-09-06; a write
+# toward python3 on 2026-11-09 was refused only by "text file busy"). To plant a stub, leave
+# its name OUT (pass it as an argument), so the name in the dir is not a link at all.
 make_no_binary_bin() {
   local d b src
   d="$(_mk_shim_dir)"

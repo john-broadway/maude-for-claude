@@ -11,11 +11,14 @@
 # a shell where he had set that himself, so he verified his own convenience and not
 # the user's invocation. Every user-facing marker line now goes through here.
 #
-# Usage (the leading ! matters for gen — it must run in YOUR shell so the links
-# never enter Claude's context):
+# Usage. gen runs in a terminal OUTSIDE Claude Code: the `!` prompt is inside (it
+# inherits the session and lands its output in the conversation), so links printed
+# there are in the transcript and the chain is void. The clear line is fine at `!`;
+# a spent link is worthless.
 #
-#     ! bash <this-script> gen <key> <count>
-#     ! bash <this-script> verify <key> <link>
+#     bash <this-script> gen <key> <count>        (a terminal outside Claude Code)
+#     bash <this-script> next <key>               (which link to paste next)
+#     bash <this-script> verify <key> <link>
 #     bash <this-script> status
 #
 # Everything is passed straight through to `python3 -m maude_marker`.
@@ -28,7 +31,7 @@ ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$DIR/../.." && pwd)}"
 
 # Probe by executing, not presence: Windows resolves python3 to the Microsoft
 # Store alias stub, which `command -v` finds and which then runs nothing.
-if ! python3 -c 'pass' >/dev/null 2>&1; then
+if ! python3 -I -c 'pass' >/dev/null 2>&1; then
   printf 'maude-marker: a working python3 is required and was not found on PATH.\n' >&2
   exit 2
 fi

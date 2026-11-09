@@ -66,6 +66,47 @@ assert_contains "$OUT" "dirty — 2 uncommitted file(s)" "dirty repo flagged"
 test_start "cushions flags unpushed commits"
 assert_contains "$OUT" "ahead — 1 unpushed commit(s)" "ahead repo flagged"
 
+# A month of unpushed main went unflagged on 2026-11-04 because the repo sat outside the
+# walk root (a box's git hooks dir), and a count alone says nothing about how long it has
+# been that way. The line now carries the oldest unpushed commit's date, and roots outside
+# the project are walked too, one per line in ~/.claude/maude/cushion-roots or
+# MAUDE_CUSHION_ROOTS (colon-separated).
+test_start "the unpushed line names the oldest unpushed commit's date"
+OLDEST="$(git -C "$W/ahead" log -1 --format=%cs)"
+assert_contains "$OUT" "ahead — 1 unpushed commit(s), oldest $OLDEST" "the date on the line"
+
+test_start "a repo outside the walk root, named in cushion-roots, is flipped too"
+OUTSIDE="$TEST_TMP/outside"; mkdir -p "$OUTSIDE"
+git init -q --bare "$TEST_TMP/origin-hooks.git"
+mkrepo "$OUTSIDE/box-hooks"
+git -C "$OUTSIDE/box-hooks" remote add origin "$TEST_TMP/origin-hooks.git"
+git -C "$OUTSIDE/box-hooks" push -q origin HEAD 2>/dev/null
+printf 'hook\n' > "$OUTSIDE/box-hooks/pre-push" && git -C "$OUTSIDE/box-hooks" add -A && git -C "$OUTSIDE/box-hooks" commit -qm hook
+run_cushions
+assert_not_contains "$OUT" "box-hooks" "not walked until it is named"
+mkdir -p "$HOME/.claude/maude"
+printf '%s\n%s\n' "$OUTSIDE/box-hooks" "$TEST_TMP/no-such-root" > "$HOME/.claude/maude/cushion-roots"
+run_cushions
+assert_exit "$RC" "0" "a listed root that does not exist is skipped, not an error"
+assert_contains "$OUT" "$OUTSIDE/box-hooks — 1 unpushed commit(s), oldest $OLDEST" "the outside repo, by its full path, with its date"
+rm -f "$HOME/.claude/maude/cushion-roots"
+
+test_start "a commit on a detached HEAD counts as unpushed (the lens on c898dca, m5)"
+git init -q --bare "$TEST_TMP/origin-det.git"
+mkrepo "$W/detached"
+git -C "$W/detached" remote add origin "$TEST_TMP/origin-det.git"
+git -C "$W/detached" push -q origin HEAD 2>/dev/null
+git -C "$W/detached" checkout -q --detach
+printf 'loose\n' > "$W/detached/d.txt" && git -C "$W/detached" add -A && git -C "$W/detached" commit -qm detached
+run_cushions
+assert_contains "$OUT" "detached — 1 unpushed commit(s)" "flagged"
+
+test_start "MAUDE_CUSHION_ROOTS names extra roots the same way"
+OUT="$(MAUDE_CUSHION_ROOTS="$OUTSIDE:$TEST_TMP/no-such-root" bash "$CUSHIONS" "$W" 2>/dev/null)"; RC=$?
+assert_exit "$RC" "0" "exit"
+assert_contains "$OUT" "box-hooks — 1 unpushed commit(s)" "the outside repo found under the env root"
+run_cushions
+
 test_start "cushions flags a local-only repo as sole-copy risk"
 assert_contains "$OUT" "soleco — LOCAL-ONLY repo" "local-only repo flagged"
 

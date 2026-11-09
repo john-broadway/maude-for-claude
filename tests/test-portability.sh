@@ -199,12 +199,12 @@ else
   _fail "expected nonzero rc within ~1s, got rc=$RC after $((T1 - T0))s"
 fi
 
-test_start "maude_timeout works without a timeout(1) binary (python3 path)"
+test_start "maude_timeout works without a timeout(1) binary (the bash fallback)"
 NOTMO="$(make_no_binary_bin timeout)"
 OUT="$(PATH="$NOTMO" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; printf x | maude_timeout 5 cat')"
-assert_eq "$OUT" "x" "python3 fallback passthrough"
+assert_eq "$OUT" "x" "fallback passthrough"
 
-test_start "maude_timeout (python3 path) kills the whole process tree"
+test_start "maude_timeout (the bash fallback) kills the whole process tree"
 # GNU timeout(1) kills the child's process group; the fallback must match, or
 # a runner that shells out leaves orphans alive past the bound (review #3).
 SPAWN="$TEST_TMP/spawn.sh"
@@ -220,7 +220,37 @@ else
   _pass
 fi
 
-test_start "maude_timeout rejects a garbage duration with rc 125 (python3 path)"
+# The fallback timer must not BE the thing it times (v0.36.0's public macOS leg, PR #90): with
+# no timeout(1) the cut ran in python3, so a python3 slow to start, or a hung one, held the
+# judge's 2 s cut for as long as it hung, 20 s, past the harness's 5 s kill.
+test_start "maude_timeout without timeout(1) keeps its deadline when python3 itself hangs"
+HANGPY="$(make_no_binary_bin timeout python3)"   # python3 left OUT: no link to write through
+# The farm is LINKS to real binaries: writing to $HANGPY/python3 would write THROUGH the link
+# into the system python3 (2026-11-09: it was refused only because python3 was running).
+# Remove the link, then write a new file in its place; refuse if anything is still there.
+rm -f "$HANGPY/python3"
+[ ! -e "$HANGPY/python3" ] && [ ! -L "$HANGPY/python3" ] || { echo "refusing: $HANGPY/python3 still exists"; exit 1; }
+printf '#!/bin/sh\nsleep 30\n' > "$HANGPY/python3"; chmod +x "$HANGPY/python3"
+T0="$(date +%s)"
+PATH="$HANGPY" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout 1 sleep 10' >/dev/null 2>&1; RC=$?
+T1="$(date +%s)"
+assert_exit "$RC" "124" "an overrun is 124, as GNU timeout says it"
+[ $((T1 - T0)) -le 3 ] && _pass || _fail "the cut took $((T1 - T0))s with python3 hung"
+ERR="$(PATH="$HANGPY" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout 1 sleep 10' 2>&1 >/dev/null)"
+assert_eq "$ERR" "" "no job-control notice on stderr"
+OUT="$(PATH="$HANGPY" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; printf x | maude_timeout 5 cat; echo " rc=$?"')"
+assert_eq "$OUT" "x rc=0" "stdin and stdout pass through, and a clean exit is 0"
+ERR="$(PATH="$HANGPY" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout 5 sh -c "echo oops >&2"' 2>&1 >/dev/null)"
+assert_eq "$ERR" "oops" "the command's own stderr comes through"
+OUT="$(PATH="$HANGPY" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout 5 sh -c "exit 7"; echo "rc=$?"')"
+assert_eq "$OUT" "rc=7" "the command's own status comes through"
+OUT="$(PATH="$HANGPY" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout 5 no-such-command-here; echo "rc=$?"' 2>/dev/null)"
+assert_eq "$OUT" "rc=127" "a command that cannot start is 127"
+OUT="$(PATH="$HANGPY" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout 1 true; echo "$-"')"
+case "$OUT" in *m*) _fail "the caller shell was left with job control on: $OUT" ;; *) _pass ;; esac
+rm -rf "$HANGPY"
+
+test_start "maude_timeout rejects a garbage duration with rc 125 (the bash fallback)"
 PATH="$NOTMO" bash -c '. "'"$HOOKS_DIR"'/_maude-common.sh"; maude_timeout bogus echo hi' >/dev/null 2>&1
 assert_exit "$?" "125" "garbage duration → 125 (GNU parity)"
 rm -rf "$NOTMO"
@@ -330,6 +360,26 @@ test_start "product: no bare timeout(1) outside shim (absent on macOS)"
 V="$(lint_product '(^|[^_a-zA-Z-])timeou[t][[:space:]]')"
 assert_eq "$V" "" "timeout leaked: $V"
 
+test_start "product: no \`local -\` (bash 4.4; on macOS's bash 3.2 it errors and the set after it leaks)"
+V="$(lint_product '(^|[[:space:]])local -([[:space:]]|;|$)')"
+assert_eq "$V" "" "local - leaked: $V"
+test_start "control: the local - lint catches the shape that shipped"
+CTL="$(printf '%s\n' '  local -   # the word walk below splits $rest' | grep -E '(^|[[:space:]])local -([[:space:]]|;|$)')"
+assert_ne "$CTL" "" "lint pattern matches the old label line"
+
+# bash 3.2 keeps a substitution REPLACEMENT's quotes as literal characters ('r' or "r"), and
+# bash 5.2 reads an unquoted & there as the matched text: maude_nosep_pat's quoted replacement
+# blinded every path table on macOS (PR #90, 2026-11-09). A replacement holds no quote.
+QREPL_RE='\$\{[A-Za-z_0-9#@]+//?([^}/"'"'"']|"[^"]*"|'"'"'[^'"'"']*'"'"')+/['"'"'"]'
+test_start "product: no quoted replacement in a \${x//p/r} (bash 3.2 keeps the quotes)"
+V="$(lint_product "$QREPL_RE")"
+assert_eq "$V" "" "quoted replacement leaked: $V"
+test_start "control: the quoted-replacement lint catches the shape that shipped"
+CTL="$(printf '%s\n' "  _BP=\"\${1//'[^[:space:]]'/'[^[:space:];&|]'}\"" | grep -E "$QREPL_RE")"
+assert_ne "$CTL" "" "lint pattern matches the old nosep line"
+CTL2="$(printf '%s\n' '    [ -n "$subst" ] && pat="${pat//"$SAME_CMD"/.*}"' | grep -E "$QREPL_RE")"
+assert_eq "$CTL2" "" "a quoted PATTERN with a plain replacement is fine"
+
 test_start "product: no GNU sed word-boundary escape (BSD sed rejects it)"
 V="$(lint_product '\\b')"
 assert_eq "$V" "" "sed backslash-b leaked: $V"
@@ -355,7 +405,8 @@ assert_eq "$V" "" "GNU construct leaked: $V"
 test_start "product+tests: no bash-4-only builtins (macOS ships bash 3.2)"
 V="$(grep -rnE 'mapfil[e]|readarra[y]|declare [-]A' "$ROOT/hooks/scripts" "$ROOT/scripts" "$ROOT/tests" --include='*.sh' 2>/dev/null \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
-  | grep -v 'portability-shim')"
+  | grep -v 'portability-shim' \
+  | grep -v 'portability-name-only')"   # a name the gate READS (its binding-builtin list), never a builtin it runs
 assert_eq "$V" "" "bash-4 builtin leaked: $V"
 
 # A $'...' that expands to a backslash, used as a ${var//pattern/} pattern, is not read the
@@ -376,7 +427,8 @@ assert_eq "$V" "" "GNU touch in tests: $V"
 test_start "product+tests: no GNU checksum tools (absent on macOS; use file_digest)"
 V="$(grep -rnE 'md5su[m]|sha256su[m]|sha1su[m]' "$ROOT/hooks/scripts" "$ROOT/scripts" "$ROOT/tests" --include='*.sh' 2>/dev/null \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' \
-  | grep -v 'portability-shim')"
+  | grep -v 'portability-shim' \
+  | grep -v 'portability-name-only')"   # a name the gate READS as a reader (its allowlist), never a tool it runs
 assert_eq "$V" "" "GNU checksum tool leaked: $V"
 
 rm -rf "$BSD_BIN"

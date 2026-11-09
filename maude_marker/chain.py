@@ -118,8 +118,12 @@ def _ledger_append(ledger, row):
         pass
 
 
-def init(state_path, key, head, count):
+def init(state_path, key, head, count, order=None):
     """Register the HEAD of a chain for `key`. Never stores an unspent link.
+
+    `order` records how the generator NUMBERED the links it printed ("spend": #1 is
+    the first link to present). The state is the only thing that survives the gen
+    window, so it has to carry enough for next_hint() to name the next link later.
 
     Takes the SAME lock as verify_and_consume. It did not, and a redteam showed the
     consequence: init() was a lock-free read-modify-write of the whole chains dict,
@@ -136,23 +140,71 @@ def init(state_path, key, head, count):
         fcntl.flock(lfh.fileno(), fcntl.LOCK_EX)
         try:
             data = _read_state(state_path) or {"chains": {}}
-            data["chains"][key] = {
+            entry = {
                 "head": head,
                 "remaining": int(count),
+                "count": int(count),
                 "initialized": int(time.time()),
             }
+            if order is not None:
+                entry["order"] = str(order)
+            data["chains"][key] = entry
             _write_state_atomic(state_path, data)
         finally:
             fcntl.flock(lfh.fileno(), fcntl.LOCK_UN)
 
 
-def head(state_path, key):
-    """Current head for `key`, or None. Safe for Claude to read: it is spent."""
+def _entry(state_path, key):
     data = _read_state(state_path)
     if not data:
         return None
     entry = data["chains"].get(key)
-    return entry.get("head") if isinstance(entry, dict) else None
+    return entry if isinstance(entry, dict) else None
+
+
+def head(state_path, key):
+    """Current head for `key`, or None. Safe for Claude to read: it is spent."""
+    entry = _entry(state_path, key)
+    return entry.get("head") if entry else None
+
+
+def next_hint(state_path, key):
+    """Which link to present next, read from the head alone. None if no chain.
+
+    Returns {"next": K or None, "count": N or None, "remaining": R, "order": o}.
+    The chain spends in ORDER, and on 2026-10-08 nothing at gen time or paste time
+    said which end was next: a link from the wrong end read as "not a preimage of
+    the current head". A chain whose generator recorded order "spend" (and its
+    count) was printed #1 first, so next = count - remaining + 1. A chain written
+    before that was printed bottom-up, #count the first to spend, so next =
+    remaining; that is the shape of every chain already on disk, and it must keep
+    saying #remaining or the hint sends the person to the wrong end a second time.
+    """
+    entry = _entry(state_path, key)
+    if entry is None:
+        return None
+    # Read, never coerce: int() of a hand-edited value gave a negative link number for a
+    # remaining above count and raised OverflowError on 1e999 (the lens). A value that is
+    # not a whole number in range names no link; the person is told the state is malformed
+    # rather than sent to a link that does not exist.
+    remaining = entry.get("remaining")
+    count = entry.get("count")
+    if not _is_int(count):
+        count = None
+    order = "spend" if entry.get("order") == "spend" and count is not None else "bottom-up"
+    if not _is_int(remaining) or remaining < 0 or (count is not None and remaining > count):
+        return {"next": None, "count": count, "remaining": remaining, "order": "malformed"}
+    if remaining == 0:
+        nxt = None
+    elif order == "spend":
+        nxt = count - remaining + 1
+    else:
+        nxt = remaining
+    return {"next": nxt, "count": count, "remaining": remaining, "order": order}
+
+
+def _is_int(v):
+    return isinstance(v, int) and not isinstance(v, bool)
 
 
 def verify_and_consume(state_path, key, token, ledger=None):

@@ -21,6 +21,7 @@ import pathlib
 import re
 import statistics
 import sys
+import time
 from collections import Counter
 from datetime import datetime, timezone
 
@@ -128,11 +129,25 @@ _DROP_PREFIXES = (
     "<bash-input",
     "<bash-stdout",
     "Caveat: the messages below",
+    # Other sessions and agents, not the user (seeing-gap design A5): on 2026-10-25 the
+    # tape held 571 `<agent-message` rows and 76 `<cross-session-message` rows as his voice.
+    "<agent-message",
+    "<cross-session-message",
+    "<teammate-message",
+    "[SYSTEM NOTIFICATION",
 )
 _INTERRUPTED_MARKERS = frozenset({
     "[Request interrupted by user]",
     "[Request interrupted by user for tool use]",
 })
+
+def is_machine_turn(text: str | None) -> bool:
+    """True when a prompt is not the user's typing: a hook wrapper, a notice, another
+    session or agent. The one test capture, harvest and every reader of `voice` share, so
+    rows stored before a prefix joined the list are skipped where they are read."""
+    check = (text or "").strip()
+    return check.startswith(_DROP_PREFIXES) or check in _INTERRUPTED_MARKERS
+
 
 # Directory components that are never descended into during harvest: memory/ is the
 # vault (markdown, no transcripts to speak of), subagents/ carries sidechain transcripts
@@ -159,6 +174,10 @@ def extract_prompt_text(record: dict) -> str | None:
     if record.get("isSidechain") is True:
         return None
     if record.get("userType") != "external":
+        return None
+    if record.get("promptSource") == "suggestion_accepted":
+        # The harness's suggested next prompt, accepted with a key: a model's words written
+        # to sound like him (27% of the human turns here, lens 3, 2026-10-30). Not his line.
         return None
 
     message = record.get("message")
@@ -320,6 +339,150 @@ def cmd_harvest(args, tape) -> int:
         f"dupes_skipped={dupes_skipped} secretish_skipped={secretish_skipped} "
         f"malformed_skipped={malformed_skipped}"
     )
+    return 0
+
+
+# --- the flag pass: a model's suggested prompt is marked, never deleted -----------------
+#
+# John, 2026-10-30: "flag them, never delete". The harness can offer a suggested next prompt
+# that he accepts with a key; the transcript records it as promptSource "suggestion_accepted".
+# The live capture hook sees only the prompt text, so it cannot tell; this pass reads the
+# transcripts after the fact and marks the voice rows that came from such a record. Harvested
+# rows match exactly (their sha is the record's text and timestamp); a captured row matches a
+# human record of ITS OWN session with the same text within FLAG_WINDOW seconds (lens 4: a
+# match across sessions flagged a line he typed, when another session had accepted the same
+# words). A row that matches no record is left alone: unverifiable is not the same as
+# suggested. A flagged row whose own session shows him typing those words is unflagged: a
+# doubt never flags, and that holds on every pass, not only the first.
+#
+# Each transcript is judged on its own (the session scope makes that sound) and committed
+# when it is done, newest first; a file read whole is not read again until its mtime or size
+# changes. So a pass cut short by `--budget` or a timeout loses only the file it was on, and
+# the next rest goes on from there.
+
+FLAG_WINDOW = 120.0
+_WS_FLAG = re.compile(r"\s+")
+_FLAG_WHY = "the transcript record is the harness's suggested prompt, accepted with a key"
+
+
+def _record_text(record: dict) -> str | None:
+    content = (record.get("message") or {}).get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b.get("text", "") for b in content
+                         if isinstance(b, dict) and b.get("type") == "text" and isinstance(b.get("text"), str))
+    return None
+
+
+def flagged_shas(conn) -> set:
+    return {sha for (sha,) in conn.execute("SELECT sha FROM voice_flags")}
+
+
+def _flag_key(text: str) -> str:
+    return _WS_FLAG.sub(" ", text.strip().lower())
+
+
+def _judge_file(path, by_sha, by_key) -> dict[str, str]:
+    """{voice sha: "suggestion_accepted" | "typed"} for the rows this transcript speaks to."""
+    exact: dict[str, str] = {}
+    near: dict[str, list] = {}
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if '"human"' not in line:  # every record judged here carries origin.kind "human"
+                continue
+            try:
+                rec = json.loads(line)
+            except (ValueError, RecursionError):
+                continue
+            if not isinstance(rec, dict) or rec.get("type") != "user":
+                continue
+            if (rec.get("origin") or {}).get("kind") != "human":
+                continue
+            source, ts_str, text = rec.get("promptSource"), rec.get("timestamp"), _record_text(rec)
+            if not isinstance(text, str) or not isinstance(ts_str, str):
+                continue
+            norm = _normalize(text)
+            sha = _compute_sha(norm, ts_str)
+            if sha in by_sha:
+                exact[sha] = source
+            try:
+                when = _parse_record_timestamp(ts_str)
+            except ValueError:
+                continue
+            session = rec.get("sessionId") or pathlib.Path(path).stem
+            for row_sha, ts in by_key.get((session, _flag_key(norm)), ()):
+                if abs(when - ts) <= FLAG_WINDOW:
+                    near.setdefault(row_sha, []).append(source)
+    out = {sha: "suggestion_accepted" if s == "suggestion_accepted" else "typed" for sha, s in exact.items()}
+    for sha, sources in near.items():
+        if sha not in out:
+            # flagged only when EVERY record of his session near it was a suggestion: if he
+            # typed the same words around then, the row may be his, and a doubt never flags
+            out[sha] = "suggestion_accepted" if all(s == "suggestion_accepted" for s in sources) else "typed"
+    return out
+
+
+def cmd_flag(args, tape) -> int:
+    """Mark the voice rows that came from an accepted suggestion. Never deletes, never edits
+    a voice row. `--since EPOCH` reads only transcripts changed after it; `--budget SECONDS`
+    starts no new transcript once that much time has passed."""
+    started = time.monotonic()
+    since = float(getattr(args, "since", 0) or 0)
+    budget = getattr(args, "budget", None)
+    conn = tape._conn
+    by_sha: set = set()
+    by_key: dict[tuple, list] = {}
+    for sha, ts, text, source, session in conn.execute(
+            "SELECT sha, ts, text, source, session FROM voice").fetchall():
+        by_sha.add(sha)
+        # a captured row names its session; a harvested row's source is its transcript's stem
+        sess = session or source
+        if text and ts is not None and sess:
+            by_key.setdefault((sess, _flag_key(text)), []).append((sha, float(ts)))
+    done = {p: (m, z) for p, m, z in conn.execute("SELECT path, mtime, size FROM voice_flag_files")}
+    todo = []
+    for path in _walk_transcript_files(args.transcripts):
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        if not path.is_file() or st.st_mtime < since or done.get(str(path)) == (st.st_mtime, st.st_size):
+            continue
+        todo.append((st.st_mtime, str(path), st.st_size))
+    todo.sort(reverse=True)  # newest first: the sessions the next wake plays from
+    have = flagged_shas(conn)
+    counts = {"files": 0, "flagged": 0, "unflagged": 0, "already": 0, "typed": 0, "left": 0}
+    for mtime, path, size in todo:
+        if budget is not None and time.monotonic() - started >= budget:
+            counts["left"] = len(todo) - counts["files"]
+            break
+        try:
+            verdicts = _judge_file(path, by_sha, by_key)
+        except OSError:
+            continue
+        now = time.time()
+        for sha, verdict in verdicts.items():
+            if verdict == "suggestion_accepted":
+                if sha in have:
+                    counts["already"] += 1
+                else:
+                    conn.execute("INSERT OR IGNORE INTO voice_flags (sha, flag, ts, why) VALUES (?, ?, ?, ?)",
+                                 (sha, "suggestion_accepted", now, _FLAG_WHY))
+                    have.add(sha)
+                    counts["flagged"] += 1
+            elif sha in have:
+                # the flag is the pass's own mark, never his words: lifting it shows them again
+                conn.execute("DELETE FROM voice_flags WHERE sha = ? AND flag = 'suggestion_accepted'", (sha,))
+                have.discard(sha)
+                counts["unflagged"] += 1
+            else:
+                counts["typed"] += 1
+        conn.execute("INSERT OR REPLACE INTO voice_flag_files (path, mtime, size) VALUES (?, ?, ?)",
+                     (path, mtime, size))
+        conn.commit()
+        counts["files"] += 1
+    print("voice-flag: " + " ".join(f"{k}={v}" for k, v in counts.items()))
     return 0
 
 
@@ -558,7 +721,12 @@ def compute_profile(tape_or_conn) -> dict | None:
     nothing). Deterministic and order-stable: two calls against the same table always
     produce byte-identical JSON."""
     conn = getattr(tape_or_conn, "_conn", tape_or_conn)
-    rows = conn.execute("SELECT ts, text FROM voice ORDER BY id").fetchall()
+    stored = conn.execute("SELECT ts, text FROM voice WHERE sha NOT IN (SELECT sha FROM voice_flags) "
+                          "ORDER BY id").fetchall()
+    # Rows captured before a not-his prefix joined _DROP_PREFIXES are skipped here, not
+    # deleted: the tape is a primary durable store, and deletion is the user's call.
+    rows = [(ts, text) for ts, text in stored if not is_machine_turn(text)]
+    excluded_not_his = len(stored) - len(rows)
     if not rows:
         return None
 
@@ -632,6 +800,7 @@ def compute_profile(tape_or_conn) -> dict | None:
                                 "account age",
             "paste_threshold_chars": PASTE_CHAR_THRESHOLD,
             "lines_excluded_as_paste": excluded_as_paste,
+            "lines_excluded_not_his": excluded_not_his,
             "paste_note": "a threshold, not a classifier: lines >= the threshold are "
                           "treated as pasted material, not typed voice",
         },
@@ -686,7 +855,8 @@ def cmd_profile(args, tape) -> int:
         # they need different advice: a truly empty table means harvest never ran; a
         # nonempty table that derived None is ALL pastes, where "harvest first" would
         # be actively wrong (harvest already ran and produced exactly these rows).
-        n_rows = tape._conn.execute("SELECT COUNT(*) FROM voice").fetchone()[0]
+        n_rows = tape._conn.execute(
+            "SELECT COUNT(*) FROM voice WHERE sha NOT IN (SELECT sha FROM voice_flags)").fetchone()[0]
         if n_rows:
             print(f"profile: all {n_rows} corpus lines are paste-length "
                   f"(>= {PASTE_CHAR_THRESHOLD} chars) — no typed voice to derive")
@@ -809,7 +979,7 @@ def cmd_capture(args, tape) -> int:
 
         # The extraction law, same as harvest. Tested against the fully-stripped text so a
         # stray leading space can only ever catch MORE hook-shaped text, never less.
-        if check.startswith(_DROP_PREFIXES) or check in _INTERRUPTED_MARKERS:
+        if is_machine_turn(check):
             return 0  # machine-generated turn: never his voice, never stored
 
         if looks_secretish(text):

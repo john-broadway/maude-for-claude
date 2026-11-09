@@ -1,6 +1,6 @@
-<!-- Version: 0.35.0 -->
+<!-- Version: 0.36.0 -->
 <!-- Created: 2026-07-17 -->
-<!-- Revised: 2026-10-12 -->
+<!-- Revised: 2026-11-09 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Privacy Policy — Maude for Claude
@@ -36,7 +36,7 @@ All of it on your machine, all of it yours:
   stored, counted in the harvest summary. The corpus and the derived profile
   live only in your tape.db, never ship with the plugin, and never leave the
   machine. Capture has a kill switch: `MAUDE_VOICE=off`. To remove every word:
-  `DELETE FROM voice; DELETE FROM voice_profile;` (or delete tape.db) — and
+  `DELETE FROM voice; DELETE FROM voice_flags; DELETE FROM voice_flag_files; DELETE FROM voice_profile;` (or delete tape.db) — and
   recomputing the profile over an emptied corpus clears the stored profile
   itself, so the derived words never outlive their source.
 - The three rulebooks under `rules/` are static JSON read from the plugin
@@ -56,11 +56,21 @@ session start she probes a few **loopback-only** ports (`127.0.0.1` —
 redis/qdrant/neo4j-shaped local dev services) to detect what's running in
 your own house; no name resolution, no payload, nothing beyond your machine
 (`hooks/scripts/maude-probe-tier1.sh` — read it), and `MAUDE_PROBE=off`
-turns it off entirely — no sockets, no cache. Beyond that, the plugin
-surface is bash and python3-stdlib scripts operating on local files. There
-is no dedicated CI gate asserting "no network client" — the claim is
-verifiable by inspection: no HTTP library is imported anywhere and the repo
-carries no dependency manifest to smuggle one in.
+turns it off entirely — no sockets, no cache. The same probe looks for an
+**embedding server already running on your machine** (loopback ports 8080,
+11434, 8000, 8081: llama.cpp, ollama, vLLM shapes) by sending it one request
+with the two words `maude probe`; an open port that does not answer like an
+embedder is ignored. When one answers, Maude's recall index sends it the text
+it indexes (your memory notes and typed lines) to turn into numbers, on
+`127.0.0.1`, and stores the numbers in `<project>/.maude/plugin/recall.db`.
+That text never leaves your machine. A server anywhere else is used only if
+you name it yourself in `MAUDE_TAPE_EMBED_URL`. Beyond that, the plugin
+surface is bash and python3-stdlib scripts operating on local files. The
+claim is checked in CI by `tests/tape/test_no_default_egress.py`: only the two
+bring-your-own clients (`maude_tape/embedder.py`, `maude_tape/judge.py`) may
+import network machinery, every hook script's network command is accounted
+for, and the probe is asserted to knock only on loopback. The repo carries no
+dependency manifest to smuggle a library in.
 
 ## Model calls
 

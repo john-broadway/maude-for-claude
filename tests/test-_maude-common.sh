@@ -462,6 +462,11 @@ assert_contains "$(redact_one "built ledger at 192.0.2.71")" "[redacted-ip]" "IP
 test_start "redact removes the raw IPv4 address"
 assert_not_contains "$(redact_one "built ledger at 192.0.2.71")" "192.0.2.71" "raw IPv4 gone"
 
+test_start "redact masks an IPv4 address that ends a sentence"
+assert_eq "$(redact_one "the store sits at 192.0.2.71.")" "the store sits at [redacted-ip]." "sentence-final IPv4 masked"
+test_start "redact leaves a dotted version that continues with a digit"
+assert_eq "$(redact_one "build 192.0.2.1"".5 here")" "build 192.0.2.1"".5 here" "five-part version survives"
+
 test_start "redact leaves Chrome version strings untouched"
 assert_eq "$(redact_one "Chrome version 120.0.6099.109")" "Chrome version 120.0.6099.109" "over-255 octets survive"
 
@@ -872,6 +877,119 @@ wait
 assert_eq "$(grep -c 'fact' "$ID_HOME/.claude/maude/identity.md")" "3" "seed, first and second all present"
 rm -rf "$ID_HOME"
 
+test_start "the views expand a tilde where bash does, and nowhere else (lens 7, B1)"
+_hv() { HOME=/h maude_home_view "$1"; }
+for pair in 'rm -rf ~/x|rm -rf /h/x' 'cd ~|cd /h' 'X=~/z|X=/h/z' 'a:~/p|a:/h/p' '~ ~|/h /h' 'a~b|a~b' '~~~|~~~' '~user/x|~user/x' 'echo $HOME/w|echo /h/w' '"~/q"|/h/q'; do
+  in="${pair%%|*}"; want="${pair#*|}"; got="$(_hv "$in")"
+  if [ "$got" = "$want" ]; then _pass; else _fail "maude_home_view '$in': want '$want', got '$got'"; fi
+done
+# shellcheck disable=SC2088   # the literal tilde IS the input under test
+got="$(HOME='/a b/c&d#e' maude_home_view '~/x')"
+if [ "$got" = '/a b/c&d#e/x' ]; then _pass; else _fail "a HOME with & and #: got '$got'"; fi
+
+test_start "the walk clock ignores a value it did not set (lens 7, M3)"
+# MAUDE_WALK_T0 / MAUDE_WALK_BUDGET inherited from a parent process: an arithmetic error
+# made maude_strip_heredocs print NOTHING but the error (a fail-open read) in the hooks that
+# do not set them, and a negative T0 made every walk overdue at once. A value that is not
+# a plain number means no deadline: the body is stripped and the rest comes back.
+# (each T0 is tried with a garbage budget AND a valid one: with only the first, the budget's
+# own check hid whether the T0 check ran at all; the mutation round caught it)
+for t0 in 'abc' '1;rm' '-1000' '' 'abc/3' '1;rm/3' '-1000/3'; do
+  bud=abc; case "$t0" in */3) t0="${t0%/3}"; bud=3 ;; esac
+  out="$(MAUDE_WALK_T0="$t0" MAUDE_WALK_BUDGET="$bud" maude_strip_heredocs "$(printf 'cat <<EOF\nbody\nEOF\necho after')" 2>&1)"
+  case "$out" in *"echo after"*) _pass ;; *) _fail "T0='$t0': the stripped text did not come back: $out" ;; esac
+  case "$out" in *body*) _fail "T0='$t0': the body was not stripped (a deadline fired): $out" ;; *) _pass ;; esac
+  case "$out" in *rror*|*expected*) _fail "T0='$t0': the walk printed an error: $out" ;; *) _pass ;; esac
+done
+
+# ── MAUDE_SQ_MARK: the marked strip is the strip plus one byte per quoted span ───────────
+for probe in "echo 'a b' c" 'echo "a b" c' "a='x y'; echo \$a" 'echo "$(cat f)" g' "echo 'a' \"b\" c"; do
+  marked="$(MAUDE_SQ_MARK=1 maude_strip_quotes "$probe")"
+  spans="$(printf '%s' "$marked" | tr -cd '\001' | wc -c)"
+  test_start "MAUDE_SQ_MARK: one marker per quoted span: $probe"
+  assert_eq "$spans" "$(printf '%s' "$probe" | grep -o "'[^']*'\|\"[^\"]*\"" | wc -l)" "markers == spans"
+done
+test_start "MAUDE_SQ_MARK: a substitution inside a quoted span is still walked (its words on the skeleton)"
+assert_contains "$(MAUDE_SQ_MARK=1 maude_strip_quotes 'echo "$(rm f)"')" ";rm f;" "the substitution's words stay"
+test_start "MAUDE_SQ_MARK: the marked strip minus its markers is the plain strip"
+for probe in 'echo "$(rm f)" g' "echo 'a' \"b\" c" 'x="$(cat "f")"'; do
+  assert_eq "$(MAUDE_SQ_MARK=1 maude_strip_quotes "$probe" | tr -d '\001')" "$(maude_strip_quotes "$probe")" "minus markers == plain: $probe"
+done
+test_start "MAUDE_SQ_MARK unset: byte-identical to the plain strip"
+assert_eq "$(MAUDE_SQ_MARK='' maude_strip_quotes 'echo "a b" c; x=$(cat "f")')" "$(maude_strip_quotes 'echo "a b" c; x=$(cat "f")')" "unset == plain"
+
+# ── the push label's URL reader and class (fix/gate-push-label) ───────────────
+test_start "push_url_host reads the host and never the userinfo or path"
+assert_eq "$(maude_push_url_host 'https://john:s3cret@github.com:443/john/x.git')" "github.com" "https with userinfo and port"
+assert_eq "$(maude_push_url_host 'ssh://git@forge.example.lan:2222/john/x.git')" "forge.example.lan" "ssh with port"
+assert_eq "$(maude_push_url_host 'git@forge.example.lan:john/x.git')" "forge.example.lan" "scp-like"
+assert_eq "$(maude_push_url_host '/srv/git/x.git')" "" "a local path has no host"
+test_start "a URL that can be read two ways is read neither way (the commit review on c898dca)"
+# git and curl end the authority at the `?`; a host read past the `@` would say x.lan.
+for u in 'https://github.com?@x.lan/r' 'https://github.com#@x.lan/r' 'https://a@b@github.com/r' 'https://github.com%2f@x.lan/r' 'https://github.com\@x.lan/r'; do
+  assert_eq "$(maude_push_url_host "$u")" "" "no host: $u"
+  assert_eq "$(maude_push_class "$u")" "unknown" "unknown, never internal: $u"
+done
+test_start "push_class: the classes"
+assert_eq "$(maude_push_class 'https://GitHub.com/j/x.git')" "public" "a forge, case-folded"
+assert_eq "$(maude_push_class 'git@gitlab.com:j/x.git')" "public" "gitlab scp-like"
+_ip='10.0.'; _ip="${_ip}0.9"   # assembled: the RFC1918 shape is the subject, and the ship audit must not read it whole
+assert_eq "$(maude_push_class "ssh://git@${_ip}/j/x.git")" "internal" "RFC1918"
+assert_eq "$(maude_push_class "ssh://git@${_ip}.example.com/j/x.git")" "unknown" "an address-shaped host name is not an address"
+assert_eq "$(maude_push_class 'ssh://git@evilgithub.com/j/x.git')" "unknown" "a suffix match is not a forge"
+assert_eq "$(maude_push_class 'ssh://git@github.com.x.lan/j/x.git')" "internal" "a .lan host that spells a forge is still a .lan host"
+assert_eq "$(maude_push_class "file://$TEST_TMP/x.git")" "internal" "file://"
+assert_eq "$(maude_push_class 'ssh://git@forge.example.net/j/x.git')" "unknown" "no class"
+
+# ── the walk clock reads the real clock, digits only, and fails closed ────────
+# bash 3.2 (macOS) has no EPOCHREALTIME: the walk clock is the whole-second $SECONDS, and the
+# microsecond cases below cannot be faked there (v0.36.0's public macOS leg, PR #90). That
+# clock is pinned on its own, overdue and not, so 3.2 is not a pass for want of a test.
+if [ -z "${EPOCHREALTIME:-}" ]; then
+test_start "walk_overdue on bash 3.2: the whole-second clock"
+export MAUDE_WALK_BUDGET=3 MAUDE_WALK_T0
+unset MAUDE_WALK_T0_US
+MAUDE_WALK_T0="$SECONDS"
+maude_walk_overdue && _o=yes || _o=no
+assert_eq "$_o" "no" "just started: not overdue"
+MAUDE_WALK_T0=$(( SECONDS - 4 ))
+maude_walk_overdue && _o=yes || _o=no
+assert_eq "$_o" "yes" "4 s ago: overdue"
+MAUDE_WALK_T0="1;rm"
+maude_walk_overdue && _o=yes || _o=no
+assert_eq "$_o" "no" "a start that is not digits sets no deadline (the documented read)"
+_e="$(MAUDE_WALK_T0=$(( SECONDS - 2 )) maude_walk_elapsed_us)"
+assert_eq "$_e" "2000000" "elapsed in whole seconds"
+unset MAUDE_WALK_T0 MAUDE_WALK_BUDGET
+else
+test_start "walk_overdue: a clock it cannot read, or one that went backwards, is overdue"
+export MAUDE_WALK_BUDGET=3 MAUDE_WALK_T0_US
+MAUDE_WALK_T0_US="${EPOCHREALTIME//[!0-9]/}"
+maude_walk_overdue && _o=yes || _o=no
+assert_eq "$_o" "no" "just started: not overdue"
+MAUDE_WALK_T0_US=$(( 10#${EPOCHREALTIME//[!0-9]/} - 4000000 ))
+maude_walk_overdue && _o=yes || _o=no
+assert_eq "$_o" "yes" "4 s ago: overdue"
+MAUDE_WALK_T0_US=$(( 10#${EPOCHREALTIME//[!0-9]/} + 60000000 ))
+maude_walk_overdue && _o=yes || _o=no
+assert_eq "$_o" "yes" "a start in the future (the clock went backwards): overdue"
+MAUDE_WALK_T0_US="1762249000,123456"
+maude_walk_overdue && _o=yes || _o=no
+assert_eq "$_o" "yes" "a comma-locale stamp from the past reads by its digits: overdue"
+MAUDE_WALK_T0_US="abc"
+maude_walk_overdue && _o=yes || _o=no
+assert_eq "$_o" "yes" "garbage: overdue"
+MAUDE_WALK_T0_US="${EPOCHREALTIME//[!0-9]/}"
+_e="$(maude_walk_elapsed_us)"; _rc=$?
+assert_eq "$_rc" "0" "elapsed reads"
+[ "$_e" -ge 0 ] && [ "$_e" -lt 2000000 ] && _pass || _fail "elapsed just after start: $_e"
+MAUDE_WALK_T0_US="abc"
+_e="$(maude_walk_elapsed_us)"; _rc=$?
+assert_eq "$_rc" "1" "an unreadable clock says so"
+unset MAUDE_WALK_T0_US MAUDE_WALK_BUDGET
+fi
+
 print_summary
 teardown_test_env
 exit $FAILED
+
