@@ -1,5 +1,5 @@
 <!-- Version: 0.37.0 -->
-<!-- Revised: 2026-11-11 -->
+<!-- Revised: 2026-11-16 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Security Policy
@@ -23,9 +23,13 @@ We will acknowledge receipt within 48 hours and provide a timeline for resolutio
 
 ## Supported Versions
 
+Maude is pre-1.0; security fixes land on the **latest release only**. There is no
+back-port branch.
+
 | Version | Supported |
 |---------|-----------|
-| 0.29.x   | Yes       |
+| the latest release ([GitHub releases](https://github.com/john-broadway/maude-for-claude/releases)) | ✅ |
+| anything older | ❌, upgrade |
 
 ## In Scope
 
