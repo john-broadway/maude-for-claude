@@ -234,9 +234,18 @@ if [ -n "$HDRS" ]; then
     git check-ignore -q -- "$f" 2>/dev/null && continue
     # --untracked-files=normal: a user config of status.showUntrackedFiles=no would make a
     # new file read as clean, and clean-with-no-history is a refusal, not the finding it is.
-    if [ -n "$(git --literal-pathspecs status --porcelain --untracked-files=normal -- "$f" 2>/dev/null)" ]; then
+    # MAUDE_VERIFY_SOURCE_REF (ship.sh sets it): the tree under check was staged from that
+    # ref onto a branch off public main, so every doc is "modified" against HEAD. A build that
+    # crossed midnight UTC failed twelve honest stamps (v0.36.0, 2026-11-07 and 11-08). A file
+    # byte-identical to the ref's copy is read on the ref's history; any other stays dirty.
+    LOGREF=""
+    if [ -n "$(git --literal-pathspecs status --porcelain --untracked-files=normal -- "$f" 2>/dev/null)" ] \
+       && { [ -z "${MAUDE_VERIFY_SOURCE_REF:-}" ] \
+            || [ "$(git rev-parse -q --verify "${MAUDE_VERIFY_SOURCE_REF}:./${f#./}" 2>/dev/null)" != "$(git hash-object -- "$f" 2>/dev/null)" ]; }; then
       ANCHOR="$TODAY"; ANCHOR_WHY="modified in the working tree"
     else
+      [ -z "$(git --literal-pathspecs status --porcelain --untracked-files=normal -- "$f" 2>/dev/null)" ] \
+        || LOGREF="$MAUDE_VERIFY_SOURCE_REF"
       # The file's history, newest first, following renames: each record is a commit that
       # added (A), modified (M) or renamed (R<similarity>) it, with the path(s) it had THEN.
       # The AUTHOR date, not the committer's: rebase, cherry-pick and amend re-date the
@@ -244,7 +253,7 @@ if [ -n "$HDRS" ]; then
       # quotePath=false so a non-ASCII name comes back as itself, not as "caf\303\251.md";
       # a name carrying a tab, a quote or a backslash is still quoted and cannot be asked
       # about below, which fails toward a finding, never a pass.
-      HIST="$(git --literal-pathspecs -c core.quotePath=false log --follow --diff-filter=AMR --format='%x01%H %as' --name-status -- "$f" 2>/dev/null)"
+      HIST="$(git --literal-pathspecs -c core.quotePath=false log --follow --diff-filter=AMR --format='%x01%H %as' --name-status ${LOGREF:+"$LOGREF"} -- "$f" 2>/dev/null)"
       SHA=""; ANCHOR=""; STATUS=""; PATHS=""; REC=""
       while IFS= read -r line; do
         case "$line" in
@@ -427,14 +436,12 @@ if maude_python3_ok && [ -d "$DIR/../maude_rules" ]; then
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     SQL_COUNT=$((SQL_COUNT + 1))
-    # `python3 -m` prepends the CWD to sys.path ahead of PYTHONPATH, and this runs
-    # from the audited project, so a project carrying its own maude_rules/ would be
-    # the linter verify runs, and a stdout ending in ": clean" would read as a pass.
-    # Two belts: PYTHONSAFEPATH=1 drops the implicit CWD entry (python 3.11+), and
-    # the interpreter is launched from the plugin root, which needs an ABSOLUTE path
-    # because `find .` here yields ./x.sql relative to the project.
+    # This runs from the audited project; MAUDE_PY_BOOT (python3 -I, the plugin root
+    # first by name) means a project carrying its own maude_rules/ is never the linter
+    # verify runs, so a stdout ending in ": clean" is the plugin's own. The path is made
+    # absolute because `find .` here yields ./x.sql relative to the project.
     ABS="$PWD/${f#./}"
-    RAW="$(cd "$DIR/.." 2>/dev/null && PYTHONSAFEPATH=1 PYTHONPATH="$DIR/.." python3 -m maude_rules schema --brief "$ABS" 2>/dev/null)"
+    RAW="$(python3 -I -c "$MAUDE_PY_BOOT" "$DIR/.." maude_rules schema --brief "$ABS" 2>/dev/null)"
     RC=$?
     # Non-zero AND silent means the linter never spoke: a dead interpreter, an import
     # that blew up, a cd that failed. Reading that as a clean file is the silent-pass
@@ -450,7 +457,7 @@ if maude_python3_ok && [ -d "$DIR/../maude_rules" ]; then
     # How many tables the linter actually READ. "3 schema files linted" says nothing
     # about what was looked at: a file of ALTERs and a file of tables both count as one
     # file, and only this number tells them apart.
-    N="$(cd "$DIR/.." 2>/dev/null && PYTHONSAFEPATH=1 PYTHONPATH="$DIR/.." python3 -m maude_rules schema --count "$ABS" 2>/dev/null)"
+    N="$(python3 -I -c "$MAUDE_PY_BOOT" "$DIR/.." maude_rules schema --count "$ABS" 2>/dev/null)"
     N="${N##*: }"; N="${N%% table*}"
     case "$N" in ''|*[!0-9]*) N=0 ;; esac
     TABLE_COUNT=$((TABLE_COUNT + N))

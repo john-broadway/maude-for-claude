@@ -4,7 +4,8 @@
 # letting Claude touch a watched path:
 #   - house-map watch list (project-local)
 #   - cross-project patterns.md (user-global) — has she seen this kind of edit go wrong before?
-# Surfaces a one-line nudge. Never blocks the tool call.
+# Surfaces a one-line nudge. Blocks only through the memory-budget rail (a write that would
+# grow the auto-memory index past its budget).
 
 set +e
 
@@ -14,6 +15,27 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 # Tool input is JSON on stdin — read ONCE. Two consumers now share it, and jq would
 # have drained it for the first one.
 INPUT="$(cat 2>/dev/null)"
+
+# The auto-memory index budget refuses before anything else runs, so a refused write leaves
+# no undo snapshot behind. Called from here, not registered in hooks.json, for the reason
+# the undo note below gives: a script edit is live on save, a registry entry is not.
+# Only its own refusal code (42) refuses: bash exits 2 on a syntax error and 127 on a missing
+# file, and a broken or half-installed copy of the rail must not stop every write.
+printf '%s' "$INPUT" | bash "$DIR/maude-memory-budget.sh" gate
+[ "$?" -eq 42 ] && exit 2
+
+# The Rolodex: approved pages change only by the user's own approve line, so Claude's
+# tools may write in the Rolodex dir under pending/ and nowhere else. Before the undo
+# capture, so a refused write leaves no snapshot. No jq: no refusal, as for the rest.
+if command -v jq >/dev/null 2>&1; then
+  RDX_PATH="$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .file_path // ""' 2>/dev/null)"
+  RDX_CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // ""' 2>/dev/null)"
+  [ -n "$RDX_CWD" ] || RDX_CWD="$PWD"
+  if [ -n "$RDX_PATH" ] && maude_rolodex_refuses "$RDX_PATH" "$RDX_CWD"; then
+    printf '%s\n' "**Maude:** approved Rolodex pages change only by the user's own approve line. Write the page under pending/ and ask." >&2
+    exit 2
+  fi
+fi
 
 # UNDO (the sixth pillar) — snapshot the file's current bytes before the write lands.
 # Called from here rather than registered in hooks.json on purpose: registry entries

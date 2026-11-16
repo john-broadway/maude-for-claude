@@ -182,7 +182,7 @@ def test_unknown_flag_refuses(tmp_path):
                        cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 2
     assert r.stdout == ""
-    assert "usage: python3 -m maude_rules schema" in r.stderr
+    assert "usage: maude-py.sh maude_rules schema" in r.stderr
 
 
 def test_single_dash_flag_refuses(tmp_path):
@@ -192,7 +192,7 @@ def test_single_dash_flag_refuses(tmp_path):
                        cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 2
     assert r.stdout == ""
-    assert "usage: python3 -m maude_rules schema" in r.stderr
+    assert "usage: maude-py.sh maude_rules schema" in r.stderr
 
 
 def test_library_never_raises_on_garbage():

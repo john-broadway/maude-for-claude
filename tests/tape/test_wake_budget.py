@@ -244,17 +244,17 @@ def test_the_footer_names_the_db(tmp_path):
 def test_the_footer_command_runs_from_any_directory(tmp_path):
     # The hint is typed by a person at a prompt, where nothing has set PYTHONPATH and the
     # package is never installed. Run from the canonical workspace root it printed
-    # "No module named maude_tape" (John, 2026-09-29). The control: the same line without
-    # its PYTHONPATH prefix must fail from there, or this proves nothing.
+    # "No module named maude_tape" (John, 2026-09-29). The control: a bare `python3 -m`
+    # of the same command must fail from there, or this proves nothing.
     db = tmp_path / "t.db"
     _big_tape(db)
     line = next(l for l in _wake(db).splitlines() if "wake --full --db" in l)
-    cmd = line[line.index("PYTHONPATH="):]
+    cmd = line[line.index("bash "):]
     env = {"PATH": "/usr/bin:/bin"}
     ran = subprocess.run(cmd, shell=True, cwd="/", env=env, capture_output=True, text=True)
     assert ran.returncode == 0, ran.stderr
     assert "THE TAPE" in ran.stdout
-    bare = cmd[cmd.index("python3"):]
+    bare = "python3 -m " + cmd[cmd.index("maude_tape "):]
     control = subprocess.run(bare, shell=True, cwd="/", env=env, capture_output=True, text=True)
     assert control.returncode != 0 and "No module named maude_tape" in control.stderr
 

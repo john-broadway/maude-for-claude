@@ -42,15 +42,17 @@ export MAUDE_MARKER_LEDGER="$HOME/.claude/maude/marker-ledger.jsonl"
 
 RED_KEY="sole-copy-target"
 
-# Build a chain for $1 with $2 links; sets LINKS array (LINKS[0] spent first,
-# LINKS[n-1] spent FIRST in practice since spending walks down from the top).
+# Build a chain for $1 with $2 links; sets LINKS array in SPEND order: LINKS[0] is
+# #1 on the printed list, the first the chain accepts; LINKS[n-1] is the last.
+# (Before 2026-10-16 gen printed bottom-up and LINKS[n-1] was spent first; the
+# flip is the fix, and these indices flipped with it.)
 # Uses the shipped CLI so the test exercises the real generator.
 mkchain() {
   local key="$1" n="$2" out
   out="$(MAUDE_MARKER_GEN_FORCE=1 PYTHONPATH="$ROOT" python3 -m maude_marker gen "$key" "$n" \
         --state "$MAUDE_MARKER_STATE" 2>&1)"
   LINKS=()
-  while IFS= read -r l; do LINKS+=("$l"); done < <(printf '%s\n' "$out" | awk '/^ +[0-9]+ +[0-9a-f]{64}$/{print $2}')
+  while IFS= read -r l; do LINKS+=("$l"); done < <(printf '%s\n' "$out" | awk '/^ +#?[0-9]+ +[0-9a-f]{64}$/{print $2}')
 }
 
 head_of_chain() {
@@ -118,7 +120,7 @@ test_start "the refusal names the marker as what is missing"
 assert_contains "$OUT" "marker" "refusal mentions marker"
 
 test_start "a valid marker link clears the red gate"
-OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[3]}" 2>&1)"; RC=$?
+OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[0]}" 2>&1)"; RC=$?
 assert_exit "$RC" "0" "valid marker"
 
 test_start "the red clear names the file it wrote (the red twin of the yellow line)"
@@ -138,7 +140,7 @@ in_yellow="$( { [ -f "$yellow" ] && jq -r --arg k "$RED_KEY" '.gate_cleared[$k] 
 assert_eq "$in_yellow" "absent" "and nothing for the key in care.json"
 
 test_start "replaying the same link is refused"
-OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[3]}" 2>&1)"; RC=$?
+OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[0]}" 2>&1)"; RC=$?
 assert_exit "$RC" "1" "replay refused"
 
 test_start "a forward hash derived from the stored head is refused"
@@ -148,12 +150,12 @@ OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "$FWD" 2>&1)"; RC=$?
 assert_exit "$RC" "1" "forward hash refused"
 
 test_start "the next link down still works after those refusals"
-OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[2]}" 2>&1)"; RC=$?
+OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[1]}" 2>&1)"; RC=$?
 assert_exit "$RC" "0" "next link accepted"
 
 test_start "a link from another key's chain is refused"
 mkchain "public-publish" 3
-OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[2]}" 2>&1)"; RC=$?
+OUT="$(bash "$CLEARRED" "$RED_KEY" --marker "${LINKS[0]}" 2>&1)"; RC=$?
 assert_exit "$RC" "1" "cross-key refused"
 
 test_start "a malformed marker is refused"
@@ -249,7 +251,7 @@ RT_STATE="$RT_HOME/.claude/maude/markers.json"
 RT_OUT="$(env -u MAUDE_MARKER_STATE -u MAUDE_MARKER_LEDGER -u CLAUDE_PLUGIN_ROOT \
           HOME="$RT_HOME" MAUDE_MARKER_GEN_FORCE=1 bash "$WRAP" gen sole-copy-target 5 2>&1)"
 RT_LINKS=()
-while IFS= read -r l; do RT_LINKS+=("$l"); done < <(printf '%s\n' "$RT_OUT" | awk '/^ +[0-9]+ +[0-9a-f]{64}$/{print $2}')
+while IFS= read -r l; do RT_LINKS+=("$l"); done < <(printf '%s\n' "$RT_OUT" | awk '/^ +#?[0-9]+ +[0-9a-f]{64}$/{print $2}')
 
 test_start "redteam setup: chain provisioned at the HOME-derived path"
 assert_eq "${#RT_LINKS[@]}" "5" "5 links"
@@ -275,7 +277,11 @@ assert_exit "$RC" "1" "state deletion does not downgrade"
 # Claude's own chain, in a place he can write.
 ATK="$TEST_TMP/attacker"; mkdir -p "$ATK"
 ATK_OUT="$(MAUDE_MARKER_GEN_FORCE=1 bash "$WRAP" gen sole-copy-target 3 --state "$ATK/m.json" 2>&1)"
-ATK_LINK="$(printf '%s\n' "$ATK_OUT" | awk '/^ +3 +[0-9a-f]{64}$/{print $2}')"
+ATK_LINK="$(printf '%s\n' "$ATK_OUT" | awk '/^ +#?1 +[0-9a-f]{64}$/{print $2}')"
+
+# An empty ATK_LINK would make every attack below a vacuous "needs a link" refusal.
+test_start "redteam setup: the attacker's chain yielded a link to present"
+assert_eq "${#ATK_LINK}" "64" "attacker link parsed"
 
 test_start "ATTACK A: MAUDE_MARKER_STATE redirected to Claude's own chain is REFUSED"
 OUT="$(HOME="$RT_HOME" MAUDE_MARKER_STATE="$ATK/m.json" MAUDE_MARKER_LEDGER="$ATK/l.jsonl" \
@@ -296,7 +302,7 @@ assert_exit "$RC" "1" "fake verifier refused"
 
 test_start "CONTROL: John's real link still WORKS (or this is just a wall)"
 OUT="$(env -u MAUDE_MARKER_STATE -u MAUDE_MARKER_LEDGER -u CLAUDE_PLUGIN_ROOT \
-       HOME="$RT_HOME" bash "$CLEARRED" sole-copy-target --marker "${RT_LINKS[4]}" 2>&1)"; RC=$?
+       HOME="$RT_HOME" bash "$CLEARRED" sole-copy-target --marker "${RT_LINKS[0]}" 2>&1)"; RC=$?
 assert_exit "$RC" "0" "real link accepted"
 
 test_start "the red-self-clear backstop matches the key AFTER a flag value"
@@ -362,7 +368,7 @@ assert_eq "$FAILED_KEYS" "" "no red key clears via the yellow script"
 
 test_start "clear-gate still clears EVERY yellow key"
 BAD=""
-for k in git-push commit-amend no-verify no-gpg-sign reset-hard run-governor; do
+for k in git-push commit-amend no-verify no-gpg-sign reset-hard run-governor mcp-destructive; do
   bash "$CLEAR" "$k" >/dev/null 2>&1 || BAD="$BAD $k"
 done
 assert_eq "$BAD" "" "all yellow keys still self-clearable"
@@ -400,6 +406,119 @@ assert_exit "$RC" "1" "refused without --john"
 PASTE="$(printf '%s\n' "$OUT" | grep -E '^[[:space:]]*! bash' | head -1)"
 assert_contains "$PASTE" "$(basename "$CLEARRED")" "the paste line names the red script"
 assert_not_contains "$PASTE" "$(basename "$CLEAR")" "and not the yellow one"
+
+# ── gen says where it may run; the chain says which link is next (2026-10-08, live) ──
+# Six failed commands and zero deletes. (1) gen, typed at the `!` prompt as every
+# instruction said, refused with "run it in your own shell with a leading !" — the thing
+# just done. The `!` prompt runs inside the session: it inherits the harness environment,
+# and its output lands in the conversation (the harness says so itself), so the refusal
+# was RIGHT and its text was a loop. Only a terminal outside Claude Code is outside.
+# (2) The person then minted in a real terminal, pasted a link, and read "not a preimage
+# of the current head": the chain spends in order and nothing said which end was next.
+# gen now numbers the links in the order they are spent, #1 first; `next` names the one
+# to paste; a refused link and the status line say it too.
+
+test_start "gen under a Claude Code environment refuses and names a terminal OUTSIDE Claude Code"
+OUT="$(CLAUDE_PROJECT_DIR=/x bash "$WRAP" gen loop-probe 3 --state "$TEST_TMP/loop.json" 2>&1)"; RC=$?
+assert_exit "$RC" "3" "refused"
+assert_contains "$OUT" "outside Claude Code" "names where"
+
+test_start "the refusal hands no ! line (the ! prompt inherits the session: that was the loop)"
+assert_not_contains "$OUT" "! bash" "no ! line"
+assert_contains "$OUT" "maude-marker.sh gen loop-probe 3" "the plain line to type out there"
+
+test_start "control: the refusal wrote no chain"
+assert_file_absent "$TEST_TMP/loop.json" "no state written"
+
+SP="$TEST_TMP/spend.json"; SPL="$TEST_TMP/spend.jsonl"
+GOUT="$(env -u CLAUDE_PROJECT_DIR -u CLAUDE_PLUGIN_ROOT bash "$WRAP" gen spend-probe 3 --state "$SP" 2>&1)"; RC=$?
+test_start "gen outside the harness runs with no force flag"
+assert_exit "$RC" "0" "gen ran"
+
+test_start "gen numbers the links in SPEND order: #1 is printed and said to be next"
+assert_contains "$GOUT" "#1" "a #1 line"
+assert_contains "$GOUT" "#1 first" "says #1 is spent first"
+
+test_start "next names the link to spend before any spend: #1 of 3"
+OUT="$(bash "$WRAP" next spend-probe --state "$SP" 2>&1)"; RC=$?
+assert_exit "$RC" "0" "next ran"
+assert_contains "$OUT" "link #1 of 3" "names #1"
+
+L1="$(printf '%s\n' "$GOUT" | awk '/^ +#1 +[0-9a-f]{64}$/{print $2}')"
+L3="$(printf '%s\n' "$GOUT" | awk '/^ +#3 +[0-9a-f]{64}$/{print $2}')"
+test_start "the #1 link is the one the chain accepts first"
+bash "$WRAP" verify spend-probe "$L1" --state "$SP" --ledger "$SPL" >/dev/null 2>&1
+assert_exit "$?" "0" "#1 accepted (got link '${L1:-none}')"
+
+test_start "after one spend, next is #2 of 3"
+OUT="$(bash "$WRAP" next spend-probe --state "$SP" 2>&1)"
+assert_contains "$OUT" "link #2 of 3" "names #2"
+
+test_start "a refused link says why AND which link is next"
+OUT="$(bash "$WRAP" verify spend-probe "$L3" --state "$SP" --ledger "$SPL" 2>&1)"; RC=$?
+assert_exit "$RC" "1" "wrong end refused"
+assert_contains "$OUT" "not a preimage" "the reason"
+assert_contains "$OUT" "link #2 of 3" "the next link"
+
+test_start "status carries the next link too"
+OUT="$(bash "$WRAP" status --state "$SP" 2>&1)"
+assert_contains "$OUT" "next=#2" "status names it"
+
+test_start "a chain printed before the order was recorded says #remaining (bottom-up list)"
+LEG="$TEST_TMP/legacy.json"
+jq -n --arg h "$(printf 'c%.0s' $(seq 64))" '{chains:{"legacy-probe":{head:$h,initialized:1,remaining:20}}}' > "$LEG"
+OUT="$(bash "$WRAP" next legacy-probe --state "$LEG" 2>&1)"; RC=$?
+assert_exit "$RC" "0" "next ran on the legacy shape"
+assert_contains "$OUT" "link #20" "the bottom-up list's next is #remaining"
+assert_contains "$OUT" "bottom" "and says the list was numbered bottom-up"
+
+test_start "a hand-edited remaining (1e999, or above count) names no link and does not crash"
+BAD="$TEST_TMP/bad.json"
+printf '{"chains":{"bad-probe":{"head":"%s","remaining":1e999,"count":5,"order":"spend"}}}\n' "$(printf 'd%.0s' $(seq 64))" > "$BAD"
+OUT="$(bash "$WRAP" next bad-probe --state "$BAD" 2>&1)"; RC=$?
+assert_exit "$RC" "0" "answered"
+assert_not_contains "$OUT" "Traceback" "no traceback"
+assert_contains "$OUT" "malformed" "says the state is malformed"
+OUT="$(bash "$WRAP" status --state "$BAD" 2>&1)"
+assert_not_contains "$OUT" "Traceback" "status: no traceback"
+printf '{"chains":{"bad-probe":{"head":"%s","remaining":9,"count":5,"order":"spend"}}}\n' "$(printf 'd%.0s' $(seq 64))" > "$BAD"
+OUT="$(bash "$WRAP" next bad-probe --state "$BAD" 2>&1)"
+assert_not_contains "$OUT" "#-" "no negative link number"
+assert_contains "$OUT" "malformed" "says the state is malformed"
+
+test_start "next on an unknown key refuses without a traceback"
+OUT="$(bash "$WRAP" next nope --state "$SP" 2>&1)"; RC=$?
+assert_exit "$RC" "1" "refused"
+assert_not_contains "$OUT" "Traceback" "no traceback"
+
+test_start "the red clear's marker refusal says why and which link is next"
+mkdir -p "$HOME/.claude/maude"
+mkchain drop-table 3
+WRONG="$(printf '%s\n' "${LINKS[@]}" | tail -1)"; FIRST="$(printf '%s\n' "${LINKS[@]}" | head -1)"
+[ "$(printf '%s' "$WRONG$FIRST" | wc -c)" -eq 128 ] || _fail "fixture: two links expected"
+OUT="$(bash "$CLEARRED" drop-table --marker "$WRONG" 2>&1)"; RC=$?
+assert_exit "$RC" "1" "wrong end refused"
+assert_contains "$OUT" "not a preimage" "the reason reaches the person"
+assert_contains "$OUT" "link #1 of 3" "and the next link"
+
+test_start "control: after that refusal the right link still clears"
+OUT="$(bash "$CLEARRED" drop-table --marker "$FIRST" 2>&1)"; RC=$?
+assert_exit "$RC" "0" "#1 accepted by the red clear"
+
+test_start "no script or doc hands the person a ! gen line"
+n="$(grep -rn -E '^[[:space:]]*!.*maude-marker\.sh"?[[:space:]]+gen' "$ROOT/hooks/scripts" "$ROOT/commands" "$ROOT/maude_marker" "$ROOT/README.md" 2>/dev/null | wc -l | tr -d ' ')"
+assert_eq "$n" "0" "no ! gen line anywhere the person reads (got $n)"
+
+test_start "every refusal that points at gen says: a terminal outside Claude Code"
+FRESH_HOME="$(mktemp -d)"
+OUT="$(HOME="$FRESH_HOME" bash "$CLEARRED" filter-repo 2>&1)"
+rm -rf "$FRESH_HOME"
+assert_contains "$OUT" "gen filter-repo" "the soft-path refusal points at gen"
+assert_contains "$OUT" "outside Claude Code" "and says where"
+mkdir -p "$HOME/.claude/maude"
+OUT="$(bash "$CLEARRED" rm-rf-glob 2>&1)"
+assert_contains "$OUT" "gen rm-rf-glob" "the marker-house refusal points at gen"
+assert_contains "$OUT" "outside Claude Code" "and says where"
 
 print_summary
 teardown_test_env

@@ -61,6 +61,23 @@ OUT="$(printf '{"prompt":"<command-name>/foo</command-name> johns metaphors"}' \
   | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
 assert_eq "$OUT" "" "no recall on a command turn"
 
+# 2026-11-08, a session: five off-topic notes surfaced only on turns a subagent's
+# hand-back or another session's message opened; none came up on any of John's 17 real
+# prompts replayed through the pager. A report full of plan, consent and audit words is
+# not his question.
+RL="$WORK/proj/.maude/plugin/recall-log.jsonl"
+for shape in \
+  'Another Claude session sent a message:\n<agent-message from=\"a1\">\n  johns metaphors review report\n</agent-message>' \
+  'Another Claude session sent a message:\n<cross-session-message from=\"uds:/x.sock\">\njohns metaphors</cross-session-message>' \
+  'johns metaphors <agent-message from=\"a1\">report</agent-message>'
+do
+  test_start "page hook skips an agent-message turn: ${shape:0:44}"
+  before="$(wc -l < "$RL" 2>/dev/null | tr -d ' ')"
+  OUT="$(printf '{"prompt":"%s"}' "$shape" | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"
+  assert_eq "$OUT" "" "no recall on another agent's words"
+  assert_eq "$(wc -l < "$RL" 2>/dev/null | tr -d ' ')" "$before" "nothing written to the recall log"
+done
+
 test_start "page hook still pages a real human prompt"
 OUT="$(printf '{"prompt":"how do I handle johns metaphors"}' \
   | bash "$ROOT/hooks/scripts/maude-page.sh" 2>/dev/null)"

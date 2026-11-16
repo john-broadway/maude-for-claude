@@ -22,10 +22,11 @@ SFX="$(maude_eye_suffix "${2:-}")"
 trap 'rmdir "$SELF/.eye-blink$SFX.lock" 2>/dev/null' EXIT
 
 # 1) the window: transcript tail
-DIGEST="$(PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -c "
+DIGEST="$(python3 -I -c "
 import sys
+sys.path.insert(0, sys.argv[1])
 from maude_eye import digest
-print(digest.build_digest(sys.argv[1]))" "$TRANSCRIPT" 2>/dev/null)"
+print(digest.build_digest(sys.argv[2]))" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" "$TRANSCRIPT" 2>/dev/null)"
 [ -n "$DIGEST" ] || exit 0
 
 # 2) the mission pin (best effort). The pin lives at .mission.text (an object
@@ -40,7 +41,7 @@ fi
 NOTES=""
 if [ -f "$SELF/vault.db" ]; then
   NOTES="$(printf '%s' "$DIGEST" | tail -c 800 | \
-    PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m maude_vault page \
+    python3 -I -c "$MAUDE_PY_BOOT" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" maude_vault page \
       --db "$SELF/vault.db" --k 3 --snippets 2>/dev/null | head -c 1200)"
 fi
 
@@ -92,10 +93,11 @@ else
 fi
 [ -n "$RAW" ] || exit 0
 
-WHISPER="$(PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -c "
+WHISPER="$(python3 -I -c "
 import sys
+sys.path.insert(0, sys.argv[1])
 from maude_eye import verdict
-print(verdict.whisper_from(sys.stdin.read()))" <<<"$RAW" 2>/dev/null)"
+print(verdict.whisper_from(sys.stdin.read()))" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" <<<"$RAW" 2>/dev/null)"
 [ -n "$WHISPER" ] || exit 0
 
 TMP="$SELF/.eye-whisper.tmp.$$"

@@ -89,6 +89,20 @@ OUT="$(SHIP_SKIP_GATES=1 SHIP_BRANCH=t4 bash "$SHIP" build 2>&1)"
 git checkout -q main
 assert_contains "$OUT" "git push -u origin t4" "push line printed"
 
+# 2026-11-08, the v0.36.0 public build: the source ref was checked out in a worktree, so
+# the return checkout failed, and the build still printed "back on <ref>" with the main
+# checkout left on the ship branch. The last line must name where the checkout IS.
+test_start "a source ref held by a worktree: the build returns to the branch it started on, and says so"
+git checkout -q main
+git branch -q held main
+git worktree add -q "$FIX/held-wt" held
+OUT="$(SHIP_SKIP_GATES=1 SHIP_SOURCE_REF=held SHIP_BRANCH=t4w bash "$SHIP" build 2>&1)"
+NOW_ON="$(git rev-parse --abbrev-ref HEAD)"
+git checkout -qf main; git worktree remove -f "$FIX/held-wt"; git branch -qD held t4w 2>/dev/null
+assert_eq "$NOW_ON" "main" "checkout returned to the starting branch"
+assert_not_contains "$OUT" "back on held" "never claims the held ref"
+assert_contains "$OUT" "back on main" "names the branch it is on"
+
 # ── build: the leak-audit ───────────────────────────────────────────────
 test_start "ship build blocks a planted session-scratch path and names the file"
 git checkout -q main
@@ -117,6 +131,85 @@ if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'leaky.md'; then
 else
   _fail "expected leak block naming leaky.md, rc=$RC: $(printf '%s' "$OUT" | head -c 200)"
 fi
+
+# ── the audit's own defects (release 0.36.0, the first this guard audited against the
+#    house's own fixtures): loopback and the RFC 5737 documentation ranges cannot be a leak
+#    and sit in shipped code and docs; the credential prefix had no left boundary, so
+#    `task-notification` read as `sk-` plus twelve characters ─────────────────────────
+_LOOP="127.0.0"; _LOOP="$_LOOP.1"; _DOC="192.0.2"; _DOC="$_DOC.71"
+test_start "ship build passes loopback and a documentation address (they cannot be a leak)"
+git checkout -q main
+printf 'the embedder knocks on %s; the example in the docs is %s\n' "$_LOOP" "$_DOC" > doc-ips.md
+git add doc-ips.md && git commit -qm "doc ips"
+OUT="$(SHIP_SKIP_GATES=1 SHIP_BRANCH=t5d bash "$SHIP" build 2>&1)"
+RC=$?
+git checkout -q main
+git branch -q -D t5d 2>/dev/null
+git reset -q --hard HEAD~1
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q 'doc-ips.md'; then
+  _pass
+else
+  _fail "expected a pass with doc-ips.md unnamed, rc=$RC: $(printf '%s' "$OUT" | grep -E 'LEAK|BINARY' | head -c 200)"
+fi
+
+test_start "ship build still blocks a real-shaped address beside a documentation one"
+git checkout -q main
+printf 'doc %s but also %s\n' "$_DOC" "$QUAD" > mixed-ips.md
+git add mixed-ips.md && git commit -qm "mixed ips"
+OUT="$(SHIP_SKIP_GATES=1 SHIP_BRANCH=t5m bash "$SHIP" build 2>&1)"
+RC=$?
+git checkout -q main
+git reset -q --hard HEAD~1
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'mixed-ips.md'; then
+  _pass
+else
+  _fail "expected leak block naming mixed-ips.md, rc=$RC: $(printf '%s' "$OUT" | head -c 200)"
+fi
+
+test_start "ship build passes task-notification (a credential prefix is read at a word boundary)"
+git checkout -q main
+printf 'origin kind: task-notification, from the harness\n' > kinds.md
+git add kinds.md && git commit -qm "kinds"
+OUT="$(SHIP_SKIP_GATES=1 SHIP_BRANCH=t5k bash "$SHIP" build 2>&1)"
+RC=$?
+git checkout -q main
+git branch -q -D t5k 2>/dev/null
+git reset -q --hard HEAD~1
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q 'kinds.md'; then
+  _pass
+else
+  _fail "expected a pass with kinds.md unnamed, rc=$RC: $(printf '%s' "$OUT" | grep -E 'LEAK|BINARY' | head -c 200)"
+fi
+
+test_start "ship build still blocks a credential-shaped token at a word boundary"
+git checkout -q main
+_SK="sk"; _SK="$_SK-abcdefghijklmnop"
+printf 'key %s end\n' "$_SK" > cred.md
+git add cred.md && git commit -qm "cred"
+OUT="$(SHIP_SKIP_GATES=1 SHIP_BRANCH=t5c bash "$SHIP" build 2>&1)"
+RC=$?
+git checkout -q main
+git reset -q --hard HEAD~1
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'cred.md'; then
+  _pass
+else
+  _fail "expected leak block naming cred.md, rc=$RC: $(printf '%s' "$OUT" | head -c 200)"
+fi
+test_start "ship build blocks a real address glued to a documentation one (the strip takes whole addresses only)"
+git checkout -q main
+_G="$_DOC"; _G="${_G}0.0"; _G="${_G}.0.5"
+printf 'glued %s here\n' "$_G" > glued-ips.md
+git add glued-ips.md && git commit -qm "glued ips"
+OUT="$(SHIP_SKIP_GATES=1 SHIP_BRANCH=t5g bash "$SHIP" build 2>&1)"
+RC=$?
+git checkout -q main
+git reset -q --hard HEAD~1
+if [ "$RC" -ne 0 ] && printf '%s' "$OUT" | grep -q 'glued-ips.md'; then
+  _pass
+else
+  _fail "expected leak block naming glued-ips.md, rc=$RC: $(printf '%s' "$OUT" | head -c 200)"
+fi
+unset _LOOP _DOC _SK _G
 
 # ── build: fail-closed guards (review round) ────────────────────────────
 test_start "ship build refuses when .publishignore is missing (fail-open is the disease)"

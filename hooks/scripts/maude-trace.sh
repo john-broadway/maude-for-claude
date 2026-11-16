@@ -2,7 +2,8 @@
 # Maude trace hook — appends a one-line JSON event-metadata record per turn.
 # Used by both UserPromptSubmit and PostToolUse.
 #
-# CAPTURES: ts, kind, hook event, tool name, target path (file_path arg only).
+# CAPTURES: ts, kind, hook event, tool name, target (the file_path arg; for a Skill call the
+# skill name, for an Agent or Task call the subagent type: names only, never arguments).
 # DOES NOT CAPTURE: tool_response (file content, bash output), bash command
 # content, prompt text. Those are leak vectors — anything Read/Edit/Bash does
 # would otherwise dump user content into the local trace JSONL.
@@ -70,7 +71,12 @@ if command -v jq >/dev/null 2>&1 && [ -n "$INPUT" ]; then
        kind: $kind,
        hook: .hook_event_name,
        tool: .tool_name,
-       target: (.tool_input.file_path // null),
+       target: (.tool_input.file_path //
+                (if .tool_name == "Skill" then (.tool_input.skill // null)
+                 elif (.tool_name == "Agent" or .tool_name == "Task") then (.tool_input.subagent_type // null)
+                 else null end
+                 | if type == "string" then (gsub("[^A-Za-z0-9:_.@/-]"; "") | .[0:128] | if . == "" then null else . end)
+                   else null end)),
        session: $s,
        sid: (if $sid == "" then null else $sid[0:8] end)
      }' >> "$TRACE" 2>/dev/null

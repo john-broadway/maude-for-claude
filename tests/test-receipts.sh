@@ -186,6 +186,25 @@ test_start "the no-denominator law extends: never a tokens-saved claim"
 printf '%s' "$OUTC" | grep -qi "tokens saved" && FOUND=1 || FOUND=0
 assert_eq "$FOUND" "0" "no 'tokens saved' anywhere"
 
+test_start "no Rolodex cue in the trace: no Rolodex line"
+assert_not_contains "$(bash "$RCPT" 2>&1)" "Rolodex" "silent"
+
+test_start "two cues, one called: the Rolodex line counts both"
+# the trade must be one the ledger holds: a cue row naming any other is a planted row
+(cd / && python3 -I -c 'import sys; sys.path.insert(0, sys.argv[1])
+from pathlib import Path
+from maude_rolodex import db
+c = db.open_rw(Path(sys.argv[2]))
+db.begin(c); db.add_approve(c, "mending", b"trade: mending\n", "2026-11-10T00:00:00Z"); c.execute("COMMIT")' \
+  "$(cd "$DIR/.." && pwd)" "$HOME/.claude/maude/rolodex")
+rjson() { jq -nc --arg k "$1" --arg p "$2" --arg t "$3" --arg tool "$4" --arg sid "$5" \
+  '{ts:"x", kind:$k, payload:$p, tool:(if $tool == "" then null else $tool end),
+    target:(if $t == "" then null else $t end), sid:$sid}' >> "$TDIR/today-$TODAY.jsonl"; }
+rjson rolodex "trade=mending pick=skill:handyman:mend" "" "" r1
+rjson tool "" "handyman:mend" Skill r1
+rjson rolodex "trade=mending pick=skill:handyman:mend" "" "" r2
+assert_contains "$(bash "$RCPT" 2>&1)" "Rolodex: cued 2, called 1" "the line"
+
 test_start "jq absent → graceful note, rc 0"
 NOJQ="$(make_nojq_bin)"
 OUTNJ="$(PATH="$NOJQ" bash "$RCPT" 2>&1)"

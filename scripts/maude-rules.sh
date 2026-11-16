@@ -47,12 +47,10 @@ lint_paths() {
   # without Command Line Tools both answer a presence test and then die at the call.
   maude_python3_ok || { printf 'maude-rules: python3 is missing or not working; the linter needs it\n' >&2; exit 2; }
   local out rc n
-  # PYTHONSAFEPATH=1 (python 3.11+) drops the implicit CWD entry `python3 -m` would
-  # otherwise put AHEAD of PYTHONPATH, so a project carrying its own maude_rules/ is
-  # never the linter this runs. The rail and verify also move the interpreter to the
-  # plugin root; this one cannot, because the paths here are the ones the user typed
-  # and they are relative to the directory they typed them in.
-  out="$(PYTHONSAFEPATH=1 PYTHONPATH="$ROOT" python3 -m maude_rules schema --asks "$@" 2>&1)"; rc=$?
+  # MAUDE_PY_BOOT (python3 -I, the plugin root first by name): a project carrying its
+  # own maude_rules/ is never the linter this runs. The interpreter stays in the user's
+  # directory, because the paths here are the ones they typed, relative to it.
+  out="$(python3 -I -c "$MAUDE_PY_BOOT" "$ROOT" maude_rules schema --asks "$@" 2>&1)"; rc=$?
   n="$(printf '%s\n' "$out" | grep -v ': ask: ' | grep -vc ': unreadable$')"
   [ -z "$out" ] && n=0
   printf '%s finding(s)\n' "$n"

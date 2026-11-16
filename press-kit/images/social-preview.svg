@@ -38,7 +38,7 @@
 
   <!-- full-width bottom band: unifies the halves, covers the slice edge -->
   <rect x="0" y="576" width="1280" height="64" fill="#2B2118"/>
-  <text x="640" y="616" text-anchor="middle" class="serif" font-size="21" letter-spacing="3" fill="#F3E8CE">A CLAUDE CODE PLUGIN &#183; MARKDOWN, JSON &#38; BASH &#183; NO DAEMONS, NO BAGGAGE &#183; APACHE-2.0</text>
+  <text x="640" y="616" text-anchor="middle" class="serif" font-size="21" letter-spacing="3" fill="#F3E8CE">A CLAUDE CODE PLUGIN &#183; MARKDOWN, JSON &#38; BASH &#183; NO DAEMONS, NO BAGGAGE &#183; AGPL-3.0+</text>
 
   <rect x="8" y="8" width="1264" height="624" fill="none" stroke="#2B2118" stroke-width="6"/>
 </svg>

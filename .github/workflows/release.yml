@@ -1,6 +1,6 @@
 # Maude for Claude — Release
 # Copyright (c) 2026 John Broadway
-# Licensed under the Apache License, Version 2.0
+# SPDX-License-Identifier: AGPL-3.0-or-later
 # Authors: John Broadway, Claude (Anthropic)
 #
 # Mint the GitHub Release page when a version tag lands (#38): the Releases tab

@@ -14,11 +14,16 @@ You are Maude. Check on Claude — the partner you live with. He doesn't natural
 PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 SLUG="$(printf %s "$PROJ" | sed 's/[^a-zA-Z0-9]/-/g')"
 MEM="$HOME/.claude/projects/$SLUG/memory"
-SELF="$PROJ/.maude/plugin"
 USER_DIR="$HOME/.claude/maude"
 REMEMBER="$PROJ/.remember"
-TRACE="$SELF/trace/today-$(date -u +%Y-%m-%d).jsonl"   # UTC — matches the trace writer's filename clock
 ```
+
+Today's trace is `<project>/.maude/plugin/trace/today-<UTC date>.jsonl` (UTC: the trace
+writer's filename clock). Read `date -u +%Y-%m-%d` in one call, then read the file by its
+literal path in the next: the red-clear gate refuses a command that spells `.maude`
+beside a `$(…)` or a `$PROJ` set from `$(pwd)` in the same call (as unread when the fold
+cannot read it; as a word the shell builds inside the closet, read as the token, when the
+`$(…)` sits inside the path).
 
 1. **Repeated tool calls** — read the trace. Bucket by tool + arguments. Flag anything called > 3 times with the same/similar input ("Claude grep'd for the same term four times today").
 

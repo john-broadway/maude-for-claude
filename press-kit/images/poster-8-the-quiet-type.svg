@@ -59,7 +59,7 @@
   </g>
   <rect x="42" y="1470" width="1116" height="88" fill="#2B2118"/>
   <text x="600" y="1512" text-anchor="middle" font-family="'Courier New',monospace" font-size="28" fill="#F3E8CE">/plugin marketplace add john-broadway/maude-for-claude</text>
-  <text x="600" y="1546" text-anchor="middle" font-family="'Century Gothic','Futura','Trebuchet MS',sans-serif" font-size="22" letter-spacing="6" fill="#D9A441">MAUDE FOR CLAUDE &#183; APACHE 2.0</text>
+  <text x="600" y="1546" text-anchor="middle" font-family="'Century Gothic','Futura','Trebuchet MS',sans-serif" font-size="22" letter-spacing="6" fill="#D9A441">MAUDE FOR CLAUDE &#183; AGPL-3.0-OR-LATER</text>
 
   <rect x="0" y="0" width="1200" height="1600" filter="url(#grain)" opacity="1" fill="none" pointer-events="none"/>
   <rect x="0" y="0" width="1200" height="1600" fill="url(#vignette)"/>

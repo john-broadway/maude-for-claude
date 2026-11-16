@@ -23,6 +23,6 @@ MEM="$(maude_mem_dir)"
 DB="$(maude_project_dir)/.maude/plugin/vault.db"
 mkdir -p "$(dirname "$DB")" 2>/dev/null
 
-PYTHONPATH="$CLAUDE_PLUGIN_ROOT" python3 -m maude_vault build \
+python3 -I -c "$MAUDE_PY_BOOT" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" maude_vault build \
   --mem-dir "$MEM" --db "$DB" >/dev/null 2>&1
 exit 0

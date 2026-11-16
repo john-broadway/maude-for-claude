@@ -191,6 +191,7 @@ def test_compute_profile_honesty_field_is_present_and_exact(tmp_path):
                             "account age",
         "paste_threshold_chars": voice.PASTE_CHAR_THRESHOLD,
         "lines_excluded_as_paste": 0,
+        "lines_excluded_not_his": 0,
         "paste_note": "a threshold, not a classifier: lines >= the threshold are "
                       "treated as pasted material, not typed voice",
     }

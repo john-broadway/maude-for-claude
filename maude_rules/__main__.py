@@ -17,7 +17,7 @@ import sys
 
 from .schema import lint, format_line, extract_tables
 
-_USAGE = "usage: python3 -m maude_rules schema [--brief] [--asks] [--count] PATH..."
+_USAGE = "usage: maude-py.sh maude_rules schema [--brief] [--asks] [--count] PATH..."
 _KNOWN_FLAGS = {"--brief", "--asks", "--count"}
 
 

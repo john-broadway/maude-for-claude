@@ -2,7 +2,9 @@
 corpus and profile never leave the house, and nothing in this package or its hooks
 reaches a network endpoint BY DEFAULT. The plugin ships exactly two BYO sockets —
 judge.py and embedder.py — and both refuse to build without an explicit url or env
-var (no default endpoint). Every other module, and every hook script, must import or
+var (no default endpoint). One default reach exists, and it does not leave the box:
+embedder.discover() knocks on 127.0.0.1 for the house's own embedding appliance (seeing-gap
+design A2, John 2026-10-25). Every other module, and every hook script, must import or
 call none of the machinery that could open one.
 
 The scanners below are plain functions over a root PATH, never hardcoded to the real
@@ -184,6 +186,30 @@ def test_maude_rules_imports_no_network_machinery():
     assert sources, f"maude_rules holds no .py files to scan (looked in {pkg})"
     hits = find_network_imports(pkg)
     assert hits == {}, f"unexpected network-machinery import in maude_rules: {hits}"
+
+
+def test_maude_recall_imports_no_network_machinery():
+    # maude_recall reaches the house's embedder only through maude_tape.embedder.
+    pkg = ROOT / "maude_recall"
+    sources = sorted(p.name for p in pkg.glob("*.py"))
+    assert sources, f"maude_recall holds no .py files to scan (looked in {pkg})"
+    hits = find_network_imports(pkg)
+    assert hits == {}, f"unexpected network-machinery import in maude_recall: {hits}"
+
+
+def test_the_embedder_probe_knocks_only_on_loopback(monkeypatch):
+    # discover() is the one default reach, and it never leaves the box: the house's own
+    # appliance on 127.0.0.1 (John, 2026-10-25: "nothing needs to call out"). A remote
+    # endpoint is tried only when the user named it in the env var.
+    from maude_tape import embedder
+    knocked = []
+    def fake(url, texts, **kw):
+        knocked.append(url)
+        raise embedder.EmbedError("down")
+    monkeypatch.setattr(embedder, "embed_batch", fake)
+    monkeypatch.delenv(EMBED_ENV_URL, raising=False)
+    assert embedder.discover() is None
+    assert knocked and all(u.startswith("http://127.0.0.1:") for u in knocked), knocked
 
 
 def test_judge_refuses_to_build_without_an_endpoint(monkeypatch):
