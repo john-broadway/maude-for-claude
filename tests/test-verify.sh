@@ -611,6 +611,40 @@ test_start "a git that echoes the shallow flag back is still caught by the marke
 assert_contains "$OUT_S2" "cannot anchor Revised dates on the file history (shallow clone" "two spellings of shallow, either one refuses"
 rm -rf "$HSHALLOW" "$HGIT"
 
+# The ship-build shape (the v0.36.0 public build, 2026-11-07 and again 11-08): ship.sh
+# checks out a branch off PUBLIC main and stages the source ref's tree on it, so every doc
+# reads as modified today. A build that crossed midnight UTC failed on twelve honest
+# stamps. MAUDE_VERIFY_SOURCE_REF names the ref the staged tree came from: a file
+# byte-identical to that ref's copy is anchored on that ref's history; any other is still
+# modified now.
+HSHIP="$(mktemp -d)"
+mkdir -p "$HSHIP/.claude-plugin"
+git -C "$HSHIP" init -q -b src
+_doc "$HSHIP/honest.md" 2.0.0 2026-01-10 "stamped the day it last changed"
+_doc "$HSHIP/edited.md" 2.0.0 2026-01-10 "edited after the ship branch was staged"
+_git_commit_on "$HSHIP" 2026-01-10 "source"
+git -C "$HSHIP" checkout -q --orphan pub
+git -C "$HSHIP" rm -rq --cached . >/dev/null 2>&1
+rm -f "$HSHIP/honest.md" "$HSHIP/edited.md"   # _git_commit_on adds -A: public main must not carry them
+printf 'public\n' > "$HSHIP/pub.txt"
+_git_commit_on "$HSHIP" 2026-01-01 "public main"
+git -C "$HSHIP" checkout -q src -- honest.md edited.md   # the staged source tree, as ship.sh leaves it
+printf 'an edit\n' >> "$HSHIP/edited.md"
+OUT_SH0="$(TZ=UTC bash "$VERIFY" "$HSHIP" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+OUT_SH="$(MAUDE_VERIFY_SOURCE_REF=src TZ=UTC bash "$VERIFY" "$HSHIP" 2>&1)"
+cd "$MAUDE_ROOT" || exit 1
+rm -rf "$HSHIP"
+
+test_start "without the seam, the staged ship tree reads every doc as modified today"
+assert_contains "$OUT_SH0" "honest.md Revised: 2026-01-10 but modified in the working tree" "the failure the seam exists for"
+
+test_start "with the source ref named, a doc identical to the ref's copy anchors on its history"
+assert_not_contains "$OUT_SH" "honest.md Revised:" "stamped 01-10, last changed 01-10 in src"
+
+test_start "and a doc that differs from the ref's copy is still modified now"
+assert_contains "$OUT_SH" "edited.md Revised: 2026-01-10 but modified in the working tree" "the seam does not wash an edit"
+
 # A project that is a SUBDIRECTORY of its repo: git prints history paths from the repo
 # root, and `git show` run from the subdirectory must be asked from the top or the honest
 # restamp comes back as an empty diff and is named (lens round 3).
@@ -821,12 +855,12 @@ if command -v python3 >/dev/null 2>&1; then
   rm -rf "$TEST_TMP/vproj/maude_rules"
 
   # ── a linter that dies is a finding, never a silent clean ───────────────────
-  # The stub answers the maude_python3_ok probe (`python3 -c pass`) and then fails
-  # silently on `-m`, which is the shape of a crashed linter or a broken import. A
+  # The stub answers the maude_python3_ok probe (`python3 -I -c pass`) and then fails
+  # silently on the linter's own launch, the shape of a crashed linter or a broken import. A
   # non-zero exit with no output must never be read as "this file is fine."
   test_start "a linter that exits non-zero with no output is a finding"
   DEADPY="$(make_no_binary_bin python3)"
-  printf '#!/usr/bin/env bash\ncase " $* " in *" -c "*) exit 0 ;; esac\nexit 1\n' > "$DEADPY/python3"
+  printf '#!/usr/bin/env bash\ncase " $* " in *" -c pass "*) exit 0 ;; esac\nexit 1\n' > "$DEADPY/python3"
   chmod +x "$DEADPY/python3"
   printf 'CREATE TABLE t (id INT PRIMARY KEY);\n' > "$TEST_TMP/vproj/bad.sql"
   OUT="$(PATH="$DEADPY" bash "$VERIFY" "$TEST_TMP/vproj" 2>&1)"

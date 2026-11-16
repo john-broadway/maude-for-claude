@@ -49,6 +49,17 @@ CREATE TABLE IF NOT EXISTS voice (
     session  TEXT,
     sha      TEXT UNIQUE                 -- sha256(normalized text|original ts): resumed
 );                                       -- sessions copy history, so dupes collapse here
+CREATE TABLE IF NOT EXISTS voice_flags (    -- a mark on a voice row, never a change to it:
+    sha  TEXT PRIMARY KEY,                     -- the voice row it marks
+    flag TEXT NOT NULL,                        -- 'suggestion_accepted': the harness's
+    ts   REAL,                                 -- suggested prompt, a model's words he
+    why  TEXT                                  -- accepted with a key (John 2026-10-30:
+);                                             -- "flag them, never delete")
+CREATE TABLE IF NOT EXISTS voice_flag_files ( -- the flag pass's own bookkeeping: a
+    path  TEXT PRIMARY KEY,                    -- transcript read whole at this mtime and
+    mtime REAL,                                -- size is not read again until it changes
+    size  INTEGER
+);
 CREATE TABLE IF NOT EXISTS voice_profile (
     id   INTEGER PRIMARY KEY CHECK (id = 1),   -- one row: derived, regenerable, never
     ts   REAL,                                 -- hand-edited; recompute owns it whole
@@ -276,8 +287,14 @@ class Tape:
 
     def _heard(self) -> list[tuple[str, str]]:
         """Every voice row, newest first, whitespace-normalised once."""
-        rows = self._conn.execute("SELECT sha, text FROM voice ORDER BY ts DESC").fetchall()
-        return [(sha, _WS.sub(" ", (t or "").lower()).strip()) for sha, t in rows]
+        from maude_tape.voice import is_machine_turn  # voice imports nothing from here
+        rows = self._conn.execute(
+            "SELECT sha, text FROM voice WHERE sha NOT IN (SELECT sha FROM voice_flags) "
+            "ORDER BY ts DESC").fetchall()
+        # A row that is not his (another session, an agent, a suggestion he accepted) never
+        # stands as the row that heard him.
+        return [(sha, _WS.sub(" ", (t or "").lower()).strip()) for sha, t in rows
+                if not is_machine_turn(t)]
 
     def _find_voice_sha(self, text: str, heard: list[tuple[str, str]] | None = None) -> str | None:
         """The sha of a voice row that carries this text, whitespace-normalised, newest

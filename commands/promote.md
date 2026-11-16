@@ -15,7 +15,7 @@ Run it with no arguments to see the list. Run it with ids to promote those.
 ```bash
 PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 DB="$PROJ/.maude/plugin/tape/tape.db"
-TAPE=(python3 -m maude_tape)
+TAPE=(bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-py.sh" maude_tape)
 [ -f "$DB" ] || { echo "no tape yet at $DB"; exit 0; }
 ```
 

@@ -268,20 +268,15 @@ rules_whisper_touch() {
   esac
 }
 
-# `python3 -m` prepends the CWD to sys.path AHEAD of PYTHONPATH, so a project that
-# happens to carry its own maude_rules/ directory would be the package this runs, and
-# whatever it printed would be spoken as Maude. Two belts, because either one alone
-# has a hole: PYTHONSAFEPATH=1 drops that implicit entry (python 3.11+, the floor
-# below which only the second belt applies), and launching the interpreter from
-# $MAUDE_ROOT makes the implicit entry the plugin's own root even on 3.10 and older.
-# The file must then be named ABSOLUTELY, because the interpreter no longer stands in
-# the directory the path was relative to.
+# Started through MAUDE_PY_BOOT (python3 -I, the plugin root first by name), so a project
+# that carries its own maude_rules/ directory is never the package this runs and nothing
+# it printed is spoken as Maude. The file is named absolutely, as it always was here.
 rules_lint_brief() {  # $1 path → prints the summary after "PATH: " or nothing
   _python_ok || return 0
   [ -f "$1" ] || return 0
   local abs line
   case "$1" in /*) abs="$1" ;; *) abs="$PWD/$1" ;; esac
-  line="$(cd "$MAUDE_ROOT" 2>/dev/null && PYTHONSAFEPATH=1 PYTHONPATH="$MAUDE_ROOT" python3 -m maude_rules schema --brief "$abs" 2>/dev/null | head -1)"
+  line="$(python3 -I -c "$MAUDE_PY_BOOT" "$MAUDE_ROOT" maude_rules schema --brief "$abs" 2>/dev/null | head -1)"
   [ -n "$line" ] || return 0
   printf '%s' "${line#"$abs": }"
 }

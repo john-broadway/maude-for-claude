@@ -468,4 +468,16 @@ if [ -f "$CHORES" ]; then
   [ -n "$CHORE_LINE" ] && printf '  %s\n' "$CHORE_LINE"
 fi
 
+# The Rolodex: rebuild what is on call in this project and say it in one line. A house
+# with no Rolodex store pays this one test.
+if [ -f "$(maude_rolodex_dir)/rolodex.db" ]; then
+  RDX_LINE="$(maude_timeout 4 python3 -I -c "$MAUDE_PY_BOOT" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" \
+    maude_rolodex live --home "$HOME" --project "$(maude_project_dir)" 2>/dev/null | head -1)"
+  case "$RDX_LINE" in
+    "  Rolodex: "*)
+      printf '%s\n' "$RDX_LINE"
+      maude_log_spend "rolodex-live" "$(printf '%s\n' "$RDX_LINE" | wc -c | tr -d ' ')" ;;
+  esac
+fi
+
 exit 0

@@ -1,5 +1,5 @@
-<!-- Version: 0.35.0 -->
-<!-- Revised: 2026-10-12 -->
+<!-- Version: 0.37.0 -->
+<!-- Revised: 2026-11-11 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 ## What does this PR do?

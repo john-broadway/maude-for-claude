@@ -59,11 +59,11 @@ MAP="$SELF/house-map.md"
    ```bash
    DB="$SELF/tape/tape.db"
    # HIS words — pass the authority explicitly, or they queue behind his own permission.
-   [ -f "$DB" ] && python3 -m maude_tape capture "<one line he said>" --db "$DB" \
+   [ -f "$DB" ] && bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-py.sh" maude_tape capture "<one line he said>" --db "$DB" \
      --topic "<short-topic>" --source "session-$(date +%F)" --importance 0.7 \
      --authority user-verbatim
    # What YOU inferred — the default is agent-inference; do not pass the flag.
-   [ -f "$DB" ] && python3 -m maude_tape capture "<one line you noticed>" --db "$DB" \
+   [ -f "$DB" ] && bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-py.sh" maude_tape capture "<one line you noticed>" --db "$DB" \
      --topic "<short-topic>" --source "session-$(date +%F)" --importance 0.7
    ```
 
@@ -79,8 +79,8 @@ MAP="$SELF/house-map.md"
    reports these two numbers, so run the commands rather than estimating them.
 
    ```bash
-   [ -f "$DB" ] && python3 -m maude_tape rest --db "$DB"
-   [ -f "$DB" ] && python3 -m maude_tape pending --db "$DB"
+   [ -f "$DB" ] && bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-py.sh" maude_tape rest --db "$DB"
+   [ -f "$DB" ] && bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-py.sh" maude_tape pending --db "$DB"
    ```
 
 3. **Close-the-loop check** — for each watched-list entry touched this session:

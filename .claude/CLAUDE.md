@@ -1,7 +1,7 @@
 # CLAUDE.md — Maude for Claude
 
-> **Version:** 0.35.0
-> **License:** Apache 2.0, Copyright John Broadway
+> **Version:** 0.37.0
+> **License:** AGPL-3.0-or-later, Copyright John Broadway (Apache-2.0 through v0.35.0)
 
 ## What Maude Is
 
@@ -24,7 +24,7 @@ No baggage — no bundled databases, no vector stores, no backend, no daemons, n
 ├── plugin.json (manifest; the canonical version)
 └── marketplace.json (single-plugin local marketplace)
 
-commands/    — 16 slash commands (markdown)
+commands/    — 17 slash commands (markdown)
 agents/      — partner subagent (markdown)
 skills/      — broad-trigger skill (markdown)
 hooks/       — 8 lifecycle events + scripts
@@ -40,6 +40,8 @@ hooks/       — 8 lifecycle events + scripts
 | `~/.claude/maude/identity.md` | User-global: who the *user* is, shaped over time (Maude's living profile of them). |
 | `~/.claude/maude/patterns.md` | User-global: cross-project patterns about Claude. |
 | `~/.claude/maude/projects.json` | User-global: light index of walked workspaces. |
+| `~/.claude/maude/rolodex/rolodex.db` | User-global: the Rolodex. Approved pages, the append-only ledger of approve and revoke, and which trades are on call in which project. Written only by the user's own approve and revoke lines and the session-start rebuild. |
+| `~/.claude/maude/rolodex/pending/` | User-global: Rolodex pages Claude drafted, waiting for the user's read. The only place in the Rolodex Claude's tools may write. |
 | `~/.claude/maude/letter-from-maude.md` | User-global: Maude's letter to her next self — tone and judgment. At `/maude:rest` the prior letter is archived to a dated copy, then this one is rewritten; read on wake. |
 
 ## Locked Decisions
@@ -52,8 +54,9 @@ These are NOT up for debate — decided by John Broadway:
 4. **The plugin is the whole product.** Nothing installed via `pip`, no daemons, no services. Markdown, JSON, bash — and, since the vault floor (John's ruling, 2026-07-13), **python3 stdlib only**: no third-party imports, ever. If a feature needs `pip install`, it doesn't ship.
 5. **No baggage** — no required external services, no proper-noun references to specific apps. She keeps local SQLite stores — all stdlib, all local, all deletable, and **none is an external dependency**:
    - `.maude/plugin/vault.db` — a **disposable index**, rebuilt from the user's own markdown each session, deletable with zero loss. The markdown stays the canon.
+   - `~/.claude/maude/rolodex/rolodex.db` — the **Rolodex** (added 2026-11-10, John's ruling: *"yes on 2"*): a **durable, box-wide** store of the pages the user approved, one per trade: who in the house to call for a kind of work, and the one line she says. A second durable store of conclusions beside the tape, by his word. Stdlib SQLite, no daemon, deletable; the pages are plain text the user reads before approving.
    - `.maude/plugin/tape/tape.db` — the **tape** (added 2026-07-17): a **primary durable store** — the user's verbatim words, rejected phrasings, and supersession history that markdown-as-canon kept losing. Durable, *not* disposable; still stdlib SQLite, no daemon, no external service, deletable. Semantic recall is opt-in **BYO** (an injected embedder); the plugin ships no embedding service and no default endpoint. The tape runs fully on sqlite alone — the embedder is only borrowed when the home already has one.
-6. **She walks fresh** — each session re-reads the workspace; doesn't carry assumptions across sessions. (The vault doesn't change this: it's an index OF the walk's sources, rebuilt fresh, not a cache of conclusions.)
+6. **She walks fresh** — each session re-reads the workspace; doesn't carry assumptions across sessions. (The vault doesn't change this: it's an index OF the walk's sources, rebuilt fresh, not a cache of conclusions. The Rolodex is the user's own approved cards, not her conclusions: what is on call is re-checked against the house at every session start.)
 
 ## Development
 

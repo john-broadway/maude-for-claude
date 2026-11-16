@@ -27,9 +27,15 @@ Capture the full output. Then:
    whole point of the ritual:
    - **Parked** — the script already separates these (a `.parked` file named
      them). Deliberate. Never nag about a parked item.
-   - **Likely value** — unpushed commits, LOCAL-ONLY repos, uncommitted files
-     in active projects. These are coins: name them plainly and say what would
-     bank each one (a push, a commit, a `.parked` marker).
+   - **Likely value** — unpushed commits (the line carries the oldest one's
+     date: a month unpushed is not an hour), LOCAL-ONLY repos, uncommitted
+     files in active projects. These are coins: name them plainly and say what
+     would bank each one (a push, a commit, a `.parked` marker).
+   - The walk starts at the project. A repo that lives outside every project
+     (a box's git-hooks dir, a dotfiles checkout) is flipped only if its root is
+     named, one per line, in `~/.claude/maude/cushion-roots`, or in
+     `MAUDE_CUSHION_ROOTS` (colon-separated). A root that does not exist is
+     skipped.
    - **Likely lint** — aging scratch with no obvious owner. Candidates for the
      trash, but see the hard rule.
 3. **Recommend a `.parked` marker** for anything the user says is deliberate,

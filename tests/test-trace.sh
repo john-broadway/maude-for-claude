@@ -149,6 +149,37 @@ printf '%s' "$SPEND_INPUT" | PATH="$SEDCOUNT:$PATH" bash "$TRACE_HOOK" >/dev/nul
 [ "$(sed_forks)" -gt "$BASE_SED" ]
 assert_exit "$?" "0" "the walk forked sed $(sed_forks) times against ${BASE_SED} ungated"
 assert_eq "$(jq -r '.gate_cleared["git-push"].until // "absent"' "$TEST_TMP/.maude/plugin/care.json")" "absent" "and the token was spent"
+# ── a skill or agent call leaves its name, never its arguments (the Rolodex counts calls) ──
+tgt() { printf '%s' "$1" | bash "$TRACE_HOOK" event >/dev/null 2>&1; tail -1 "$(trace_path)" | jq -r '.target // "null"'; }
+
+test_start "a Skill call leaves the skill's name, never its args"
+T="$(tgt '{"hook_event_name":"PostToolUse","tool_name":"Skill","tool_input":{"skill":"handyman:mend","args":"SECRET WORDS"}}')"
+assert_eq "$T" "handyman:mend" "skill name"
+assert_not_contains "$(cat "$(trace_path)")" "SECRET" "no args"
+
+test_start "an Agent call leaves the subagent type, never the prompt"
+T="$(tgt '{"hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"subagent_type":"Explore","prompt":"PROMPTWORDS"}}')"
+assert_eq "$T" "Explore" "agent type"
+assert_not_contains "$(cat "$(trace_path)")" "PROMPTWORDS" "no prompt"
+
+test_start "a Task call leaves the subagent type too"
+assert_eq "$(tgt '{"hook_event_name":"PostToolUse","tool_name":"Task","tool_input":{"subagent_type":"reviewer"}}')" "reviewer" "task type"
+
+test_start "an Agent call with no subagent type leaves null"
+assert_eq "$(tgt '{"hook_event_name":"PostToolUse","tool_name":"Agent","tool_input":{"prompt":"x"}}')" "null" "null"
+
+test_start "a Read still leaves its file path"
+assert_eq "$(tgt '{"hook_event_name":"PostToolUse","tool_name":"Read","tool_input":{"file_path":"/a b/x.md"}}')" "/a b/x.md" "path"
+
+test_start "a name with a quote, a newline and a long tail is cut to a safe 128-char name"
+LONG="$(printf 'a%.0s' $(seq 1 200))"
+T="$(tgt "$(jq -nc --arg s "x\"y
+z$LONG" '{hook_event_name:"PostToolUse", tool_name:"Skill", tool_input:{skill:$s}}')")"
+assert_eq "${#T}" "128" "capped at 128"
+case "$T" in *[!A-Za-z0-9:_.@/-]*) _fail "only safe characters: got $T" ;; *) _pass "only safe characters" ;; esac
+tail -1 "$(trace_path)" | jq -e . >/dev/null 2>&1
+assert_exit "$?" "0" "the row still parses"
+
 rm -f "$TEST_TMP/.maude/plugin/care.json"
 
 print_summary

@@ -36,7 +36,8 @@ Patterns to surface:
 4. **Topic recurrence across sessions** — what keeps coming back?
 5. **Save gaps** — sessions where the user worked > 2 hours without a /maude:save
 6. **Tool-use drift** — has Claude been doing more grep and less read? More bash and less skill calls? Suggest reasons.
-7. **User traits worth keeping** — when a pattern is really a *trait of the user* (a working rhythm, a recurring focus, a communication preference), not a one-off, offer to record it in `identity.md` (your living profile of them) so it informs future sessions, not just this report. Observed only, never invented.
+7. **A Rolodex trade cued and not called** — run `bash "$CLAUDE_PLUGIN_ROOT/scripts/maude-rolodex.sh" tally --notice`. It prints one trade per line: each was cued and its pick not called three sessions running. For each, say so plainly, and that either the habit or the page is wrong: a trade nobody calls may be a bad card. A reading, not a verdict.
+8. **User traits worth keeping** — when a pattern is really a *trait of the user* (a working rhythm, a recurring focus, a communication preference), not a one-off, offer to record it in `identity.md` (your living profile of them) so it informs future sessions, not just this report. Observed only, never invented.
 
 ## Format — pattern + proposed action (curative, not just observational)
 

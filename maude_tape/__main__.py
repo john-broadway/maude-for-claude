@@ -14,6 +14,7 @@ import json
 import os
 import sqlite3
 import sys
+import time
 
 from .tape import Tape, _score, looks_secretish
 
@@ -143,13 +144,31 @@ def main(argv: list[str] | None = None) -> int:
     pf = sub.add_parser("profile")
     pf.add_argument("--db", required=True)
 
+    fl = sub.add_parser("voice-flag")   # mark a suggestion he accepted; never delete
+    fl.add_argument("--db", required=True)
+    fl.add_argument("--transcripts", required=True)
+    fl.add_argument("--since", type=float, default=0.0,
+                    help="read only transcripts changed after this epoch")
+    fl.add_argument("--budget", type=float, default=None,
+                    help="start no new transcript after this many seconds")
+
     vc = sub.add_parser("voice-capture")   # the silent hook path: one line on stdin
     vc.add_argument("--db", required=True)
     vc.add_argument("--source", default="hook")
     vc.add_argument("--register", default="chat")
     vc.add_argument("--session", default=None)
 
+    sub.add_parser("embed-probe")  # the house's embedder as JSON, or nothing; opens no tape
+
     args = parser.parse_args(argv)
+    if args.cmd == "embed-probe":
+        from maude_tape import embedder
+        raw = os.environ.get("MAUDE_EMBED_PROBE_PORTS")  # tests point it away from the house's
+        ports = tuple(int(x) for x in raw.split(",") if x.strip().isdigit()) if raw is not None else embedder.PROBE_PORTS
+        found = embedder.discover(ports)
+        if found:
+            print(json.dumps(found, sort_keys=True))
+        return 0
     try:
         # voice-capture is an observer on the prompt's critical path: it gets a short
         # lock wait so a busy tape costs milliseconds, not the default five seconds.
@@ -263,14 +282,24 @@ def main(argv: list[str] | None = None) -> int:
             "SELECT id, text, authority, ts, voice_sha, source, topic FROM canon "
             "WHERE superseded_by IS NULL ORDER BY id").fetchall()
 
+        flagged = {s for (s,) in tape._conn.execute("SELECT sha FROM voice_flags")}
+        # A canon line points at ONE voice row; if he also typed the same words in a row that
+        # is not flagged, the words are his and no label is due ("fix as you find own as you
+        # go" pointed at an accepted instance of a line he has typed many times).
+        typed_too = {" ".join((t or "").lower().split()) for (t,) in tape._conn.execute(
+            "SELECT text FROM voice WHERE sha NOT IN (SELECT sha FROM voice_flags)")} if flagged else set()
+
         def line(text, authority, ts, sha):
             # Each row carries its date, so two rulings on one topic can be ranked, and a
             # verbatim row the tape never heard him type says so (the memory lens, 2026-09-06).
             # Only user-verbatim wears the plain bullet; everything else names its authority.
+            # A row whose voice line was a suggestion he accepted says so, never hidden.
             authority = authority or "agent-inference"
             if authority == "user-verbatim":
-                return (f"  • {_one_line(text)}{_when(ts)}"
-                        f"{'' if sha else '  [unverified: no voice row holds it]'}")
+                mark = ("  [unverified: no voice row holds it]" if not sha else
+                        "  [flagged: a suggested prompt he accepted]"
+                        if sha in flagged and " ".join(text.lower().split()) not in typed_too else "")
+                return f"  • {_one_line(text)}{_when(ts)}{mark}"
             return f"  ◦ {_one_line(text)}  [{authority}]{_when(ts)}"
 
         # WHO I AM: one copy per (text, authority), the NEWEST, in the order the rows were
@@ -341,15 +370,26 @@ def main(argv: list[str] | None = None) -> int:
         except Exception:
             waiting = 0
         pending_line = f"\n{waiting} awaiting your word — see them with /maude:promote" if waiting else ""
+        # A stale profile is said here, once it is over a week old: rest recomputes it every
+        # SessionEnd, so an old one means rest stopped, and nothing else would say so (it sat
+        # ten weeks stale until 2026-10-25). Same observer discipline: a read error costs the line.
+        try:
+            prow = tape._conn.execute("SELECT ts FROM voice_profile WHERE id = 1").fetchone()
+            age = int((time.time() - prow[0]) // 86400) if prow and prow[0] else 0
+        except Exception:
+            age = 0
+        if age > 7:
+            pending_line += f"\nvoice profile is {age} days old: rest has not recomputed it"
         # Reserve exactly what prints after the rows: the two section headers, the footer at
         # its widest (both counts at their totals), and the pending line. A flat 200 ran 50
         # bytes over on the live tape, whose footer carries a long db path.
         # The command is handed to a person at a prompt, and the package is never installed:
         # bare `python3 -m maude_tape` works only with the plugin root on PYTHONPATH, which
         # the hooks set and a shell does not. "No module named maude_tape" from the canonical
-        # workspace root (John, 2026-09-29). The hint carries its own path.
-        full_cmd = (f"PYTHONPATH={os.path.dirname(os.path.dirname(os.path.abspath(__file__)))} "
-                    f"python3 -m maude_tape wake --full --db {args.db}")
+        # workspace root (John, 2026-09-29). The hint carries its own path, through the
+        # plugin's launcher, which imports nothing from the directory it is run in.
+        full_cmd = (f"bash {os.path.dirname(os.path.dirname(os.path.abspath(__file__)))}"
+                    f"/scripts/maude-py.sh maude_tape wake --full --db {args.db}")
         footer_max = (f"\n{len(his)} more of his words and {len(ours)} more approved lines stay on "
                       f"the tape: {full_cmd}")
         # Header comment: CLAUDE'S WORDING deliberately does NOT contain the substring "HIS
@@ -435,7 +475,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"check: {args.text!r} is an existing PATH, not a draft. The gate grades the "
                   f"positional argument as TEXT, so this would have graded the path string "
                   f"and passed. Pipe the file instead: "
-                  f"python3 -m maude_tape check --db <db> < {args.text}", file=sys.stderr)
+                  f"bash {os.path.dirname(os.path.dirname(os.path.abspath(__file__)))}"
+                  f"/scripts/maude-py.sh maude_tape check --db <db> < {args.text}", file=sys.stderr)
             return 3
         draft = _read(args.text)
         if not draft.strip():
@@ -456,7 +497,8 @@ def main(argv: list[str] | None = None) -> int:
                 row = tape._conn.execute("SELECT ts FROM voice_profile WHERE id = 1").fetchone()
                 profile_ts = row[0] if row else None
                 (newer,) = tape._conn.execute(
-                    "SELECT COUNT(*) FROM voice WHERE ts > ?", (profile_ts or 0,)).fetchone()
+                    "SELECT COUNT(*) FROM voice WHERE ts > ? "
+                    "AND sha NOT IN (SELECT sha FROM voice_flags)", (profile_ts or 0,)).fetchone()
                 for line in voice.voice_report_lines(draft, profile, profile_ts=profile_ts,
                                                      newer_rows=newer):
                     print(line)
@@ -588,6 +630,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "profile":
         from . import voice
         return voice.cmd_profile(args, tape)
+
+    if args.cmd == "voice-flag":
+        from . import voice
+        return voice.cmd_flag(args, tape)
 
     if args.cmd == "voice-capture":
         from . import voice

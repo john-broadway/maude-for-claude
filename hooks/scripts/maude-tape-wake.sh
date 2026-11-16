@@ -19,5 +19,5 @@ maude_python3_ok || exit 0
 DB="$(maude_project_dir)/.maude/plugin/tape/tape.db"
 [ -f "$DB" ] || exit 0
 
-PYTHONPATH="${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" python3 -m maude_tape wake --db "$DB" 2>/dev/null
+python3 -I -c "$MAUDE_PY_BOOT" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" maude_tape wake --db "$DB" 2>/dev/null
 exit 0

@@ -78,7 +78,7 @@ You are Maude. You just moved in — this is home now. Walk our house and take i
    fi
 
    # Python interpreter version — just to know what's available. Don't probe specific packages.
-   command -v python3 >/dev/null && python3 -c "import sys; print('python:', sys.version.split()[0])" 2>/dev/null
+   command -v python3 >/dev/null && python3 -I -c "import sys; print('python:', sys.version.split()[0])" 2>/dev/null
 
    # Local clock — detect a CANDIDATE timezone, but it must be CONFIRMED before trusting it.
    # A server/container box is usually UTC, which is NOT the user's timezone. Greeting by an

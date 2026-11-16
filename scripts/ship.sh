@@ -103,7 +103,21 @@ audit_staged() {
   p_paths="${p_paths}|claude-scr"; p_paths="${p_paths}atch"
   local p_infra='\.bf'; p_infra="${p_infra}f\.lan|gite"; p_infra="${p_infra}a@"
   local p_key='BEGIN[A-Z ]*PRIVATE KEY'
-  local p_cred='(sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[abprs]-|AKIA|AIza)[A-Za-z0-9_-]{8,}'
+  # A credential prefix is read at a word boundary: without one, `task-notification`
+  # matched as `sk-` plus twelve characters (release 0.36.0, the audit's first run
+  # against the house's own fixtures).
+  local p_cred='(^|[^A-Za-z0-9_-])(sk-|ghp_|gho_|ghu_|ghs_|github_pat_|xox[abprs]-|AKIA|AIza)[A-Za-z0-9_-]{8,}'
+  # Loopback and the RFC 5737 documentation ranges cannot be a leak, and they sit in
+  # shipped code (the embedder knocks on the loopback) and docs; the box's pre-push guard
+  # exempts the same two classes. They are STRIPPED from each added line before the
+  # match, not exempted as a pattern, so a real address beside one still fires. Only a
+  # whole address is stripped: not glued to a digit, a dot or a word character on its left,
+  # and on its right only a non-digit, the line end, or one dot that ends a sentence (the
+  # fifth lens on the release: the greedy last octet ate a glued real address's first,
+  # a documentation address with a real one glued on passed; a glued token lost its last characters). Run twice, since
+  # each match takes the separator after it and an adjacent second address needs it.
+  # Assembled like the patterns above: the rail must ship itself.
+  local p_doc='127\.'; p_doc="${p_doc}[0-9]+\.[0-9]+\.[0-9]+|192\.0\."; p_doc="${p_doc}2\.[0-9]+|198\.51\."; p_doc="${p_doc}100\.[0-9]+|203\.0\."; p_doc="${p_doc}113\.[0-9]+"
   local pats="$p_ip|$p_paths|$p_infra|$p_key|$p_cred"
   local f bad=0 hits
   # -z + read -d '': raw NUL-delimited paths. Without this, git quotes
@@ -119,7 +133,7 @@ audit_staged() {
       continue
     fi
     hits="$(git diff --cached "$PUB/main" --unified=0 -- "$f" 2>/dev/null \
-      | grep '^+' | grep -v '^+++' | grep -cE "$pats")"
+      | grep '^+' | grep -v '^+++' | sed -E "s/(^|[^0-9A-Za-z_.-])($p_doc)(\\.?([^0-9.]|\$))/\\1<doc-address>\\3/g; s/(^|[^0-9A-Za-z_.-])($p_doc)(\\.?([^0-9.]|\$))/\\1<doc-address>\\3/g" | grep -cE "$pats")"
     if [ "${hits:-0}" -gt 0 ]; then
       printf 'ship: LEAK SHAPE — %s: %s added line(s) match guard patterns\n' "$f" "$hits" >&2
       bad=1
@@ -183,7 +197,10 @@ cmd_build() {
     # box could show (PRs #80, #81). A ship never reaches the public leg without it.
     make mac-shape || die "gate failed: make mac-shape (the macOS-shaped suite)"
     make lint  || die "gate failed: make lint"
-    make verify || die "gate failed: make verify"
+    # The staged tree came from $SRC onto a branch off public main, so every doc reads as
+    # modified today; verify reads a doc identical to $SRC's copy on $SRC's history instead
+    # (a build that crossed midnight UTC failed twelve honest stamps, v0.36.0).
+    MAUDE_VERIFY_SOURCE_REF="$SRC" make verify || die "gate failed: make verify"
   fi
 
   if git diff --cached --quiet "$PUB/main"; then
@@ -202,8 +219,16 @@ cmd_build() {
   # build, and the next build drew from the source ref that never had it — TWICE, the
   # second time with the warning printed and quoted. A warning is a diary; leaving the
   # working tree in a safe state is a rail. `open` checks the branch out itself.
-  git checkout -q "$SRC" 2>/dev/null || printf 'ship: WARNING could not return to %s\n' "$SRC" >&2
-  printf '\nship: back on %s. The ship branch %s is built and waiting.\n' "$SRC" "$branch"
+  # A source ref checked out in another worktree cannot be checked out here (the v0.36.0
+  # public build, 2026-11-08: the warning printed, then "back on <ref>" printed anyway,
+  # with this checkout still on the ship branch). Fall back to the branch the build
+  # started on, and the last line names the branch HEAD is actually on, read after.
+  if ! git checkout -q "$SRC" 2>/dev/null; then
+    printf 'ship: could not return to %s (another worktree may hold it); returning to %s\n' "$SRC" "$SHIP_ORIG_BRANCH" >&2
+    git checkout -q "$SHIP_ORIG_BRANCH" 2>/dev/null \
+      || printf 'ship: WARNING could not return to %s either\n' "$SHIP_ORIG_BRANCH" >&2
+  fi
+  printf '\nship: back on %s. The ship branch %s is built and waiting.\n' "$(git rev-parse --abbrev-ref HEAD)" "$branch"
   printf 'ship: work stays here; `open` moves you to the ship branch when you need it.\n'
 }
 

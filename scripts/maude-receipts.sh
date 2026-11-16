@@ -131,6 +131,12 @@ else
       end
   ')"
   [ -n "$COST" ] && printf '%s\n' "$COST"
+
+  # The Rolodex: how often a cued pick was then called, over the same window. A reading,
+  # not a verdict; no line when nothing was cued.
+  RDX="$(python3 -I -c "$MAUDE_PY_BOOT" "$DIR/.." maude_rolodex tally --home "$HOME" \
+    --project "$(maude_project_dir)" ${CUTOFF:+--since "$CUTOFF"} 2>/dev/null)"
+  case "$RDX" in "cued 0,"*|"") ;; "cued "*) printf '\nRolodex: %s\n' "$RDX" ;; esac
 fi
 
 if [ -f "$LEDGER" ]; then

@@ -20,13 +20,20 @@ You are Maude. The user wants to wake up — get oriented, see what's pending, h
 PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 SLUG="$(printf %s "$PROJ" | sed 's/[^a-zA-Z0-9]/-/g')"
 MEM="$HOME/.claude/projects/$SLUG/memory"
-SELF="$PROJ/.maude/plugin"
 USER_DIR="$HOME/.claude/maude"
 REMEMBER="$PROJ/.remember"
-MAP="$SELF/house-map.md"
 ```
 
-1. **House-map check.** Look at `$MAP`. If missing or > 7 days stale, suggest `/maude:found` first; otherwise read it.
+Her closet is `<project>/.maude/plugin/` (the house-map, `trace/`, the care files). **Read it
+by its literal path, one read per call, with no `$(…)` or `${X:-…}` in the same command.**
+The red-clear gate refuses, unread, any command that spells `.maude` beside an
+expansion it cannot fold (that is the rule that keeps the token file the account owner's
+hand; it reads your ritual the same as anything else). So: `cat <project>/.maude/plugin/house-map.md`
+in one call; `ls -t <project>/.maude/plugin/trace/ | head -1` in another; then `tail -n 30`
+of the file it named, spelled out. Never `f=$(ls …trace/*.jsonl | head -1)` and never
+a closet path under a variable set from `$(pwd)` in the same call.
+
+1. **House-map check.** Look at the house-map, `<project>/.maude/plugin/house-map.md`, by its literal path. If missing or > 7 days stale, suggest `/maude:found` first; otherwise read it.
 2. **Recall from every source the map lists** (`## Memory sources`). Don't hard-code paths —
    read what's registered. For each entry, apply the **read-side tier gate** (Tier 0 always;
    Tier 1 only if marked always-on AND `tier1_up` cached; Tier 2 never on wake), then recall
@@ -43,8 +50,8 @@ MAP="$SELF/house-map.md"
      inherits his letters. If it's missing, that's fine; it appears after the first rest.
    - **Fallback if the map is silent:** read the universal sources directly — `.remember/`
      (if present), `$MEM` (if present), `$USER_DIR/patterns.md`.
-3. **Trace check** (if `[ -d "$SELF/trace" ]`):
-   - tail the most recent JSONL — what was Claude doing last
+3. **Trace check** (if the closet has a `trace/` directory):
+   - tail the most recent JSONL — what was Claude doing last (list the dir in one call, tail the named file in the next; see the closet rule above)
    - Surface any repeated tool calls or stuck patterns
 4. **Cheap freshen pass** (if the plugin ships `scripts/maude-freshen.sh` and `$MEM` has `now_*.md` files):
 

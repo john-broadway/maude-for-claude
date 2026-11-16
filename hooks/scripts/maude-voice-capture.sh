@@ -19,7 +19,7 @@
 # maude-secret-scan.sh, maude-page.sh): `jq -r '.prompt // .message // ""'` off
 # the hook's stdin JSON envelope.
 #
-# DB path + PYTHONPATH resolution copy the OTHER `python3 -m maude_tape` callers
+# DB path + plugin-root resolution copy the OTHER maude_tape callers
 # (maude-tape-wake.sh / maude-tape-rest.sh) rather than maude-page.sh's
 # maude_vault convention — same module, same resolution, same fallback for a
 # CLAUDE_PLUGIN_ROOT-less context (tests, `!` bash runs).
@@ -34,7 +34,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
 # No python3 gate here: this fires on EVERY user turn, and the real
-# `python3 -m maude_tape` call below is fully silenced with its failure
+# maude_tape call below is fully silenced with its failure
 # already tolerated — the call is the probe. Session-start names a broken
 # interpreter once.
 command -v jq >/dev/null 2>&1 || exit 0
@@ -51,7 +51,7 @@ SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null)"
 VC_ARGS=(--db "$DB" --source hook --register chat)
 [ -n "$SID" ] && VC_ARGS+=(--session "$SID")
 
-printf '%s' "$PROMPT" | PYTHONPATH="${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" \
-  python3 -m maude_tape voice-capture "${VC_ARGS[@]}" >/dev/null 2>/dev/null
+printf '%s' "$PROMPT" | python3 -I -c "$MAUDE_PY_BOOT" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" \
+  maude_tape voice-capture "${VC_ARGS[@]}" >/dev/null 2>/dev/null
 
 exit 0
