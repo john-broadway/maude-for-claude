@@ -738,11 +738,17 @@ PATH="$NOFLOCK_PATH" command -v flock >/dev/null 2>&1; NF_RC=$?
 assert_eq "$NF_RC" "1" "flock is not on the probe PATH"
 
 test_start "two concurrent care_set writers both land WITHOUT flock (the mkdir fallback locks)"
+# The waiter's bound is raised past any runner's stall: this test asks whether the lock
+# serializes two writers, not whether a loaded runner finishes a 0.3 s hold inside the
+# default 2 s (main went red here on 2026-11-16, ubuntu, [null,1], twice on one commit
+# whose PR runs were green). Each writer's status is kept so a red names which side lost
+# and how: 75 is a waiter that gave up (reported, by design), 0 with a missing key is a
+# write the lock let through and lost.
 printf '{}\n' > "$LOCK_CARE"
-( PATH="$NOFLOCK_PATH" maude_care_set "$LOCK_CARE" '.a = 1' ) &
-( PATH="$NOFLOCK_PATH" maude_care_set "$LOCK_CARE" '.b = 1' ) &
+( PATH="$NOFLOCK_PATH" MAUDE_LOCK_WAIT=10 maude_care_set "$LOCK_CARE" '.a = 1'; echo "$?" > "$TEST_TMP/rc.a" ) &
+( PATH="$NOFLOCK_PATH" MAUDE_LOCK_WAIT=10 maude_care_set "$LOCK_CARE" '.b = 1'; echo "$?" > "$TEST_TMP/rc.b" ) &
 wait
-assert_eq "$(jq -c '[.a, .b]' "$LOCK_CARE")" "[1,1]" "both writes present under the fallback"
+assert_eq "$(jq -c '[.a, .b]' "$LOCK_CARE") a=$(cat "$TEST_TMP/rc.a") b=$(cat "$TEST_TMP/rc.b")" "[1,1] a=0 b=0" "both writes present under the fallback, each writer's status 0"
 assert_file_absent "$LOCK_CARE.lock.d" "the fallback's lock dir is released"
 
 # The wait is BOUNDED since 2026-09-25 (MAUDE_LOCK_WAIT, default 2 s): the waiter used to

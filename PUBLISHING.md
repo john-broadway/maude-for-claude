@@ -123,7 +123,7 @@ git push github vX                  # 0-commit tag push — classifier-allowed
 ### 5. Sweep the satellites (Section B) — `gh api` contents PUT (classifier-allowed)
 For each satellite file: fetch content+sha, apply the version edit(s), `gh api --method PUT
 .../contents/<path>` with the new base64 content + sha. (A small helper:
-`scripts/check-satellites.sh` greps the live satellites for an expected version.)
+`scripts/check-satellites.sh <version>` checks the live satellites: Maude's license line from plugin.json, the command count on her page, and no old version.)
 
 ### 6. Verify — run it like an end-user
 Grep **every** surface (repo on `github` + the satellites) for the **old** version. Expect zero,
