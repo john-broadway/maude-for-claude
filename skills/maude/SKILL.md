@@ -77,10 +77,11 @@ The six mechanics underneath:
 <project>/.remember/                 ← remember plugin (if installed) — she READS
                                        all of: now.md, today-*.md, recent.md,
                                        archive.md, core-memories.md, remember.md.
-                                       She WRITES only `remember.md` (the agent-handoff
-                                       file remember explicitly leaves for agents).
-                                       She does NOT touch the other files —
-                                       those are remember's pipeline output.
+                                       She WRITES nothing there: the store is the
+                                       remember plugin's own (its /remember writes
+                                       the handoff, its pipeline the rest). With its
+                                       data_dir set it lives outside the project;
+                                       she follows it (maude_remember_dir).
 
 Anything else the user keeps at their own paths (custom vaults, journals,
 decisions logs, notes dirs)          ← stay where they are. She writes through
@@ -110,7 +111,7 @@ timezone: <none>
 
 ## Memory sources (tier-classified, populated by /maude:found)
 - anthropic-auto-memory | tier: 0 | shape: markdown | path: ~/.claude/projects/<slug>/memory/ | recall: grep+cat | write: digest-fanout (now.md, today-*.md, recent.md)
-- remember-plugin       | tier: 0 | shape: markdown | path: <project>/.remember/ | recall: grep+cat | write: handoff-only (remember.md)
+- remember-plugin       | tier: 0 | shape: markdown | path: <project>/.remember/ | recall: grep+cat | write: read-only (the remember plugin's own store)
 - maude-self            | tier: 0 | shape: markdown | path: <project>/.maude/plugin/ | recall: grep+cat | write: full
 - user-global           | tier: 0 | shape: markdown | path: ~/.claude/maude/ | recall: grep+cat | write: full (patterns.md, identity.md, projects.json, letter-from-maude.md)
 - (everything else discovered on the walk — paths, shapes, and what the user told her about each — goes here as flat entries the user can edit)
@@ -157,14 +158,14 @@ The map is editable. The user can add notes, remove things, correct her. She re-
 
 `write:` is not a description — it is the **instruction** save/rest obey for that source.
 It leads with **one token** from the fixed vocabulary below; free prose may follow as an
-annotation (e.g. `handoff-only (remember.md)`). The writers read the leading token and act
+annotation (e.g. `read-only (the remember plugin's own store)`). The writers read the leading token and act
 on it. Because the map is editable, changing a source's token *changes what save/rest do* —
 that is the point: the map governs, not hard-coded paths.
 
 | Token | What save/rest do | Typical source |
 |---|---|---|
 | `digest-fanout` | Pipe the digest (first line `## TIME \| topic`) to `scripts/maude-now-write.sh`: it appends the block to `today-<date>.md` and one line to `recent.md`, then makes `now.md` that one block. Never write `now.md` by hand. Written for next-session **Claude's continuity** — not as Maude's own store. | anthropic-auto-memory |
-| `handoff-only` | Write ONLY the source's single handoff file (e.g. `remember.md`) in its handoff format. **Never** touch any other file in that dir — pipeline output belongs to the owning system. | remember-plugin |
+| `handoff-only` | **Never written** (since 2026-11-11). The remember plugin's store is that plugin's own; its `/remember` writes the handoff. Kept as a token so an old map still parses; read as read-only. | remember-plugin |
 | `full` | Maude owns this store — write any of her own files freely. | maude-self, user-global |
 | `read-only` | Recall only. Never write. | user dirs marked read-only |
 | `secret-deny` | Never write, never echo contents; read only on explicit typed ask. | secrets / credential vaults |
@@ -182,7 +183,7 @@ guess an action from an unknown token — fail safe (no write), fail loud (named
 - **Map present + source listed** → the map wins, period (tier gate × token).
 - **Map absent, OR a universal source not listed** → documented defaults only:
   - Anthropic auto-memory (`$MEM`) if the dir exists → `digest-fanout`
-  - `.remember/remember.md` if `.remember/` exists → `handoff-only`
+  - the remember plugin's store is never a save destination
 
 Defaults fire ONLY when the map says nothing — so a fresh project with no walk still saves,
 but an edited map is never overridden by hard-code. These are the two universal conventions

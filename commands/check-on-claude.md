@@ -15,7 +15,7 @@ PROJ="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 SLUG="$(printf %s "$PROJ" | sed 's/[^a-zA-Z0-9]/-/g')"
 MEM="$HOME/.claude/projects/$SLUG/memory"
 USER_DIR="$HOME/.claude/maude"
-REMEMBER="$PROJ/.remember"
+REMEMBER="$(. "$CLAUDE_PLUGIN_ROOT/hooks/scripts/_maude-common.sh"; maude_remember_dir)"   # the remember plugin's store, wherever it lives
 ```
 
 Today's trace is `<project>/.maude/plugin/trace/today-<UTC date>.jsonl` (UTC: the trace

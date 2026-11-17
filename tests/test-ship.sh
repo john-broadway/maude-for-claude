@@ -273,6 +273,187 @@ else
   _fail "expected a recovery hint on failed build: $(printf '%s' "$OUT" | head -c 300)"
 fi
 
+# ── gate order, through the make seam (2026-11-16, the fast rail) ────────
+# The cheap gates run first: on 2026-11-16 a stale Revised stamp (make verify) stopped a
+# build an hour in, after both suites. A fake make logs the targets it is asked for.
+FAKEMK="$TEST_TMP/fakemake"; MKLOG="$TEST_TMP/mk.log"; export MKLOG
+printf '#!/usr/bin/env bash\nprintf "%%s%%s%%s\\n" "$1" "${MAUDE_SMOKE_SEPARATE:+ sep=$MAUDE_SMOKE_SEPARATE}" "${MAUDE_TEST_JOBS:+ jobs=$MAUDE_TEST_JOBS}" >> "$MKLOG"\n[ "$1" = "${MK_FAIL_ON:-}" ] && exit 1\nexit 0\n' > "$FAKEMK"
+chmod +x "$FAKEMK"
+FAKESMOKE="$TEST_TMP/fakesmoke"
+printf '#!/usr/bin/env bash\nprintf "smoke %%s%%s\\n" "$2" "${MAUDE_TEST_JOBS:+ jobs=$MAUDE_TEST_JOBS}" >> "$MKLOG"\nexit 0\n' > "$FAKESMOKE"
+chmod +x "$FAKESMOKE"
+
+test_start "build runs lint and verify first; a verify red stops it before any suite"
+git checkout -q main
+: > "$MKLOG"
+OUT="$(MK_FAIL_ON=verify SHIP_MAKE="$FAKEMK" SHIP_BRANCH=tg1 bash "$SHIP" build 2>&1)"; RC=$?
+git checkout -qf main; git branch -qD tg1 2>/dev/null
+assert_ne "$RC" "0" "the verify red stops the build"
+assert_eq "$(tr '\n' ' ' < "$MKLOG")" "lint verify " "lint and verify ran, and nothing after them"
+
+test_start "a green build still runs lint and verify before the suites"
+: > "$MKLOG"
+OUT="$(SHIP_MAKE="$FAKEMK" SHIP_SMOKE="$FAKESMOKE" SHIP_BRANCH=tg2 bash "$SHIP" build 2>&1)"; RC=$?
+git checkout -qf main; git branch -qD tg2 2>/dev/null
+assert_eq "$RC" "0" "green build: $OUT"
+assert_eq "$(head -2 "$MKLOG" | tr '\n' ' ')" "lint verify " "the first two gates"
+
+test_start "build runs test-py, the smoke on the staged tree, then the shaped pass without a nested smoke"
+# 2026-11-16: a build ran the whole fleet about four times (make test, its smoke, make
+# mac-shape, its smoke), and its smoke archived public main. Now: one fleet per shape, and
+# the smoke is handed the exact tree the build commits.
+: > "$MKLOG"
+OUT="$(SHIP_MAKE="$FAKEMK" SHIP_SMOKE="$FAKESMOKE" SHIP_BRANCH=tg3 bash "$SHIP" build 2>&1)"; RC=$?
+TREE3="$(git rev-parse "tg3^{tree}" 2>/dev/null)"
+git checkout -qf main; git branch -qD tg3 2>/dev/null
+assert_eq "$RC" "0" "green: $OUT"
+assert_eq "$(tr '\n' '|' < "$MKLOG")" "lint|verify|test-py|smoke $TREE3 jobs=8|mac-shape sep=1 jobs=6|" "gates, in order, on the shipped tree"
+
+# ── preflight: the cheap gates on the shipping tree, before an hour is spent ──
+test_start "preflight runs audit, lint and verify on the staged tree and reports each, red or not"
+git checkout -q main
+: > "$MKLOG"
+OUT="$(MK_FAIL_ON=lint SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+assert_ne "$RC" "0" "a red gate fails preflight"
+assert_contains "$OUT" "preflight: audit ok" "audit reported"
+assert_contains "$OUT" "preflight: lint RED" "lint reported red"
+assert_contains "$OUT" "preflight: verify ok" "verify still ran after the red"
+assert_contains "$OUT" "committed only" "it says it reads the committed source, not uncommitted work"
+assert_eq "$(tr '\n' ' ' < "$MKLOG")" "lint verify " "only the cheap gates: no suite"
+
+test_start "preflight is green when all three are, and catches a leak the build would"
+OUT="$(SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+assert_eq "$RC" "0" "green: $OUT"
+printf 'box at %s\n' "$QUAD" > leakpf.md
+git add leakpf.md && git commit -qm "plant a leak"
+OUT="$(SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_ne "$RC" "0" "the leak fails preflight"
+assert_contains "$OUT" "preflight: audit RED" "and it is the audit that says so"
+
+test_start "preflight leaves the author's checkout, branch, index and dirty files as found"
+git checkout -q main
+printf 'wip\n' > untracked-wip.txt
+printf 'changed\n' >> README.md
+BEFORE="$(git status --porcelain)|$(git rev-parse --abbrev-ref HEAD)|$(git rev-parse HEAD)"
+WT_BEFORE="$(git worktree list | wc -l | tr -d ' ')"
+SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight >/dev/null 2>&1
+AFTER="$(git status --porcelain)|$(git rev-parse --abbrev-ref HEAD)|$(git rev-parse HEAD)"
+assert_eq "$AFTER" "$BEFORE" "status, branch and HEAD unchanged"
+assert_eq "$(git worktree list | wc -l | tr -d ' ')" "$WT_BEFORE" "no worktree left behind"
+assert_eq "$(git branch --list 'ship-*' | wc -l | tr -d ' ')" "0" "no ship branch made"
+rm -f untracked-wip.txt; git checkout -q -- README.md
+
+test_start "preflight interrupted removes its worktree"
+SLOWMK="$TEST_TMP/slowmake"
+printf '#!/usr/bin/env bash\n[ "$1" = lint ] && sleep 30\nexit 0\n' > "$SLOWMK"; chmod +x "$SLOWMK"
+WT_BEFORE="$(git worktree list | wc -l | tr -d ' ')"
+# Its own process group (set -m), or a background job of this non-interactive shell starts
+# with SIGINT ignored and the interrupt never lands (the lens on 3f49461: the first version
+# passed with the INT trap deleted, cleaned up only when the 30 s sleep ended).
+set -m
+SHIP_MAKE="$SLOWMK" bash "$SHIP" preflight >/dev/null 2>&1 &
+PF=$!
+set +m
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ "$(git worktree list | wc -l | tr -d ' ')" -gt "$WT_BEFORE" ] && break; sleep 0.5; done
+T0="$(date +%s)"
+kill -INT -- "-$PF" 2>/dev/null; wait "$PF" 2>/dev/null; PFRC=$?
+assert_eq "$PFRC" "130" "it stopped on the interrupt"
+assert_eq "$(( $(date +%s) - T0 < 10 ))" "1" "promptly, not when the slow gate ended"
+assert_eq "$(git worktree list | wc -l | tr -d ' ')" "$WT_BEFORE" "the worktree is gone after SIGINT"
+
+# ── the private-name list: the house's own names, refused and never printed ──
+# 2026-11-16: three rebuilds were for names only this house knows (a service, a container
+# term, a lane name). The list lives outside every repo; a refusal names the file and line,
+# never the name.
+PNL="$TEST_TMP/private-names.txt"
+printf '# names that never ship\nzorbleflux\n\n' > "$PNL"
+
+test_start "an added line carrying a private name is refused, and the name is never printed"
+git checkout -q main
+printf 'the zorbleflux box answers\n' > priv1.md
+git add priv1.md && git commit -qm "plant a private name"
+OUT="$(SHIP_PRIVATE_NAMES="$PNL" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_ne "$RC" "0" "refused"
+assert_contains "$OUT" "priv1.md:1: a private name (from the private list)" "names the file and line"
+assert_not_contains "$OUT" "zorbleflux" "and never the name"
+
+test_start "the match ignores case, at a word boundary only"
+printf 'line one\nZORBLEFLUX again\n' > priv2.md
+git add priv2.md && git commit -qm "plant upper case"
+OUT="$(SHIP_PRIVATE_NAMES="$PNL" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_contains "$OUT" "priv2.md:2: a private name" "upper case is the same name, on line 2"
+printf 'zorblefluxes are a different word\n' > priv3.md
+git add priv3.md && git commit -qm "plant a longer word"
+OUT="$(SHIP_PRIVATE_NAMES="$PNL" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_eq "$RC" "0" "a longer word is not the name: $OUT"
+
+test_start "a private name on an added line whose text starts with ++ is still refused"
+printf 'first\n++ the zorbleflux box\n' > priv4.md
+git add priv4.md && git commit -qm "plant a ++ line"
+OUT="$(SHIP_PRIVATE_NAMES="$PNL" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_contains "$OUT" "priv4.md:2: a private name" "line 2, counted"
+
+test_start "a list entry may carry a reason and trailing blanks"
+printf 'zorbleflux   # why it never ships
+quuxwomble  
+' > "$TEST_TMP/pnl2"
+printf 'the quuxwomble box
+' > priv5.md
+git add priv5.md && git commit -qm "plant the second name"
+OUT="$(SHIP_PRIVATE_NAMES="$TEST_TMP/pnl2" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_contains "$OUT" "priv5.md:1: a private name" "an entry with trailing blanks still matches"
+OUT="$(SHIP_PRIVATE_NAMES="$TEST_TMP/pnl2" SHIP_MAKE="$FAKEMK" bash -x "$SHIP" preflight 2>&1)"
+assert_not_contains "$OUT" "quuxwomble" "and not even xtrace prints a name"
+
+test_start "a user's color.diff does not blind the audit"
+git config color.diff always
+printf 'the zorbleflux box\n' > priv6.md
+git add priv6.md && git commit -qm "plant under color"
+OUT="$(SHIP_PRIVATE_NAMES="$PNL" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1; git config --unset color.diff
+assert_contains "$OUT" "priv6.md:1: a private name" "still refused"
+
+test_start "a name may hold a #; only a blank then # starts a reason"
+printf 'c#corp   # a name with a hash in it\n' > "$TEST_TMP/pnl3"
+printf 'we use c daily\n' > priv7.md
+git add priv7.md && git commit -qm "plant a lone c"
+OUT="$(SHIP_PRIVATE_NAMES="$TEST_TMP/pnl3" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_eq "$RC" "0" "a lone c is not the name c#corp: $OUT"
+
+test_start "no list: said once, and the audit still passes a clean tree"
+OUT="$(SHIP_PRIVATE_NAMES="$TEST_TMP/no-such-list" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+assert_eq "$RC" "0" "clean tree passes"
+assert_eq "$(printf '%s\n' "$OUT" | grep -c 'no private-name list')" "1" "said exactly once"
+
+# ── prose shapes: a memory note's name or a quoted session id, in prose only ──
+test_start "a Markdown line naming a memory note is refused"
+git checkout -q main
+printf 'background: see [[feedback_some-rule]]\n' > prose1.md
+git add prose1.md && git commit -qm "plant a note link"
+OUT="$(SHIP_PRIVATE_NAMES="$PNL" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_ne "$RC" "0" "refused"
+assert_contains "$OUT" "PROSE SHAPE: prose1.md" "names the file"
+
+test_start "a shell comment quoting a session id is refused; the same text in code is not"
+printf '#!/usr/bin/env bash\n# on that day session 1a2b3c4d ran it\n' > prose2.sh
+git add prose2.sh && git commit -qm "plant a session id comment"
+OUT="$(SHIP_PRIVATE_NAMES="$PNL" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_contains "$OUT" "PROSE SHAPE: prose2.sh" "the comment is prose"
+printf '#!/usr/bin/env bash\nprintf "%%s" '"'"'{"session":"feed0042"}'"'"'\n' > prose3.sh
+git add prose3.sh && git commit -qm "a fixture in code"
+OUT="$(SHIP_PRIVATE_NAMES="$PNL" SHIP_MAKE="$FAKEMK" bash "$SHIP" preflight 2>&1)"; RC=$?
+git reset -q --hard HEAD~1
+assert_eq "$RC" "0" "code is not prose: $OUT"
+
 # ── the rail must be able to ship itself ────────────────────────────────
 test_start "ship.sh source carries no guard-shaped literals (self-shippable)"
 # Shapes assembled at runtime (same reason as QUAD above): the audit pattern

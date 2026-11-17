@@ -17,7 +17,18 @@ maude_python3_ok || exit 0
 DB="$(maude_project_dir)/.maude/plugin/tape/tape.db"
 [ -f "$DB" ] || exit 0
 
-python3 -I -c "$MAUDE_PY_BOOT" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" maude_tape rest --db "$DB" >/dev/null 2>&1
+# The cut marker: SessionEnd hooks are cancelled when a session exits under them, and a rest
+# cut short is otherwise silent. Each rest marks itself (rest.cut.<its pid>) while it runs
+# and clears its own mark when it ends, so the next wake (maude-tape-wake.sh) finds a mark
+# whose process is gone only when that rest did not finish; another session's rest still
+# running is alive, and its mark is left alone. A canon line and its event's mark commit
+# together, and a mark moves only a still-buffered event, so finishing it twice is safe.
+# Never written THROUGH: a link or a non-file at the path is moved aside first (the gate's
+# own marker rule), and the write is no-clobber, so a planted symlink truncates nothing.
+CUT="$(dirname "$DB")/rest.cut.$$"
+_maude_care_marker_path_clear "$CUT" && ( set -C; : > "$CUT" ) 2>/dev/null
+python3 -I -c "$MAUDE_PY_BOOT" "${CLAUDE_PLUGIN_ROOT:-$DIR/../..}" maude_tape rest --db "$DB" >/dev/null 2>&1 \
+  && rm -f "$CUT" 2>/dev/null
 # And the voice profile, from his typed lines only: it was last recomputed by hand on
 # 2026-08-14, ten weeks stale, while the corpus grew from 1,852 lines to 4,928. 0.44 s on
 # the real tape (2026-10-25); bounded so a slow box cannot eat the SessionEnd budget.

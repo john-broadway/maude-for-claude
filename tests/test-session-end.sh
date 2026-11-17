@@ -51,17 +51,11 @@ emit_prompt "2026-06-23T12:00:00Z"
 rm -f "$HANDOFF"
 run_hook "exit"
 
-test_start "writes an auto-note when 3+ exchanges are uncaptured and the slot is empty"
-assert_file_exists "$HANDOFF" "auto-note written"
+test_start "uncaptured work and an empty slot: NO auto-note into the remember plugin's store (retired 2026-11-11)"
+assert_file_absent "$HANDOFF" "no auto-note written"
 
-test_start "the auto-note points the next session at the trace"
-assert_contains "$(cat "$HANDOFF" 2>/dev/null)" "/maude:wake" "reconstruct pointer"
-
-test_start "the auto-note names the count of uncaptured exchanges"
-assert_contains "$(cat "$HANDOFF" 2>/dev/null)" "3" "count"
-
-test_start "the auto-note says it is an auto-note, not a real handoff"
-assert_contains "$(cat "$HANDOFF" 2>/dev/null)" "Auto-note from Maude" "honest label"
+test_start "nothing at all is written into the remember plugin's store"
+assert_eq "$(find "$REMEMBER" -type f | wc -l | tr -d ' ')" "0" "store still empty"
 
 # ── Never clobber a fresh handoff ──────────────────────────────────────
 

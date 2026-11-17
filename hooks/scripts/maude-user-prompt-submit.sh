@@ -9,16 +9,22 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
-# The auto-memory index budget speaks on every prompt while it is over: a write made through
-# Bash is not judged before it runs, so this is its net. Needs no house-map.
-bash "$DIR/maude-memory-budget.sh" prompt "$(maude_mem_dir)/MEMORY.md"
+# stdin is read once: the budget line needs the session id, the watch list the prompt.
+INPUT="$(cat 2>/dev/null)"
+SID=""
+command -v jq >/dev/null 2>&1 && SID="$(printf '%s' "$INPUT" | jq -r '.session_id // ""' 2>/dev/null)"
+
+# The auto-memory index budget speaks while it is over, once a session and again when it
+# grows: a write made through Bash is not judged before it runs, so this is its net. Needs
+# no house-map.
+bash "$DIR/maude-memory-budget.sh" prompt "$(maude_mem_dir)/MEMORY.md" "$SID"
 
 maude_have_map || exit 0
 
 # Read user prompt from stdin JSON. Fail-silent if jq isn't around or input isn't JSON.
 PROMPT=""
 if command -v jq >/dev/null 2>&1; then
-  PROMPT="$(jq -r '.prompt // .message // ""' 2>/dev/null)"
+  PROMPT="$(printf '%s' "$INPUT" | jq -r '.prompt // .message // ""' 2>/dev/null)"
 fi
 [ -z "$PROMPT" ] && exit 0
 

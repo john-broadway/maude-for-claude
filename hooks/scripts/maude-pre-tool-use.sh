@@ -23,6 +23,10 @@ INPUT="$(cat 2>/dev/null)"
 # file, and a broken or half-installed copy of the rail must not stop every write.
 printf '%s' "$INPUT" | bash "$DIR/maude-memory-budget.sh" gate
 [ "$?" -eq 42 ] && exit 2
+# A Write never replaces a lane's history (docs/specs/2026-11-11-the-circle-design.md).
+# Same rule: only its own 42 refuses.
+printf '%s' "$INPUT" | bash "$DIR/maude-journal-keep.sh" gate
+[ "$?" -eq 42 ] && exit 2
 
 # The Rolodex: approved pages change only by the user's own approve line, so Claude's
 # tools may write in the Rolodex dir under pending/ and nowhere else. Before the undo

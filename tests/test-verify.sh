@@ -806,6 +806,17 @@ cd "$MAUDE_ROOT" || exit 1
 test_start "verify flags an un-condensed What's-new wall"
 assert_contains "$OUT_W" "condense" "wall finding asks to condense"
 
+# John 2026-11-17: "limit it to 3". Four entries is a wall, three is not.
+wn_readme() {  # $@ versions
+  { printf '<!-- Version: 9.0.0 -->\n# x\n\n## What'\''s new\n\n'
+    for v in "$@"; do printf '**v%s** - entry.\n\n' "$v"; done; } > "$WALL/README.md"
+}
+test_start "four What's-new entries are a wall; three are not"
+wn_readme 9.0.0 8.0.0 7.0.0 6.0.0
+assert_contains "$(bash "$VERIFY" "$WALL" 2>&1)" "has 4 release entries (>3)" "four: condense"
+wn_readme 9.0.0 8.0.0 7.0.0
+assert_not_contains "$(bash "$VERIFY" "$WALL" 2>&1)" "release entries (>" "three: fine"
+
 rm -rf "$WALL"
 
 # ── Design rules: a planted schema finding is counted, tests/ is not ──

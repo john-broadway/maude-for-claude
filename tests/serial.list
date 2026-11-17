@@ -1,0 +1,8 @@
+# Files that run alone under run.sh -j N, after the pool, with nothing beside them.
+# A file joins when the pool turns it red and it is green alone; the line says why.
+test-gate-parser.sh       # bounds its parse by wall time; red under load in a build (2026-11-16)
+test-install-smoke.sh     # is itself a whole fleet run, from an archive
+test-undo-prune-race.sh   # asserts a run finishes under 500 ms
+test-gate-lens-folds.sh   # asserts the gate's 5 s budgets
+test-infra-gate.sh        # asserts a check finishes in 3 s or less
+test-suite-runner.sh      # times its own pool fixtures (under 4 s)

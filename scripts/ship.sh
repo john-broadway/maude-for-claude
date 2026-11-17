@@ -5,6 +5,9 @@
 #                                        internal set stripped (.publishignore),
 #                                        leak-audit + gates, prints John's line
 #   <John pastes the one push line>
+#   scripts/ship.sh preflight           → the cheap gates (leak audit, lint, verify) on the
+#                                        exact tree a build would stage, in a throwaway
+#                                        worktree: run it first, before an hour of suites
 #   scripts/ship.sh open --review "…"  → PR with the second lens documented,
 #                                        auto-merge armed; without --review the
 #                                        PR opens as a DRAFT (the no-self-merge
@@ -12,12 +15,22 @@
 #
 # Env seams (tests): SHIP_BRANCH (branch name), SHIP_SOURCE_REF (default main),
 #   SHIP_PUBLIC_REMOTE (which remote is public; normally resolved by URL),
-# SHIP_SKIP_GATES=1 (skip make test/mac-shape/lint/verify — test fixtures only).
+# SHIP_SKIP_GATES=1 (skip make test/mac-shape/lint/verify — test fixtures only),
+#   SHIP_MAKE (the make the gates run through, default make; tests pass a fake that logs),
+#   SHIP_SMOKE (the install smoke, default scripts/install-smoke.sh; tests pass a fake),
+#   SHIP_PRIVATE_NAMES (the private-name list, default ~/.claude/maude/ship-private-names.txt),
+#   SHIP_TEST_JOBS (test files side by side in the smoke's fleet, default 8) and
+#   SHIP_SHAPE_JOBS (in the shaped pass, default 6): measured 2026-11-16, three plain runs at
+#   6 and at 8 and one shaped run at 6, all green: fewer than the spec's ten; each build adds
+#   one. tests/serial.list names the files that run alone.
 set -u
 
 die() { printf 'ship: %s\n' "$1" >&2; exit 1; }
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || die "not in a git repo"
+# The prose-only leak shapes, shared with tests/test-ship-prose-calibration.sh.
+# shellcheck source=scripts/ship-prose.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/ship-prose.sh" || die "cannot load ship-prose.sh"
 cd "$ROOT" || die "cannot cd to repo root"
 SRC="${SHIP_SOURCE_REF:-main}"
 
@@ -119,7 +132,17 @@ audit_staged() {
   # Assembled like the patterns above: the rail must ship itself.
   local p_doc='127\.'; p_doc="${p_doc}[0-9]+\.[0-9]+\.[0-9]+|192\.0\."; p_doc="${p_doc}2\.[0-9]+|198\.51\."; p_doc="${p_doc}100\.[0-9]+|203\.0\."; p_doc="${p_doc}113\.[0-9]+"
   local pats="$p_ip|$p_paths|$p_infra|$p_key|$p_cred"
-  local f bad=0 hits
+  local f bad=0 hits ln
+  # This house's own private names (2026-11-16: three rebuilds were for names only this house
+  # knows, a service, a container term, a lane name, each caught by a reviewer after a green
+  # build). The list lives outside every repo and is seeded by the owner's hand; a refusal
+  # names the file and line, never the name. No list: said once, and the shapes above still run.
+  local pnl="${SHIP_PRIVATE_NAMES:-$HOME/.claude/maude/ship-private-names.txt}" have_pnl=0
+  if [ -f "$pnl" ] && [ -r "$pnl" ] && private_names "$pnl" | grep -q .; then
+    have_pnl=1
+  else
+    printf 'ship: no private-name list at %s; private names are not checked\n' "$pnl" >&2
+  fi
   # -z + read -d '': raw NUL-delimited paths. Without this, git quotes
   # non-ASCII names ("caf\303\251.md") and the per-file pathspec silently
   # matches nothing — an audited-looking file the audit never read.
@@ -132,11 +155,25 @@ audit_staged() {
       bad=1
       continue
     fi
-    hits="$(git diff --cached "$PUB/main" --unified=0 -- "$f" 2>/dev/null \
-      | grep '^+' | grep -v '^+++' | sed -E "s/(^|[^0-9A-Za-z_.-])($p_doc)(\\.?([^0-9.]|\$))/\\1<doc-address>\\3/g; s/(^|[^0-9A-Za-z_.-])($p_doc)(\\.?([^0-9.]|\$))/\\1<doc-address>\\3/g" | grep -cE "$pats")"
+    hits="$(added_lines "$f" | sed 's/^[0-9]*://' | sed -E "s/(^|[^0-9A-Za-z_.-])($p_doc)(\\.?([^0-9.]|\$))/\\1<doc-address>\\3/g; s/(^|[^0-9A-Za-z_.-])($p_doc)(\\.?([^0-9.]|\$))/\\1<doc-address>\\3/g" | grep -cE "$pats")"
     if [ "${hits:-0}" -gt 0 ]; then
       printf 'ship: LEAK SHAPE — %s: %s added line(s) match guard patterns\n' "$f" "$hits" >&2
       bad=1
+    fi
+    # Prose only (Markdown, shell and python comments): a memory note's name or a quoted
+    # session id (scripts/ship-prose.sh). Code and fixtures carry both legitimately.
+    hits="$(added_lines "$f" | sed 's/^[0-9]*://' | ship_prose_hits "$f")"
+    if [ "${hits:-0}" -gt 0 ]; then
+      printf 'ship: PROSE SHAPE: %s: %s added prose line(s) name a memory note or quote a session id\n' "$f" "$hits" >&2
+      bad=1
+    fi
+    if [ "$have_pnl" = 1 ]; then
+      # Each added line as "<new line number>:<text>", matched whole-word and case-blind
+      # against the list; only the number is kept, so no name reaches the output.
+      while IFS= read -r ln; do
+        printf 'ship: PRIVATE NAME: %s:%s: a private name (from the private list)\n' "$f" "$ln" >&2
+        bad=1
+      done < <(added_lines "$f" | grep -iwF -f <(private_names "$pnl") | cut -d: -f1)
     fi
   done < <(git diff --cached --name-only -z "$PUB/main" 2>/dev/null)
   [ "$bad" -eq 0 ] || die "leak-audit failed — fix the files above (never override the guard)"
@@ -155,6 +192,95 @@ build_epilogue() {
     "${SHIP_ORIG_BRANCH:-main}" "$SHIP_BUILD_BRANCH" >&2
 }
 
+# added_lines <file>: the staged diff's added lines as "<new line number>:<text>". The file
+# headers (---/+++) come before the first @@ and are skipped there only: an added line whose
+# own text starts with ++ was dropped by a `grep -v '^+++'`, private names and all (the
+# whole-branch lens on cbccdfb).
+# Plain text only: a user's color.diff, an external diff driver or a textconv would change
+# what the checks read (with color.diff=always no line matched and every check passed
+# silently); literal pathspecs, so a name with a glob in it matches only itself.
+added_lines() {
+  git --literal-pathspecs diff --cached --no-color --no-ext-diff --no-textconv \
+      "$PUB/main" --unified=0 -- "$1" 2>/dev/null \
+    | awk '/^diff --git / { h = 0; next }
+           /^@@/ { split($3, a, ","); n = substr(a[1], 2) + 0; h = 1; next }
+           !h { next }
+           /^\+/ { print n ":" substr($0, 2); n++ }'
+}
+# The private-name list, one name per line: comments, blank lines and the blanks around a
+# name dropped. Printed only into grep -f, never into a variable xtrace could show.
+private_names() {
+  sed -E '/^[[:space:]]*#/d; s/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//; s/\r$//; /^$/d' "$1" 2>/dev/null
+}
+
+# What a build or a preflight needs before it stages anything (fail-closed).
+build_preconditions() {
+  git rev-parse --verify -q "$SRC" >/dev/null || die "source ref '$SRC' not found"
+  # Fail-closed: no manifest, no build. A missing .publishignore must never
+  # mean "ship everything" — it's the list of what may not leave the house.
+  if ! git show "$SRC:.publishignore" 2>/dev/null | grep -qvE '^[[:space:]]*(#|$)'; then
+    die "no usable .publishignore on '$SRC' — refusing to build (fail-closed)"
+  fi
+  git fetch -q "$PUB" || die "cannot fetch $PUB"
+  git rev-parse --verify -q "$PUB/main" >/dev/null || die "$PUB/main not found"
+}
+
+# In the current checkout: worktree and index = the source tree, minus the internal set.
+stage_strip() {
+  git read-tree --reset -u "$SRC" || die "read-tree from $SRC failed"
+  local p
+  while IFS= read -r p; do
+    case "$p" in ''|'#'*) continue ;; esac
+    git rm -rqf --ignore-unmatch -- "$p" >/dev/null 2>&1
+  done < <(git show "$SRC:.publishignore" 2>/dev/null)
+}
+
+# The cheap gates on the exact tree a build would stage, before an hour of suites is spent
+# (2026-11-16: a stale stamp and three leaks each cost a full build). It works in its own
+# detached worktree, never the author's checkout, so it is safe on a dirty tree and from any
+# branch; it runs every gate even after a red, reports each, commits and pushes nothing, and
+# removes its worktree on every exit. Advice the author runs first: build still gates it all.
+PREFLIGHT_WT=""
+preflight_cleanup() {
+  trap '' INT TERM   # a second Ctrl-C must not cut the cleanup short
+  [ -n "$PREFLIGHT_WT" ] || return 0
+  git -C "$ROOT" worktree remove --force "$PREFLIGHT_WT" >/dev/null 2>&1
+  rm -rf "$PREFLIGHT_WT" 2>/dev/null
+  git -C "$ROOT" worktree prune >/dev/null 2>&1
+  PREFLIGHT_WT=""
+}
+cmd_preflight() {
+  [ $# -eq 0 ] || die "preflight: takes no arguments (it reads SHIP_SOURCE_REF like build)"
+  build_preconditions
+  local base wt mk="${SHIP_MAKE:-make}" g rc fail=0 report=""
+  base="${TMPDIR:-/tmp}"; base="${base%/}"
+  wt="$(mktemp -d "$base/ship-preflight.XXXXXX")" || die "preflight: no temp dir"
+  PREFLIGHT_WT="$wt"
+  # The EXIT trap runs on an interrupt too: bash exits 130 on SIGINT and runs it on the way
+  # out (an extra `trap 'exit 130' INT` was a measured equivalent, so it is not here).
+  trap preflight_cleanup EXIT
+  git worktree add -q --detach "$wt" "$PUB/main" >/dev/null 2>&1 || die "preflight: cannot add a worktree at $PUB/main"
+  ( cd "$wt" && stage_strip ) || die "preflight: cannot stage $SRC"
+  # It checks what a build would ship: $SRC as committed. Uncommitted work is not in it, and
+  # neither are untracked files the build's own checkout may hold (lint globs, verify reads
+  # them there): a green here is advice, and the build still gates everything.
+  printf 'preflight: %s at %s (committed only; uncommitted changes are not in it)\n' \
+    "$SRC" "$(git rev-parse --short "$SRC")"
+  for g in audit lint verify; do
+    case "$g" in
+      audit)  ( cd "$wt" && audit_staged ) ;;
+      lint)   ( cd "$wt" && "$mk" lint ) ;;
+      verify) ( cd "$wt" && MAUDE_VERIFY_SOURCE_REF="$SRC" "$mk" verify ) ;;
+    esac
+    rc=$?
+    if [ "$rc" -eq 0 ]; then report="${report}preflight: $g ok"$'\n'; else report="${report}preflight: $g RED"$'\n'; fail=1; fi
+  done
+  printf '\n%s' "$report"
+  [ "$fail" -eq 0 ] && printf 'preflight: green. Build with: scripts/ship.sh build\n' \
+                    || printf 'preflight: fix the red above before building.\n'
+  return "$fail"
+}
+
 cmd_build() {
   local msg="ship: public build from $SRC"
   while [ $# -gt 0 ]; do
@@ -165,14 +291,7 @@ cmd_build() {
   done
 
   [ -z "$(git status --porcelain)" ] || die "working tree not clean — commit or stash first"
-  git rev-parse --verify -q "$SRC" >/dev/null || die "source ref '$SRC' not found"
-  # Fail-closed: no manifest, no build. A missing .publishignore must never
-  # mean "ship everything" — it's the list of what may not leave the house.
-  if ! git show "$SRC:.publishignore" 2>/dev/null | grep -qvE '^[[:space:]]*(#|$)'; then
-    die "no usable .publishignore on '$SRC' — refusing to build (fail-closed)"
-  fi
-  git fetch -q "$PUB" || die "cannot fetch $PUB"
-  git rev-parse --verify -q "$PUB/main" >/dev/null || die "$PUB/main not found"
+  build_preconditions
 
   local branch="${SHIP_BRANCH:-ship-$(date -u +%Y%m%d-%H%M%S)}"
   git rev-parse --verify -q "refs/heads/$branch" >/dev/null \
@@ -181,30 +300,43 @@ cmd_build() {
   git checkout -q -B "$branch" "$PUB/main" || die "cannot create branch $branch"
   SHIP_BUILD_BRANCH="$branch"
   trap build_epilogue EXIT
-  # Worktree/index = the source tree, then strip the internal set.
-  git read-tree --reset -u "$SRC" || die "read-tree from $SRC failed"
-  local p
-  while IFS= read -r p; do
-    case "$p" in ''|'#'*) continue ;; esac
-    git rm -rqf --ignore-unmatch -- "$p" >/dev/null 2>&1
-  done < <(git show "$SRC:.publishignore" 2>/dev/null)
+  stage_strip
 
   audit_staged
 
   if [ -z "${SHIP_SKIP_GATES:-}" ]; then
-    make test  || die "gate failed: make test"
-    # The macOS shape, here: v0.33.0 went red on the public macOS leg twice for things this
-    # box could show (PRs #80, #81). A ship never reaches the public leg without it.
-    make mac-shape || die "gate failed: make mac-shape (the macOS-shaped suite)"
-    make lint  || die "gate failed: make lint"
+    local mk="${SHIP_MAKE:-make}"
+    # The cheap gates first (seconds): on 2026-11-16 a stale Revised stamp stopped a build
+    # an hour in, after both suites had run. Order changes nothing about what is gated.
+    "$mk" lint  || die "gate failed: make lint"
     # The staged tree came from $SRC onto a branch off public main, so every doc reads as
     # modified today; verify reads a doc identical to $SRC's copy on $SRC's history instead
     # (a build that crossed midnight UTC failed twelve honest stamps, v0.36.0).
-    MAUDE_VERIFY_SOURCE_REF="$SRC" make verify || die "gate failed: make verify"
+    MAUDE_VERIFY_SOURCE_REF="$SRC" "$mk" verify || die "gate failed: make verify"
+    # One fleet per shape (2026-11-16: a build ran the whole fleet about four times, since
+    # make test runs the smoke and the smoke re-runs the fleet, and mac-shape did both again).
+    # The plain fleet runs once, inside the smoke, from an archive of the staged tree: the
+    # exact bytes this build commits. HEAD is still public main here, so the smoke must be
+    # handed the tree; a smoke of HEAD proved the tree already public.
+    "$mk" test-py || die "gate failed: make test-py"
+    local tree
+    tree="$(git write-tree)" || die "cannot write the staged tree"
+    local jobs="${SHIP_TEST_JOBS:-8}"
+    MAUDE_TEST_JOBS="$jobs" bash "${SHIP_SMOKE:-$ROOT/scripts/install-smoke.sh}" "$ROOT" "$tree" \
+      || die "gate failed: the install smoke on the staged tree"
+    # The macOS shape, here: v0.33.0 went red on the public macOS leg twice for things this
+    # box could show (PRs #80, #81). A ship never reaches the public leg without it. Its
+    # fleet runs without a nested smoke: the smoke above already proved the archive.
+    MAUDE_SMOKE_SEPARATE=1 MAUDE_TEST_JOBS="${SHIP_SHAPE_JOBS:-6}" "$mk" mac-shape || die "gate failed: make mac-shape (the macOS-shaped suite)"
   fi
 
   if git diff --cached --quiet "$PUB/main"; then
     die "nothing to ship — public tree already matches $SRC minus the internal set"
+  fi
+  # The commit must record the tree the smoke proved (nothing writes the index between them
+  # today; this keeps it true if something ever does).
+  if [ -z "${SHIP_SKIP_GATES:-}" ] && [ "$(git write-tree)" != "$tree" ]; then
+    die "the index changed after the smoke proved it: refusing to commit a tree no smoke saw"
   fi
   git commit -qm "$msg" || die "commit failed"
   SHIP_BUILD_OK=1
@@ -439,6 +571,7 @@ or mark ready + comment the review reference manually.
 
 case "${1:-}" in
   build) shift; cmd_build "$@" ;;
+  preflight) shift; cmd_preflight "$@" ;;
   open)  shift; cmd_open "$@" ;;
-  *) die "usage: ship.sh build [-m msg] | ship.sh open [--dry-run] [--review TEXT] [--title T]" ;;
+  *) die "usage: ship.sh preflight | ship.sh build [-m msg] | ship.sh open [--dry-run] [--review TEXT] [--title T]" ;;
 esac

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-satellites.sh — verify the off-repo surfaces (the satellites in PUBLISHING.md §B)
+# check-satellites.sh: verify the off-repo surfaces (the satellites in PUBLISHING.md §B)
 # say what Maude is NOW. The durable answer to "did a leaf fall stale?"
 #
 # Usage:  scripts/check-satellites.sh <version>      e.g.  scripts/check-satellites.sh 0.37.0
@@ -10,9 +10,10 @@
 # words (2026-11) and carry NO version on purpose, so the old check (is "vX" present?) read
 # every page as stale forever while the line that really went stale (the license, Apache to
 # AGPL with 0.36.0) passed unseen. Each satellite is now checked for:
-#   1. the exact license line in Maude's block, the license read from plugin.json;
+#   1. a whole line equal to Maude's license line (the license read from plugin.json); on the
+#      shared pages this is a line, not a block: a sibling's bare license line would also pass;
 #   2. on the Maude page, the command count in words, counted from commands/*.md;
-#   3. no Maude version other than <version>: a page may name none, never an old one.
+#   3. on the Maude page, no v0.x.y other than <version>: it may name none, never an old one.
 # The lines are exact on purpose: a sibling project's license on the same page must not
 # satisfy Maude's. When John reshapes a page, the line here moves with it.
 
@@ -38,7 +39,7 @@ check() {
   local repo="$1" path="$2" body want old bad=0; shift 2
   body="$(fetch "$repo" "$path")"
   if [ -z "$body" ]; then
-    printf '  ??    %s/%s — could not fetch\n' "$repo" "$path"; fail=1; return
+    printf '  ??    %s/%s: could not fetch\n' "$repo" "$path"; fail=1; return
   fi
   for want in "$@"; do
     # A want starting with "=" is a WHOLE line (leading blanks trimmed), so a sibling's
@@ -49,14 +50,14 @@ check() {
     elif printf '%s\n' "$body" | grep -qF -- "$want"; then
       continue
     fi
-    printf '  STALE %s/%s — missing: %s\n' "$repo" "$path" "$want"; bad=1
+    printf '  STALE %s/%s: missing: %s\n' "$repo" "$path" "$want"; bad=1
   done
   # A Maude version on the page must be the current one. Only the Maude page and Maude's own
   # block name Maude versions; sibling projects' versions on the shared pages are theirs.
   if [ "$path" = "maude/index.html" ]; then
     old="$(printf '%s\n' "$body" | grep -oE 'v0\.[0-9]+\.[0-9]+' | grep -vxF "v$VER" | sort -u | tr '\n' ' ')"
     if [ -n "$old" ]; then
-      printf '  STALE %s/%s — names an old version: %s\n' "$repo" "$path" "$old"; bad=1
+      printf '  STALE %s/%s: names an old version: %s\n' "$repo" "$path" "$old"; bad=1
     fi
   fi
   [ "$bad" = 0 ] && printf '  ok    %s/%s\n' "$repo" "$path"
@@ -75,6 +76,6 @@ check john-broadway/john-broadway.github.io    maude/index.html \
 if [ "$fail" = 0 ]; then
   printf 'All satellites are current.\n'
 else
-  printf 'Some satellites STALE — sweep them (PUBLISHING.md §B), then re-run.\n'
+  printf 'Some satellites STALE; sweep them (PUBLISHING.md §B), then re-run.\n'
 fi
 exit "$fail"

@@ -20,7 +20,7 @@ shipped() {
   for d in "$ROOT"/maude_*/; do
     n="$(basename "$d")"
     [ -f "$d/__init__.py" ] || continue
-    if [ -f "$ROOT/.publishignore" ] && grep -qxF "$n" "$ROOT/.publishignore"; then continue; fi
+    if [ -f "$ROOT/.publishignore" ] && grep -qxF -e "$n" -e "$n/" "$ROOT/.publishignore"; then continue; fi
     printf '%s\n' "$n"
   done | sort
 }
@@ -30,7 +30,7 @@ listed() {
 }
 
 test_start "the CodeQL config exists"
-[ -f "$CFG" ] || _fail "no $CFG"
+assert_eq "$([ -f "$CFG" ] && echo yes)" "yes" "$CFG is there"
 
 test_start "every shipped maude_* package is in CodeQL's paths"
 MISSING="$(comm -23 <(shipped) <(listed) | tr '\n' ' ')"

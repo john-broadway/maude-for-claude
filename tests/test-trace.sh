@@ -86,7 +86,7 @@ last="$(tail -1 "$(trace_path)")"
 assert_contains "$last" '"session":"feed0042"' "sid-prefix label"
 
 
-# The gate's token is spent at PostToolUse of the command that RAN (see test-gate.sh); this
+# The gate's token is spent at PostToolUse of the command that RAN (see tests/test-gate-override.sh); this
 # hook is the PostToolUse entry that sees every Bash completion, so it is the caller.
 test_start "a Bash PostToolUse through the trace hook consumes a reserved gate token"
 mkdir -p "$TEST_TMP/.maude/plugin"

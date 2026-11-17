@@ -393,7 +393,7 @@ PY
 # KNOWN LIMIT: this is loud for `PATH="$D" cmd` (the replace form). Callers that PREPEND
 # (`PATH="$D:$PATH"`) still find the real binary, so for those the poison is not a backstop and
 # the stderr line above is the only signal. Nine prepend-form call sites take a dir from _mk_shim_dir (six in test-_maude-common.sh,
-# three in test-gate.sh). The suite has 19 prepend sites in all; the other 10 use bare-mktemp
+# three in the tests/test-gate*.sh files). The suite has 19 prepend sites in all; the other 10 use bare-mktemp
 # dirs, for which the poison is equally not a backstop.
 _MK_SHIM_POISON='/nonexistent/maude-shim-dir-FAILED'
 _mk_shim_dir() {

@@ -312,6 +312,76 @@ assert_exit "$RC" "0" "runner exit"
 assert_contains "$OUT" "PASS  test-fixture.sh  (summary unreadable; enforced by exit status)" "the unreadable count is named"
 assert_not_contains "$OUT" "no summary line" "and not called an absence"
 
+# ── run.sh -j N: files side by side, the serial ones alone (2026-11-16, the fast rail) ──
+POOL="$TEST_TMP/pooldir"; mkdir -p "$POOL"; cp "$TESTS_DIR/run.sh" "$POOL/run.sh"
+STAMPS="$TEST_TMP/stamps.log"; : > "$STAMPS"
+# Each fixture logs its start and end in ms, sleeps a second, and reports. The clock is
+# python's: BSD date has no %N, and the public macOS leg would abort the fixture (the
+# whole-branch lens on cbccdfb).
+mkfix() {  # $1 name, $2 exit, $3 summary
+  printf '#!/usr/bin/env bash\nms() { python3 -c "import time; print(int(time.time() * 1000))"; }\nprintf "%%s start %%s\\n" "%s" "$(ms)" >> "%s"\nsleep 1\nprintf "%%s end %%s\\n" "%s" "$(ms)" >> "%s"\nprintf "%s\\n"\nexit %s\n' \
+    "$1" "$STAMPS" "$1" "$STAMPS" "$3" "$2" > "$POOL/$1"
+}
+mkfix test-a.sh 0 "1 passed, 0 failed"
+mkfix test-b.sh 1 "1 passed, 1 failed"
+mkfix test-c.sh 0 "2 passed, 0 failed"
+mkfix test-d.sh 0 "1 passed, 0 failed"
+mkfix test-e.sh 0 "1 passed, 0 failed"
+verdicts() { printf '%s\n' "$1" | grep -E '^(PASS|FAIL)  |test files passed'; }
+
+test_start "-j 4 gives the same verdicts, in the same order, as -j 1"
+OUT1="$(bash "$POOL/run.sh" 2>&1)"; RC1=$?
+OUT4="$(bash "$POOL/run.sh" -j 4 2>&1)"; RC4=$?
+assert_eq "$(verdicts "$OUT4")" "$(verdicts "$OUT1")" "same lines"
+assert_eq "$RC4" "$RC1" "same exit"
+assert_contains "$OUT4" "FAIL  test-b.sh" "the failing file is still named"
+
+test_start "-j 4 really runs side by side (five one-second files in under four seconds)"
+T0="$(date +%s)"; bash "$POOL/run.sh" -j 4 >/dev/null 2>&1; T1="$(date +%s)"
+assert_eq "$(( T1 - T0 < 4 ))" "1" "took $(( T1 - T0 )) s"
+T0="$(date +%s)"; MAUDE_TEST_JOBS=4 bash "$POOL/run.sh" >/dev/null 2>&1; T1="$(date +%s)"
+assert_eq "$(( T1 - T0 < 4 ))" "1" "MAUDE_TEST_JOBS does the same: took $(( T1 - T0 )) s"
+
+test_start "a file on the serial list never overlaps another file"
+printf '# timing-bound files\n  test-c.sh    # its reason, after the name\n' > "$POOL/serial.list"
+: > "$STAMPS"
+bash "$POOL/run.sh" -j 4 >/dev/null 2>&1
+CS="$(awk '$1=="test-c.sh" && $2=="start"{print $3}' "$STAMPS")"
+CE="$(awk '$1=="test-c.sh" && $2=="end"{print $3}' "$STAMPS")"
+OVER="$(awk -v cs="$CS" -v ce="$CE" '$1!="test-c.sh" && $2=="start"{s[$1]=$3} $1!="test-c.sh" && $2=="end"{if (s[$1] < ce && $3 > cs) print $1}' "$STAMPS")"
+assert_eq "$OVER" "" "files running while the serial one ran"
+assert_ne "$CS" "" "the serial file ran"
+rm -f "$POOL/serial.list"
+
+test_start "under -j 4 a leak is charged to the file that made it"
+printf '#!/usr/bin/env bash\ntouch "$TMPDIR/left-behind"\nprintf "1 passed, 0 failed\\n"\nexit 0\n' > "$POOL/test-leaky.sh"
+OUT="$(bash "$POOL/run.sh" -j 4 2>&1)"
+assert_contains "$OUT" "FAIL  test-leaky.sh" "the leaker fails"
+assert_contains "$OUT" "PASS  test-a.sh" "its neighbours do not"
+assert_contains "$OUT" "PASS  test-e.sh" "not even the one after it"
+rm -f "$POOL/test-leaky.sh"
+
+test_start "under -j 4 a leak cleaned up late is still a leak (counted when the file exits)"
+# A file that leaves temp behind and has a background child remove it later is red at -j 1;
+# the pool counted only after every file had finished, so it went green (the lens on cbccdfb).
+printf '#!/usr/bin/env bash\ntouch "$TMPDIR/late"\n( sleep 1; rm -f "$TMPDIR/late" ) >/dev/null 2>&1 &\nprintf "1 passed, 0 failed\\n"\nexit 0\n' > "$POOL/test-late.sh"
+# A neighbour that outlives the late cleanup, so the pool is still running when it happens.
+printf '#!/usr/bin/env bash\nsleep 3\nprintf "1 passed, 0 failed\\n"\nexit 0\n' > "$POOL/test-zslow.sh"
+OUT1="$(bash "$POOL/run.sh" 2>&1)"
+OUT4="$(bash "$POOL/run.sh" -j 4 2>&1)"
+assert_contains "$OUT1" "FAIL  test-late.sh" "red one at a time"
+assert_contains "$OUT4" "FAIL  test-late.sh" "and red side by side"
+rm -f "$POOL/test-late.sh"
+printf '#!/usr/bin/env bash\n( sleep 1; touch "$TMPDIR/latewrite" ) >/dev/null 2>&1 &\nprintf "1 passed, 0 failed\\n"\nexit 0\n' > "$POOL/test-latewrite.sh"
+OUT4="$(bash "$POOL/run.sh" -j 4 2>&1)"
+assert_contains "$OUT4" "FAIL  test-latewrite.sh" "a child that writes after its file exits is still caught"
+rm -f "$POOL/test-latewrite.sh" "$POOL/test-zslow.sh"
+
+test_start "-j takes a positive whole number only"
+OUT="$(bash "$POOL/run.sh" -j x 2>&1)"; RC=$?
+assert_ne "$RC" "0" "refused"
+assert_contains "$OUT" "-j" "and says which argument"
+
 print_summary
 teardown_test_env
 exit "$FAILED"

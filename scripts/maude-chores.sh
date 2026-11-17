@@ -92,43 +92,13 @@ chore_blink() {
 }
 
 chore_run_c1_missed_save() {
-  local transcript="$1" t0 t1 digest tail remember model
-  t0="$(date +%s)"
-  [ -f "$transcript" ] || { chore_fail c1-missed-save "no transcript"; return 1; }
-  # No .remember/ substrate → nothing to write into and nothing to manufacture
-  # uninvited (mirrors maude-session-end.sh's guard). Named undone, not failed:
-  # this isn't an error, it's a project that never opted into the substrate.
-  maude_have_remember || {
-    chore_stamp c1-missed-save '.["c1-missed-save"] += {status:"undone", note:"no .remember substrate — save skipped"}'
-    return 0
-  }
-  tail="$(tail -c 60000 "$transcript")"
-  digest="$(printf '%s\n\n%s\n' \
-    "You are Maude writing the session handoff nobody typed. From this Claude Code transcript tail, write a SHORT handoff digest in exactly this shape - three markdown sections: '## Done' (what shipped/changed, one line each), '## Decided' (rulings made), '## Open' (unfinished threads, next moves). Plain sentences, no praise, max 25 lines total. Output ONLY the digest markdown." \
-    "$tail" | chore_blink)" || { chore_fail c1-missed-save "blink failed"; return 1; }
-  digest="$(printf '%s' "$digest" | maude_redact)"
-  [ -n "$digest" ] || { chore_fail c1-missed-save "empty digest"; return 1; }
-
-  # Never lose human/plugin content: a non-empty remember.md ALWAYS gets an
-  # append under a dated heading, never a replace — no mtime/anchor comparison,
-  # which used to compare remember.md's own mtime against an anchor that
-  # includes remember.md itself in its 3-way max (a fresh human write followed
-  # by any touch of another anchor source flipped this into the replace branch
-  # and destroyed the handoff — reviewer reproduced it). Only an absent/empty
-  # slot gets a plain write.
-  remember="$(maude_remember_dir)/remember.md"
-  if [ -s "$remember" ]; then
-    printf '\n## Maude — %s (the save nobody typed)\n\n%s\n' \
-      "$(date -u +%Y-%m-%d)" "$digest" >> "$remember"
-  else
-    printf '%s\n' "$digest" > "$remember"
-  fi
-  printf '%s\n' "$digest" > "$(maude_self_dir)/chore-c1-latest.md"
-
-  t1="$(date +%s)"
-  model="$CHORE_MODEL"; [ -n "${MAUDE_CHORE_RUNNER_OVERRIDE:-}" ] && model="stub"
-  chore_stamp c1-missed-save --arg m "$model" --argjson rt "$((t1 - t0))" \
-    '.["c1-missed-save"] += {status:"done", note:"handoff written", cost:{model:$m, runtime_s:$rt}}'
+  # RETIRED 2026-11-12: no model call, no write. It asked haiku for the handoff nobody
+  # typed and wrote it into the remember plugin's store; Maude no longer writes there,
+  # and no model calls (John 2026-10-25: "nothing needs to call out. SHE IS AUTONOMOUS").
+  # Re-homed: the continuity guard names uncaptured work at wake; phase 3's rest writes
+  # the lane entry. Design: docs/specs/2026-11-11-the-circle-design.md (Non-goals).
+  chore_stamp c1-missed-save '.["c1-missed-save"] += {status:"undone", note:"retired 2026-11-12: no model call; the continuity guard names uncaptured work"}'
+  return 0
 }
 
 chore_fail() {
@@ -158,18 +128,11 @@ chore_fail_if_unstamped() {
 
 # ── C1: the save nobody typed ────────────────────────────────────────────
 chore_detect_c1_missed_save() {
-  local n thr
-  # No .remember/ substrate → never due; nagging every wake for a project that
-  # never opted into the substrate is noise, and the doer keeps its own guard
-  # as defense in depth (a direct `run c1-missed-save` still no-ops safely).
-  maude_have_remember || return 1
-  n="$(maude_uncaptured_prompt_count)"
-  thr="${MAUDE_CHORE_SAVE_THRESHOLD:-6}"
-  [ "${n:-0}" -ge "$thr" ]
+  return 1   # retired 2026-11-12 (see chore_run_c1_missed_save): never due
 }
 
 # ── C2: the coupon-cut (clip + stage) ────────────────────────────────────
-# Aging dailies she can SEE: .remember/ (may re-roll later) + auto-memory (read-only).
+# Aging dailies she can SEE (both read-only to her): the remember store + auto-memory.
 c2_pile_candidates() {
   local rem mem
   rem="$(maude_remember_dir)"; mem="$(maude_mem_dir)"
@@ -211,38 +174,10 @@ chore_run_c2_shelves() {
   done < <(c2_pile_candidates)
 
   # Re-roll (rigid until known): opt-in, verbatim, verified, logged.
-  if [ "${MAUDE_REROLL:-off}" = "on" ]; then
-    local arch rolled=0 dest
-    arch="$(maude_remember_dir)/archive"
-    mkdir -p "$arch" 2>/dev/null
-    if [ ! -d "$arch" ]; then
-      printf '%s ARCHIVE-DIR-UNCREATABLE %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$arch" \
-        >> "$self/chore-c2-moves.log"
-    elif [ -d "$arch" ]; then
-      while IFS= read -r f; do
-        [ -f "$f" ] || continue
-        # Path prefix re-check: only from .remember/
-        case "$f" in "$(maude_remember_dir)"/today-*.md) : ;; *) continue ;; esac
-        # Age gate is stricter than the shelf: only truly cold files move.
-        find "$f" -mtime +"${MAUDE_REROLL_DAYS:-30}" 2>/dev/null | grep -q . || continue
-        case "$(basename "$f")" in today-*.md) : ;; *) continue ;; esac   # dailies ONLY
-        dest="$arch/$(basename "$f")"
-        [ -e "$dest" ] && continue                       # refuse collision
-        cp -p "$f" "$dest" 2>/dev/null || { rm -f "$dest"; continue; }  # partial-copy cleanup on failure
-        cmp -s "$f" "$dest" || { rm -f "$dest"; continue; }  # verify byte-identity or abort
-        # Verify removal before logging success.
-        if rm -f "$f" 2>/dev/null && [ ! -e "$f" ]; then
-          printf '%s moved %s -> %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$f" "$dest" \
-            >> "$self/chore-c2-moves.log"
-          rolled=$((rolled+1))
-        else
-          printf '%s RM-FAILED (duplicate kept) %s -> %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$f" "$dest" \
-            >> "$self/chore-c2-moves.log"
-        fi
-      done < "$staged"
-      [ "$rolled" -gt 0 ] && stagedn="$stagedn (rolled $rolled)"
-    fi
-  fi
+  # The re-roll (MAUDE_REROLL=on: move cold remember dailies into <store>/archive/ and
+  # delete the originals) is RETIRED 2026-11-12: that store is the remember plugin's
+  # own, and its consolidation retires its own dailies. Maude moves nothing there.
+  # Design: docs/specs/2026-11-11-the-circle-design.md (What retires; ruling 4).
 
   t1="$(date +%s)"
   chore_stamp c2-shelves --arg n "clipped $clipped, staged $stagedn" --argjson rt "$((t1 - t0))" \

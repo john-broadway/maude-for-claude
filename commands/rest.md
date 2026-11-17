@@ -24,7 +24,7 @@ SLUG="$(printf %s "$PROJ" | sed 's/[^a-zA-Z0-9]/-/g')"
 MEM="$HOME/.claude/projects/$SLUG/memory"
 SELF="$PROJ/.maude/plugin"
 USER_DIR="$HOME/.claude/maude"
-REMEMBER="$PROJ/.remember"
+REMEMBER="$(. "$CLAUDE_PLUGIN_ROOT/hooks/scripts/_maude-common.sh"; maude_remember_dir)"   # the remember plugin's store, wherever it lives
 MAP="$SELF/house-map.md"
 ```
 
@@ -36,7 +36,7 @@ MAP="$SELF/house-map.md"
 
 2. **Run the map-driven save loop** — identical to `/maude:save` step 3: read `$MAP` and
    write the digest to **each** `## Memory sources` entry per its tier gate × `write:` token
-   (`digest-fanout`, `handoff-only`, `full`; skip `read-only` / `secret-deny`), honoring any
+   (`digest-fanout`, `full`; skip `handoff-only` (the remember plugin's own store: never written), `read-only`, `secret-deny`), honoring any
    journal/decisions/vault destinations the map records. Same fallback as save step 4 if the
    map is silent. Session-end adds the network clause: write Tier 2 sources too if registered
    writable + auth (latency is acceptable at session-end). Session-end is also the right
@@ -103,8 +103,8 @@ MAP="$SELF/house-map.md"
    stayed true.
 
 4. **Tomorrow's starting point.** Write a one-line "what to come back to" into the sources
-   the map says carry it — the `digest-fanout` source and the `handoff-only` source's
-   `## Next` section. Don't hard-code paths; use whichever sources hold those tokens. For
+   the map says carry it — the `digest-fanout` source (never the remember plugin's
+   handoff: its `/remember` writes that). Don't hard-code paths. For
    `digest-fanout`, the `## Tomorrow` lines go INSIDE the digest that step 2's save loop pipes to
    `scripts/maude-now-write.sh`; never append them to `now.md` on their own (a second
    block is how the buffer stacked, 2026-10-06).

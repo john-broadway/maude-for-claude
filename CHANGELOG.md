@@ -1,6 +1,6 @@
-<!-- Version: 0.37.0 -->
+<!-- Version: 0.38.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-11-12 -->
+<!-- Revised: 2026-11-17 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,62 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.38.0 - a rest cut short never doubles his words, and the ship rail proves what it ships
+
+- **Maude never writes the remember plugin's store.** The store is that plugin's own; its
+  `/remember` writes the handoff. `/maude:save` used to tell Claude to overwrite the shared
+  `remember.md`, and on 2026-11-11 that replaced about 3,900 lines of other sessions'
+  handoffs with 35. The save and rest texts, the pre-compact append, the session-end
+  auto-note and the c2 re-roll no longer write, move or delete anything there. A test fills
+  a store, runs every one of those writers, and checks every byte is unchanged.
+- **She reads the remember plugin's store where it lives.** Its `data_dir` (absolute, `~`, or
+  project-relative), a linked git worktree keyed to its main checkout, and `{slug}` from the
+  plugin's own slug function when it is installed. With its `handoff_mode: "per_session"`
+  she reads the newest `remember.<session>.md`.
+- **A Write never replaces a lane's history.** A Write to an existing `now_<name>.md` or
+  `now.md` in Claude Code's project memory is refused unless it keeps the old text (a BOM,
+  line endings and a final newline aside). Put the new dated entry on top, or use Edit.
+- **She names a lane that shrank.** At session end she keeps one copy of each `now_<name>.md`
+  under `~/.claude/maude/pile/lanes/`; the next wake names a lane more than 512 bytes shorter
+  than its copy, or gone, with the copy's path. `now.md` joins later, when its writer stops
+  replacing it whole.
+- **No chore calls a model.** The c1 missed-save chore is retired: writing only to her own
+  closet, it would have stayed due and called a model on every pause. The continuity guard
+  still says at wake when work went unsaved.
+- **A rest cut short, or two at once, writes each of his lines to canon once, and the next
+  wake finishes a cut one.** Claude Code cancels SessionEnd hooks when a session exits under
+  them. The tape's rest wrote each line to canon and committed, then marked it consolidated a
+  step later, so a cut between the two left the line buffered and the next rest wrote it
+  again; canon replays at every wake. The two now commit together, and the mark moves only a
+  line still buffered, so a second rest running at the same time writes nothing for a line
+  the first one took. `promote` had the same split and `consolidate_correction` committed its
+  three writes apart (a cut left the corrected line and its correction both current); each
+  now commits once. Tests kill a real rest, promote and correction with SIGKILL after the
+  first canon write and reopen the store. Each rest marks itself while it runs; a wake that
+  finds the mark of a rest whose process is gone finishes the rest and says so in one line,
+  and leaves a running rest's mark alone.
+- **The memory budget line speaks once a session.** While the auto-memory index was over its
+  budget, the line came on every prompt, for hours, while the session could not act on it.
+  It now speaks on a session's first prompt, again when the index grows past what it said,
+  and again when it comes back over after going under; another session hears it once.
+  Without a session id it cannot tell, and speaks.
+- **The ship rail fails fast and proves the bytes that ship.** A public build ran the whole
+  test fleet about four times, an hour each build, and its install smoke archived `HEAD`,
+  which during a build is still public main: it proved the tree already public, not the one
+  about to ship. The build now runs the cheap gates first (the leak audit, lint, verify),
+  then the python tests, the smoke on the staged tree (`install-smoke.sh` takes a tree), and
+  the macOS-shaped pass without a nested smoke, and it refuses to commit a tree the smoke
+  did not see. `ship.sh preflight` runs the cheap gates on the shipping tree in a throwaway
+  worktree before an hour is spent. The leak audit also refuses this house's private names
+  from a list kept outside the repo, never printing one, and reads prose for a memory
+  note's name or a quoted session id. `tests/run.sh -j N` runs test files side by side,
+  with `tests/serial.list` for the ones that run alone; `test-gate.sh` is eight files now.
+- **What's new keeps three entries.** The README's list holds the three newest releases;
+  `make verify` names a fourth. Older ones live here.
+
+Design: `docs/specs/2026-11-11-the-circle-design.md`, phase 1;
+`docs/specs/2026-11-16-fast-ship-rail-design.md`.
 
 ## v0.37.0 - her Rolodex, and every python she starts runs isolated
 

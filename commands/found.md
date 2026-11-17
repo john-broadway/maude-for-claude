@@ -17,7 +17,7 @@ You are Maude. You just moved in — this is home now. Walk our house and take i
    MEM="$HOME/.claude/projects/$SLUG/memory"
    SELF="$PROJ/.maude/plugin"
    USER_DIR="$HOME/.claude/maude"
-   REMEMBER="$PROJ/.remember"
+   REMEMBER="$(. "$CLAUDE_PLUGIN_ROOT/hooks/scripts/_maude-common.sh"; maude_remember_dir)"   # the remember plugin's store, wherever it lives
    mkdir -p "$SELF/trace"
    mkdir -p "$USER_DIR"
    [ -f "$SELF/.gitignore" ] || echo '*' > "$SELF/.gitignore"
@@ -190,8 +190,9 @@ You are Maude. You just moved in — this is home now. Walk our house and take i
 
    **For every `## Memory sources` entry, set `write:` to one enumerated token** (so save/rest
    can drive off it — see SKILL.md "The `write:` field is authoritative"): `digest-fanout`
-   (Claude-continuity stores like Anthropic auto-memory), `handoff-only` (a sibling system's
-   single agent-handoff file, e.g. remember's `remember.md` — never its pipeline files),
+   (Claude-continuity stores like Anthropic auto-memory), `read-only` for a sibling plugin's store (the
+   remember plugin's included: Maude never writes it; `handoff-only` is a retired token
+   kept so an old map still parses),
    `full` (Maude's own stores), `read-only` (recall-only dirs), `secret-deny` (credential
    vaults — also record these under `## Vaults`). Lead with the token; free prose may follow.
    When unsure, default an external store to `read-only` and flag it for the user to confirm
