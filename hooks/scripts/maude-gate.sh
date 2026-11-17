@@ -195,7 +195,7 @@ INERT_CMD_RE='^[[:space:]]*(git[[:space:]]+(add|am|apply|archive|blame|branch|ch
 # `rm -rf $(echo x) /srv/app` — a genuinely destructive command that is blocked
 # today. Narrowing a block rule can only ever cause UNDER-blocking, so it gets
 # the smallest cut that fixes the measured fault, not the tidiest-looking one.
-# Regression: tests/test-gate.sh "the arg-walk must stop at the end of ITS OWN command".
+# Regression: tests/test-gate-override.sh "the arg-walk must stop at the end of ITS OWN command".
 ARGS='([^[:space:];&|]+[[:space:]]+)*'
 # ABS = optional absolute/relative path prefix on a command NAME (/bin/rm,
 # /usr/bin/git). Ends in a slash so it can't eat into the command word. Closes #6.
@@ -809,7 +809,7 @@ maude_opener_tokens() {  # <line>
 # plain text names a note takes (README, NOTES, .log, .html…); the dev sinks are not files.
 # A doc-shaped name the COMMAND names again as a word outside its own body (`> notes.md;
 # bash notes.md`, `make -f Makefile.txt` on a later line) is run, not read; a body that names
-# its own file ("see now_maude.md") is the 10-08 note and stays text (round 3, M2). The
+# its own file ("see now_<lane>.md") is the 10-08 note and stays text (round 3, M2). The
 # opener's own mention may follow `>` with no space, so the prefix class counts it.
 # The OTHER bodies count too (the security review on c7cfaa6, 3): an interpreter body
 # (`python3 - <<PY` ⏎ `os.system("bash notes.md")`) is never read by this scan, so a mention
@@ -1676,7 +1676,7 @@ else
 fi
 # Deliberately does NOT repeat the matched key. An earlier draft did, and that
 # put the key into stderr from a second source — which let nine assertions in
-# test-gate.sh ("...block names its conscience key") pass even with the primary
+# the tests/test-gate*.sh files ("...block names its conscience key") pass even with the primary
 # message suppressed. A diagnostic must not become an alternative supply of the
 # thing other tests are checking for.
 printf '       (looked in: %s)\n' "$CARE" >&2

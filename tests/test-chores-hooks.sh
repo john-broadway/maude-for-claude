@@ -15,11 +15,15 @@ printf '{}\n' > "$TEST_TMP/t.jsonl"
 # test-chores-c1-save.sh for that guard's own coverage); this file is testing
 # Stop-wires-dispatch, orthogonal to the substrate question, so give it one.
 mkdir -p "$TEST_TMP/.remember"
+# The vehicle is c2-shelves (c1 is retired, 2026-11-12): an aged daily makes it due.
+export MAUDE_MEM_DIR_OVERRIDE="$TEST_TMP/mem"; mkdir -p "$MAUDE_MEM_DIR_OVERRIDE"
+printf 'old day\n' > "$MAUDE_MEM_DIR_OVERRIDE/today-2020-01-01.md"
+touch -t 202001010000 "$MAUDE_MEM_DIR_OVERRIDE/today-2020-01-01.md"
 
 test_start "stop hook dispatches due chore"
 printf '{"transcript_path":"%s"}\n' "$TEST_TMP/t.jsonl" | \
   MAUDE_CHORE_DOER_STUB="true" bash "$HOOKS_DIR/maude-session-stop.sh" >/dev/null 2>&1
-assert_eq "$(jq -r '.["c1-missed-save"].status // ""' "$LEDGER")" "dispatched" "stop hook dispatches due chore"
+assert_eq "$(jq -r '.["c2-shelves"].status // ""' "$LEDGER")" "dispatched" "stop hook dispatches due chore"
 
 test_start "session start prints chores brief"
 bash "$SCRIPTS_DIR/maude-chores.sh" stamp c1-missed-save --arg s "done" \

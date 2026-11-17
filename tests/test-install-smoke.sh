@@ -62,6 +62,30 @@ assert_contains "$OUT3" "fleet    : FAIL" "the fleet line is red"
 assert_contains "$OUT3" "FAIL  test-zz-fake.sh" "and the failing file is named"
 assert_contains "$OUT3" "0/1 test files passed" "with the fleet's own summary"
 
+# The smoke proves the tree it is given (2026-11-16). ship.sh build stages the ship tree in
+# the index and commits only after its gates, so during a build HEAD is still public main:
+# a smoke of HEAD proved the tree already public, not the one about to ship.
+test_start "the smoke given a tree id proves that tree, not HEAD"
+TREEREPO="$TEST_TMP/tree-repo"
+git init -q "$TREEREPO"
+mkdir -p "$TREEREPO/.claude-plugin" "$TREEREPO/tests"
+printf '{"name":"tree","version":"0.0.1"}\n' > "$TREEREPO/.claude-plugin/plugin.json"
+printf '#!/usr/bin/env bash\nprintf "1/1 test files passed\\n"\nexit 0\n' > "$TREEREPO/tests/run.sh"
+git -C "$TREEREPO" add -A
+GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+  git -C "$TREEREPO" -c user.name=t -c user.email=t@t commit -qm init
+printf '#!/usr/bin/env bash\nprintf "FAIL  test-staged.sh  (exit 1)\\n0/1 test files passed\\n"\nexit 1\n' > "$TREEREPO/tests/run.sh"
+git -C "$TREEREPO" add tests/run.sh
+STAGED="$(git -C "$TREEREPO" write-tree)"
+OUT4="$(bash "$SMOKE" "$TREEREPO" "$STAGED" 2>&1)"
+assert_contains "$OUT4" "fleet    : FAIL" "the staged tree's fleet is the one run"
+assert_contains "$OUT4" "${STAGED:0:7}" "the banner names the tree it staged"
+OUT5="$(bash "$SMOKE" "$TREEREPO" 2>&1)"
+assert_contains "$OUT5" "fleet    : PASS" "with no tree given it is still HEAD, today's behaviour"
+OUT6="$(bash "$SMOKE" "$TREEREPO" "no-such-tree" 2>&1)"; RC6=$?
+assert_ne "$RC6" "0" "a tree-ish that does not resolve fails loud"
+assert_contains "$OUT6" "no-such-tree" "and names what it could not find"
+
 print_summary
 teardown_test_env
 exit $FAILED

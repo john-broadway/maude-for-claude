@@ -590,6 +590,11 @@ for c in "echo 'rm -rf /' | bash /dev/stdin" "bash <(echo 'rm -rf /')" "sh < <(e
 done
 
 test_start "a gated verb on line 1 followed by thousands of lines is still read (a peer's SIGPIPE class, 2026-11-04)"
+# This block pins READING through a long input, not speed: under the gate's 3 s judge budget a
+# box at load 30+ ran the parser out of time and the gate refused, correctly and fail-closed,
+# twice in public builds (2026-11-16, 11-17). The budget's own fail-closed path is pinned by
+# its own tests; here it is roomy so the result is the read's, not the box's.
+export MAUDE_GATE_JUDGE_BUDGET=20
 # grep -q exits on its first matching line; past the pipe's 64 KB the writer takes SIGPIPE,
 # and under pipefail the pipeline reads "no match" (two workspace hooks fell that way on
 # 2026-11-04). The gate runs without pipefail, and a mutant with it set still blocked every
@@ -621,6 +626,8 @@ else
   assert_exit "$RC" "0" "an opaque wrap passes under the line cap"
   assert_contains "$ERR" "can't inspect" "whispered"
 fi
+
+unset MAUDE_GATE_JUDGE_BUDGET
 
 test_start "hook blocks a payload nested past the reader's cap"
 c='git status'

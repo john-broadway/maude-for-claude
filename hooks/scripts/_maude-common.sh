@@ -30,12 +30,10 @@
 #                                                 her own working files here.
 #
 #   <project>/.remember/                        = remember plugin's dir (if installed)
-#                                                 She READS all *.md as context.
-#                                                 She WRITES only remember.md (the agent-handoff
-#                                                 file that remember explicitly leaves for agents).
-#                                                 She does NOT touch now.md/today-*.md/recent.md/
-#                                                 archive.md/core-memories.md — those are remember's
-#                                                 pipeline output.
+#                                                 She READS all *.md as context, and
+#                                                 WRITES nothing there: the store is the
+#                                                 remember plugin's own (2026-11-11). It may
+#                                                 live elsewhere (maude_remember_dir).
 #
 #   Vaults the user maintains (custom journals, decisions logs)
 #                                                = Stay where they are. She writes through.
@@ -495,8 +493,76 @@ maude_rolodex_refuses() {  # <path> <cwd>
 }
 
 # remember plugin's dir, if it exists in this project
+# The remember plugin's store, resolved the way that plugin documents it (v0.43.1,
+# its docs/external-storage-mode.md and configuration.md), written here fresh:
+#   - the project is the MAIN checkout when the project dir is a linked git worktree
+#     (its #56: one store shared by a repo's worktrees);
+#   - `data_dir` from ~/.remember/config.json, default ".remember";
+#   - starting with / or ~: ~ expanded, {slug} = the project's Claude Code slug;
+#     otherwise relative to the project.
+# The slug comes from the plugin's own session_dir_slug when it is installed (it
+# truncates long paths with a hash), else the plain rule. Maude only READS this store.
+_maude_memory_project_dir() {  # <project dir>
+  local p="$1" out gcd gd main
+  if [ -d "$p/.git" ] || ! command -v git >/dev/null 2>&1; then printf '%s' "$p"; return 0; fi
+  out="$(git -C "$p" rev-parse --path-format=absolute --git-common-dir --git-dir 2>/dev/null)" || out=""
+  gcd="$(printf '%s\n' "$out" | sed -n 1p)"; gd="$(printf '%s\n' "$out" | sed -n 2p)"
+  if [ -z "$gcd" ] || [ -z "$gd" ] || [ "$gcd" = "$gd" ]; then printf '%s' "$p"; return 0; fi
+  main="$(dirname "$gcd")"
+  if [ -d "$main" ] && git -C "$main" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '%s' "$main"
+  else
+    printf '%s' "$p"
+  fi
+}
+_maude_remember_slug() {  # <project dir>
+  local lib s
+  lib="$(ls -d "$HOME"/.claude/plugins/cache/*/remember/*/scripts/lib-slug.sh 2>/dev/null | sort | tail -1)"
+  if [ -n "$lib" ] && [ -f "$lib" ]; then
+    # shellcheck source=/dev/null  # the remember plugin's own lib, found at run time
+    s="$( . "$lib" >/dev/null 2>&1; session_dir_slug "$1" 2>/dev/null )"
+    [ -n "$s" ] && { printf '%s' "$s"; return 0; }
+  fi
+  printf '%s' "$1" | sed 's/[^a-zA-Z0-9]/-/g'
+}
 maude_remember_dir() {
-  printf '%s/.remember' "$(maude_project_dir)"
+  local cfg dd="" proj s
+  proj="$(_maude_memory_project_dir "$(maude_project_dir)")"
+  cfg="$HOME/.remember/config.json"
+  if [ -f "$cfg" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      dd="$(jq -r '.data_dir // empty | strings' "$cfg" 2>/dev/null)"
+    elif maude_python3_ok 2>/dev/null; then
+      dd="$(python3 -I -c 'import json,sys
+v=json.load(open(sys.argv[1])).get("data_dir")
+print(v if isinstance(v,str) else "")' "$cfg" 2>/dev/null)"
+    fi
+  fi
+  [ -n "$dd" ] || dd=".remember"
+  case "$dd" in
+    /*|"~"*)
+      dd="${dd/#\~/$HOME}"
+      case "$dd" in
+        *"{slug}"*) s="$(_maude_remember_slug "$proj")"; [ -n "$s" ] || { printf '%s/.remember' "$proj"; return 0; }
+                    dd="${dd//\{slug\}/$s}" ;;
+      esac
+      printf '%s' "$dd" ;;
+    *) printf '%s/%s' "$proj" "$dd" ;;
+  esac
+}
+
+# The handoff the remember plugin left: remember.md, or with its handoff_mode
+# "per_session" one remember.<session_id>.md per session. The newest non-empty one.
+maude_remember_handoff() {
+  local d f best="" bt=0 t
+  d="$(maude_remember_dir)"
+  for f in "$d/remember.md" "$d"/remember.*.md; do
+    [ -s "$f" ] || continue
+    t="$(maude_mtime "$f" 2>/dev/null)"; t="${t:-0}"
+    if [ -z "$best" ] || [ "$t" -gt "$bt" ] 2>/dev/null; then best="$f"; bt="$t"; fi
+  done
+  [ -n "$best" ] && printf '%s' "$best"
+  return 0
 }
 
 maude_have_remember() {
@@ -1418,8 +1484,8 @@ maude_capture_anchor_epoch() {
   local proj mem remember f m anchor=0
   proj="$(maude_project_dir)"
   mem="$(maude_mem_dir)"
-  remember="$proj/.remember"
-  for f in "$mem/now.md" "$remember/now.md" "$remember/remember.md"; do
+  remember="$(maude_remember_dir)"
+  for f in "$mem/now.md" "$remember/now.md" "$(maude_remember_handoff)"; do
     [ -s "$f" ] || continue
     m="$(maude_mtime "$f")"
     [ "$m" -gt "$anchor" ] && anchor="$m"
@@ -1477,7 +1543,7 @@ maude_continuity_guard() {
   command -v jq >/dev/null 2>&1 || return 0
   local remember tdir n anchor
   local threshold=3
-  remember="$(maude_project_dir)/.remember"
+  remember="$(maude_remember_dir)"
   tdir="$(maude_self_dir)/trace"
   # The remember plugin is the continuity substrate this guards; no .remember dir → N/A.
   [ -d "$remember" ] && [ -d "$tdir" ] || return 0
@@ -1971,6 +2037,25 @@ maude_memory_budget() {
 # slug holds no slash. One definition for every rail that reads it.
 maude_is_memory_index() {
   [[ "$1" =~ /\.claude/projects/[^/]+/memory/MEMORY\.md$ ]]
+}
+
+# A lane file: a line of work's dated history in Claude Code's project memory dir,
+# now.md or now_<name>.md (docs/specs/2026-11-11-the-circle-design.md).
+maude_is_lane_file() {
+  [[ "$1" =~ /\.claude/projects/[^/]+/memory/now(_[^/]+)?\.md$ ]]
+}
+
+# The path a tool will really write: its directory resolved physically (., .., //, a
+# symlinked dir) when that directory exists; unchanged otherwise.
+maude_lane_path() {
+  local d b
+  d="$(dirname -- "$1")"; b="$(basename -- "$1")"
+  if [ -d "$d" ]; then
+    d="$(cd -P -- "$d" 2>/dev/null && pwd -P)" || { printf '%s' "$1"; return 0; }
+    printf '%s/%s' "$d" "$b"
+  else
+    printf '%s' "$1"
+  fi
 }
 
 # A file's length in UTF-16 units, the way Claude Code's loader counts (\r\n is two).

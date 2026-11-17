@@ -89,11 +89,87 @@ PY
 )"
 assert_eq "$GOT" "fits" "the bounds leave a second for rest itself"
 
+# ── A rest cut short at exit is finished at the next wake, and said once (2026-11-16) ─
+# SessionEnd hooks are cancelled when a session exits under them. Each rest marks itself
+# (rest.cut.<its pid>) while it runs and clears its mark when it ends; the wake that finds a
+# mark whose process is gone runs the rest (safe: a canon line and its event's mark commit
+# together, and a mark moves only a still-buffered event: tests/tape/test_rest_cut_short.py)
+# and says one line. A mark whose process is alive is another session's rest, not a cut.
+WAKE="$HOOKS_DIR/maude-tape-wake.sh"
+TAPE_DIR="$(dirname "$DB")"
+marks() { find "$TAPE_DIR" -maxdepth 1 -name 'rest.cut.*' 2>/dev/null | wc -l | tr -d ' '; }
+DEAD="$(bash -c 'echo $$')"            # a pid whose process has already exited
+PYTHONPATH="$PLUGIN_ROOT" python3 - "$DB" <<'PY'
+import sys
+from maude_tape.tape import Tape
+Tape(sys.argv[1]).capture("keep the receipts", topic="own", source="user",
+                          importance=0.8, authority="user-verbatim")
+PY
+
+test_start "a rest that runs to its end leaves no cut marker"
+bash "$REST" </dev/null >/dev/null 2>&1
+assert_eq "$(marks)" "0" "no marker after a whole rest"
+
+test_start "a wake that finds a dead rest's marker finishes the rest and says so once"
+PYTHONPATH="$PLUGIN_ROOT" python3 - "$DB" <<'PY'
+import sys
+from maude_tape.tape import Tape
+Tape(sys.argv[1]).capture("say it once, at the end", topic="own", source="user",
+                          importance=0.8, authority="user-verbatim")
+PY
+: > "$TAPE_DIR/rest.cut.$DEAD"
+OUT="$(bash "$WAKE" </dev/null 2>/dev/null)"; RC=$?
+assert_exit "$RC" "0" "wake exits 0"
+assert_contains "$OUT" "**Maude:** the last session's tape rest did not finish; it is finished now." "the one signed line"
+assert_eq "$(marks)" "0" "the marker is cleared once the rest has run"
+GOT="$(python3 -c "
+import sqlite3,sys
+c=sqlite3.connect(sys.argv[1])
+print(c.execute(\"select count(*) from canon where text='say it once, at the end'\").fetchone()[0],
+      c.execute(\"select count(*) from events where status='buffered' and authority='user-verbatim'\").fetchone()[0])" "$DB")"
+assert_eq "$GOT" "1 0" "his line is in canon once and nothing of his waits"
+OUT="$(bash "$WAKE" </dev/null 2>/dev/null)"
+assert_not_contains "$OUT" "did not finish" "the next wake says nothing about it"
+
+test_start "a live rest's marker (another session still resting) is not a cut"
+: > "$TAPE_DIR/rest.cut.$$"
+OUT="$(bash "$WAKE" </dev/null 2>/dev/null)"
+assert_not_contains "$OUT" "did not finish" "no false alarm while it runs"
+assert_file_exists "$TAPE_DIR/rest.cut.$$" "and its mark is left for it to clear"
+rm -f "$TAPE_DIR/rest.cut.$$"
+
+test_start "a moved-aside leftover is not read as a marker"
+: > "$TAPE_DIR/rest.cut.$DEAD.notafile.$DEAD"
+OUT="$(bash "$WAKE" </dev/null 2>/dev/null)"
+assert_not_contains "$OUT" "did not finish" "rest.cut.N.notafile.M is not a mark"
+rm -f "$TAPE_DIR/rest.cut.$DEAD.notafile.$DEAD"
+
+test_start "a symlink at a marker name is never written through, nor read as a mark"
+VICTIM="$TEST_TMP/victim.txt"; printf 'keep me\n' > "$VICTIM"
+ln -s "$VICTIM" "$TAPE_DIR/rest.cut.$DEAD"
+bash "$REST" </dev/null >/dev/null 2>&1
+OUT="$(bash "$WAKE" </dev/null 2>/dev/null)"
+assert_not_contains "$OUT" "did not finish" "the wake does not read a link as a marker"
+assert_eq "$(cat "$VICTIM")" "keep me" "the link's target is untouched by rest and wake"
+rm -f "$TAPE_DIR/rest.cut.$DEAD"
+GOT="$(bash -c ". \"$HOOKS_DIR/_maude-common.sh\"; L=\"$TAPE_DIR/rest.cut.own\"; ln -s \"$VICTIM\" \"\$L\"; _maude_care_marker_path_clear \"\$L\" && ( set -C; : > \"\$L\" ) 2>/dev/null; cat \"$VICTIM\"; [ -f \"\$L\" ] && [ ! -L \"\$L\" ] && echo plain")"
+assert_eq "$GOT" "keep me
+plain" "rest's own write: the link moved aside, a plain file made, the target kept"
+rm -f "$TAPE_DIR"/rest.cut.own "$TAPE_DIR"/rest.cut.own.notafile.* 2>/dev/null
+
 test_start "a broken tape does not make rest loud or fail"
 printf 'not a database' > "$DB"
 OUT="$(bash "$REST" </dev/null 2>&1)"; RC=$?
 assert_exit "$RC" "0" "rest exits 0"
 assert_eq "$OUT" "" "rest is silent"
+
+test_start "a broken tape keeps the cut marker, and the wake says only what is true"
+assert_eq "$(marks)" "1" "a rest that could not run is still marked"
+OUT="$(bash "$WAKE" </dev/null 2>/dev/null)"; RC=$?
+assert_exit "$RC" "0" "wake exits 0"
+assert_contains "$OUT" "could not be finished now; it stays marked until a rest runs to its end." "no promise it cannot keep"
+assert_not_contains "$OUT" "finished now." "and no claim it finished"
+assert_eq "$(marks)" "1" "the mark stays"
 
 print_summary
 teardown_test_env

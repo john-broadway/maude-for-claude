@@ -7,8 +7,12 @@
 #                 harness's refusal (2). bash itself exits 2 on a syntax error, so a broken
 #                 copy of this file must not be able to speak the refusal code. A shrinking
 #                 edit always passes: a trim is never refused.
-#   prompt <file> print one line on stdout while <file> is over budget. A write made through
-#                 Bash cannot be judged before it runs, so this is the net for it.
+#   prompt <file> [session]
+#                 print one line on stdout while <file> is over budget. A write made through
+#                 Bash cannot be judged before it runs, so this is the net for it. With a
+#                 session id it speaks once a session, and again only when the count rises
+#                 past what it last said there (2026-11-16: said on every prompt for hours, it
+#                 had become noise); without one it cannot tell, so it speaks.
 #
 # Claude Code loads the index whole at every session start, so its size is rent every
 # session pays. The budget is maude_memory_budget (gate-config "memory_index_budget",
@@ -29,15 +33,41 @@ BUDGET="$(maude_memory_budget)"
 if [ "$MODE" = "prompt" ]; then
   F="${2:-}"
   [ -f "$F" ] || exit 0
+  # The per-session note: the count this line last said in this session. A plain token only
+  # (no dot, no slash), so the name cannot leave its folder. Under budget it is cleared, so
+  # an index that comes back over in the same session is said again (the lens on e30aed9:
+  # under, then over to a smaller count, stayed silent). /compact and --resume keep the id,
+  # so a line compacted out of context is not repeated until the count rises.
+  SID="${3:-}" SAID=""
+  if [ -n "$SID" ] && [ "${#SID}" -le 128 ] && maude_is_ascii_token "$SID"; then
+    SAID_DIR="$(maude_user_dir)/budget-said"
+    SAID="$SAID_DIR/$SID"
+  fi
+  under() { [ -n "$SAID" ] && [ -f "$SAID" ] && [ ! -L "$SAID" ] && rm -f "$SAID" 2>/dev/null; exit 0; }
   # A UTF-16 unit is never more than a UTF-8 byte, so a file within budget in bytes is
   # within it in units, and the common case costs one stat, not a python start.
   BYTES="$(wc -c < "$F" 2>/dev/null | tr -d ' ')"
-  [ "${BYTES:-0}" -le "$BUDGET" ] 2>/dev/null && exit 0
+  [ "${BYTES:-0}" -le "$BUDGET" ] 2>/dev/null && under
   maude_python3_ok || exit 0
   UNITS="$(maude_utf16_units "$F")"
-  if [ "${UNITS:-0}" -gt "$BUDGET" ] 2>/dev/null; then
-    printf 'Maude: MEMORY.md is %s units, past its budget of %s, and every session loads all of it. Move detail into topic files and keep one line per pointer in the index.\n' "$UNITS" "$BUDGET"
+  [ "${UNITS:-0}" -gt "$BUDGET" ] 2>/dev/null || under
+  if [ -n "$SAID" ]; then
+    LAST="$(cat "$SAID" 2>/dev/null)"
+    # digits only, and short enough to compare: anything else reads as never said
+    case "$LAST" in ''|*[!0-9]*) LAST=0 ;; esac
+    [ "${#LAST}" -le 9 ] || LAST=0
+    [ "$UNITS" -gt "$LAST" ] 2>/dev/null || exit 0
+    mkdir -p "$SAID_DIR" 2>/dev/null
+    # Written whole (temp, then rename): a reader never sees a half note.
+    if _maude_care_marker_path_clear "$SAID"; then
+      TMPN="$(mktemp "$SAID_DIR/.said.XXXXXX" 2>/dev/null)" \
+        && printf '%s\n' "$UNITS" > "$TMPN" && mv -f "$TMPN" "$SAID" 2>/dev/null
+      [ -n "${TMPN:-}" ] && rm -f "$TMPN" 2>/dev/null
+    fi
+    # A session's note outlives it by two days at most (2,880 minutes).
+    find "$SAID_DIR" -maxdepth 1 -type f -mmin +2880 -exec rm -f {} + 2>/dev/null
   fi
+  printf 'Maude: MEMORY.md is %s units, past its budget of %s, and every session loads all of it. Move detail into topic files and keep one line per pointer in the index.\n' "$UNITS" "$BUDGET"
   exit 0
 fi
 

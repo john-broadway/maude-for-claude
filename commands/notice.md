@@ -16,7 +16,7 @@ SLUG="$(printf %s "$PROJ" | sed 's/[^a-zA-Z0-9]/-/g')"   # canonical slug (match
 MEM="$HOME/.claude/projects/$SLUG/memory"
 SELF="$PROJ/.maude/plugin"
 USER_DIR="$HOME/.claude/maude"
-REMEMBER="$PROJ/.remember"
+REMEMBER="$(. "$CLAUDE_PLUGIN_ROOT/hooks/scripts/_maude-common.sh"; maude_remember_dir)"   # the remember plugin's store, wherever it lives
 TRACE_DIR="$SELF/trace"
 [ -d "$TRACE_DIR" ] || { echo "no trace yet — sessions need to accumulate first"; exit 0; }
 ```

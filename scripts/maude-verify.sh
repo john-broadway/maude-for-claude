@@ -147,7 +147,7 @@ fi
 
 # ─── Check 3b: "What's new" stays condensed (the wall belongs in CHANGELOG) ──
 printf "\n## README 'What's new' condensed\n"
-WHATSNEW_MAX="${MAUDE_WHATSNEW_MAX:-6}"
+WHATSNEW_MAX="${MAUDE_WHATSNEW_MAX:-3}"   # three, so the public face stays short (2026-11-17)
 if [ -f README.md ] && grep -q '^## What.s new' README.md; then
   WN_COUNT=$(awk '/^## What.s new/{flag=1; next} /^## /{flag=0} flag' README.md 2>/dev/null | grep -cE '^\*\*v[0-9]')
   if [ "$WN_COUNT" -gt "$WHATSNEW_MAX" ]; then

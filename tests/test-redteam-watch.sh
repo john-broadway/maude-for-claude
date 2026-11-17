@@ -713,7 +713,7 @@ RC2="$(subagent_stop "$AID" "general-purpose" | bash "$SUB" >/dev/null 2>&1; ech
 assert_eq "$RC1$RC2" "00" "both exit 0"
 
 # ── a lens KILLED with TaskStop leaves no immortal pending entry ───────────────────
-# Live on this box: on 2026-09-06 session 41158c31 launched an adversarial lens
+# Live on this box: on 2026-09-06 a session launched an adversarial lens
 # (ad21d0f7) at 19:35:14Z and killed it 5m27s later with TaskStop by id — the correct
 # move under stop-the-waiter-you-outran. A killed agent never emits a SubagentStop for
 # its OWN id, so not one branch here fired: the entry sat pending until the 7-day age

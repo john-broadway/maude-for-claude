@@ -16,15 +16,24 @@
 set -uo pipefail
 
 REPO="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
+# The tree to prove: HEAD by default. ship.sh build passes the staged index's tree: it
+# commits the ship only after its gates, so during a build HEAD is still public main, and a
+# smoke of HEAD proved the tree already public, not the one about to ship (2026-11-16).
+TREE="${2:-HEAD}"
 cd "$REPO" || { echo "install-smoke: cannot cd to $REPO" >&2; exit 1; }
 git rev-parse HEAD >/dev/null 2>&1 || { echo "install-smoke: not a git repo with a HEAD" >&2; exit 1; }
+git rev-parse --verify -q "$TREE^{tree}" >/dev/null 2>&1 || { echo "install-smoke: '$TREE' is not a tree in $REPO" >&2; exit 1; }
 
 _ismk_base="${TMPDIR:-/tmp}"; _ismk_base="${_ismk_base%/}"; [ -n "$_ismk_base" ] || _ismk_base=/
 STAGE="$(mktemp -d "$_ismk_base/maude-smoke.XXXXXX")"   # a template: macOS mktemp ignores TMPDIR without one
 trap 'rm -rf "$STAGE"' EXIT
 
-echo "== install-smoke: staging git-archive of HEAD ($(git rev-parse --short HEAD)) =="
-git archive HEAD | tar -x -C "$STAGE" || { echo "install-smoke: archive failed" >&2; exit 1; }
+if [ "$TREE" = HEAD ]; then
+  echo "== install-smoke: staging git-archive of HEAD ($(git rev-parse --short HEAD)) =="
+else
+  echo "== install-smoke: staging git-archive of $TREE ($(git rev-parse --short "$TREE^{tree}")) =="
+fi
+git archive "$TREE" | tar -x -C "$STAGE" || { echo "install-smoke: archive failed" >&2; exit 1; }
 
 RC=0
 

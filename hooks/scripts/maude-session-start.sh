@@ -8,10 +8,10 @@ set +e
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/_maude-common.sh"
 
-PROJ="$(maude_project_dir)"
 MEM="$(maude_mem_dir)"
 USER_DIR="$(maude_user_dir)"
-REMEMBER="$PROJ/.remember"
+REMEMBER="$(maude_remember_dir)"
+HANDOFF_FILE="$(maude_remember_handoff)"   # remember.md, or the newest remember.<session>.md
 MAP="$(maude_map_path)"
 
 # ── Once-per-session housekeeping ────────────────────────────────────────────
@@ -129,7 +129,7 @@ HANDOFF_CAP=$((10#$HANDOFF_CAP))
 # and Arch) length/substr count characters, so every cap here was a character cap, up to
 # ~3x in bytes, and the byte classes below would read as code points (lens 3, I-D).
 _maude_handoff() {  # <cap>
-  LC_ALL=C awk -v lane="$_MAUDE_LANE" -v cap="$1" '
+  LC_ALL=C awk -v lane="$_MAUDE_LANE" -v cap="$1" -v hf="${HANDOFF_FILE##*/}" '
     # The lane is whatever stands before " lane" inside the header parentheses, compared
     # whole: a charset regex read "ma.ude+ lane" as "ude" and "my lane" as "my", and told a
     # lane that its own block belonged to nobody (lens 5). The bare "<token> lane" form is
@@ -185,17 +185,17 @@ _maude_handoff() {  # <cap>
         }
         print "    " x; used += length(x) + 5
       }
-      print "    (full: .remember/remember.md:" s ")"
-    }' "$REMEMBER/remember.md" 2>/dev/null
+      print "    (full: " hf ":" s ")"
+    }' "$HANDOFF_FILE" 2>/dev/null
 }
-if [ -s "$REMEMBER/remember.md" ]; then
+if [ -s "$HANDOFF_FILE" ]; then
   REMEMBER_HANDOFF="$(_maude_handoff "$HANDOFF_CAP")"
   HANDOFF_FROM_BLOCKS=""; [ -n "$REMEMBER_HANDOFF" ] && HANDOFF_FROM_BLOCKS=1
   if [ -z "$REMEMBER_HANDOFF" ]; then
-    REMEMBER_HANDOFF="$(grep -A1 '^## Next' "$REMEMBER/remember.md" 2>/dev/null \
+    REMEMBER_HANDOFF="$(grep -A1 '^## Next' "$HANDOFF_FILE" 2>/dev/null \
       | grep -vE '^## |^--$|^[[:space:]]*$' | tail -1 | head -c 200)"
   fi
-  [ -z "$REMEMBER_HANDOFF" ] && REMEMBER_HANDOFF="$(head -3 "$REMEMBER/remember.md" | tail -1 | head -c 200)"
+  [ -z "$REMEMBER_HANDOFF" ] && REMEMBER_HANDOFF="$(head -3 "$HANDOFF_FILE" | tail -1 | head -c 200)"
   # The chosen block's own date when its header carries one: every lane appends here, so
   # the file's mtime read "today" beside a ten-day-old handoff.
   # The header's LAST date: a date in a reference comes first ("session 2026-09-01 ref").
@@ -212,7 +212,7 @@ if [ -s "$REMEMBER/remember.md" ]; then
     REMEMBER_AGE="undated"
   else
     case "$REMEMBER_AGE_D" in ''|*[!0-9-]*)
-      REMEMBER_AGE_D=$(( ( $(date +%s) - $(maude_mtime "$REMEMBER/remember.md") ) / 86400 )) ;;
+      REMEMBER_AGE_D=$(( ( $(date +%s) - $(maude_mtime "$HANDOFF_FILE") ) / 86400 )) ;;
     esac
     if [ "$REMEMBER_AGE_D" -lt 1 ]; then REMEMBER_AGE="today"; else REMEMBER_AGE="${REMEMBER_AGE_D}d ago"; fi
   fi
@@ -274,6 +274,7 @@ DIGEST_LINE="$(maude_digest_line)"
 # Continuity guard: warn at the top if the last save is stale vs real trace activity —
 # the closing loop so a forgotten /maude:rest degrades continuity loudly, not silently.
 CONTINUITY_LINE="$(maude_continuity_guard)"
+LANE_HEAL="$(bash "$DIR/maude-lane-copy.sh" check 2>/dev/null)"   # a lane that shrank since the last rest
 
 # Cushion line (issue #36): render the last flip's stamp — count + age, one line.
 # No re-scan at wake (the flip walks every repo; too heavy for session-start);
@@ -401,6 +402,7 @@ _maude_brief() {
   printf '\n'
   [ -n "$DIGEST_LINE" ] && printf '  %s\n' "$DIGEST_LINE"
   [ -n "$CONTINUITY_LINE" ] && printf '  %s\n' "$CONTINUITY_LINE"
+  [ -n "$LANE_HEAL" ] && printf '%s\n' "$LANE_HEAL" | sed 's/^/  /'
   [ -n "$PENDING_LINE" ] && printf '  %s\n' "$PENDING_LINE"
   [ -n "$LEFTOFF_LINE" ] && printf '  Where you left off (%s): %s\n' "$LEFTOFF_SRC" "$LEFTOFF_LINE"
   [ -n "$REMEMBER_HANDOFF" ] && printf '  Last handoff (.remember, %s): %s\n' "$REMEMBER_AGE" "$REMEMBER_HANDOFF"

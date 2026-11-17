@@ -114,16 +114,15 @@ assert_contains "$(cat "$SNAP")" "NEWMARK" "the newest line is in the snapshot"
 assert_not_contains "$(cat "$SNAP")" "OLDMARK" "the oldest line, 300 back, is not"
 assert_contains "$(head -4 "$SNAP" | tr '\n' ' ')" "last 200 of 300 lines" "the header names the cut"
 
-test_start "a stale handoff is APPENDED to, never truncated, and the write is read back"
+test_start "a stale handoff in the remember plugin's store is left alone (that store is the plugin's own, 2026-11-11)"
 mkdir -p "$TEST_TMP/.remember"
 printf '# Handoff\n\n## Next\nKEEPME the prior handoff.\n' > "$TEST_TMP/.remember/remember.md"
 touch_ago 1200 "$TEST_TMP/.remember/remember.md"
+BEFORE_H="$(cksum < "$TEST_TMP/.remember/remember.md")"
 run_pc
-HAND="$(cat "$TEST_TMP/.remember/remember.md")"
-assert_contains "$HAND" "KEEPME" "the prior handoff survives"
-assert_contains "$HAND" "## Handoff (maude pre-compact " "the new handoff is a dated section"
-assert_eq "$(grep -c '^## Next' "$TEST_TMP/.remember/remember.md")" "2" "both ## Next blocks present"
-assert_contains "$(tail -1 "$(trace_path)")" "sourced=snapshot remember" "the trace claims the handoff after reading it back"
+assert_eq "$(cksum < "$TEST_TMP/.remember/remember.md")" "$BEFORE_H" "the handoff is byte-identical"
+assert_contains "$(tail -1 "$(trace_path)")" "sourced=snapshot" "the trace names the snapshot"
+assert_not_contains "$(tail -1 "$(trace_path)")" "remember" "and claims no remember write"
 
 print_summary
 teardown_test_env

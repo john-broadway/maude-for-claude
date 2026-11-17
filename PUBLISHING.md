@@ -1,4 +1,4 @@
-<!-- Version: 0.37.0 -->
+<!-- Version: 0.38.0 -->
 <!-- Created: 2026-06-30 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
@@ -71,6 +71,16 @@ CHANGELOG entry → version bumped → merged to local `main` + pushed to **gite
 GitHub gets a *clean squash*, never this history.
 
 ### 1. Build the clean public squash
+`scripts/ship.sh` does this step and its gates. Run `scripts/ship.sh preflight` first: it
+stages the exact tree a build would (in a throwaway worktree, never your checkout) and runs
+the leak audit, `make lint` and `make verify` in seconds, reporting each. Then
+`scripts/ship.sh build` gates in this order, cheap first: the leak audit, lint, verify,
+`make test-py`, the install smoke on the staged tree (its fleet is the plain pass, 8 files
+side by side, `tests/serial.list` alone), then `make mac-shape` (no nested smoke). The leak
+audit reads `~/.claude/maude/ship-private-names.txt`, one private name per line, kept
+outside every repo and seeded by John's hand; a refusal names the file and line, never the
+name. What follows is the manual form of the same step.
+
 GitHub's `main` keeps a **scrubbed** history (pre-v0.8 commits carry since-removed infra
 identifiers). **Never** push local/gitea full history to `github`. Instead:
 

@@ -165,6 +165,42 @@ OUT="$(printf '{"prompt":"hi"}' | bash "$UPS" 2>/dev/null)"
 assert_not_contains "$OUT" "MEMORY.md" "absent"
 unset MAUDE_MEM_DIR_OVERRIDE
 
+test_start "the prompt line speaks once a session, and again only when the index grows"
+# 2026-11-16: it spoke on every prompt for hours while the session could not act on it; by
+# the fifth a warning is noise. Once per session, and again when the count rises past what
+# it said. A new session hears it once.
+export MAUDE_MEM_DIR_OVERRIDE="$TEST_TMP/.claude/projects/-x/memory"
+mk_index "$IDX" 12000
+OUT="$(printf '{"prompt":"hi","session_id":"s-one"}' | bash "$UPS" 2>/dev/null)"
+assert_contains "$OUT" "12000" "first prompt of the session: said"
+OUT="$(printf '{"prompt":"again","session_id":"s-one"}' | bash "$UPS" 2>/dev/null)"
+assert_not_contains "$OUT" "MEMORY.md" "second prompt, same size: silent"
+mk_index "$IDX" 11000
+OUT="$(printf '{"prompt":"x","session_id":"s-one"}' | bash "$UPS" 2>/dev/null)"
+assert_not_contains "$OUT" "MEMORY.md" "it shrank but is still over: silent (progress is not news)"
+mk_index "$IDX" 12500
+OUT="$(printf '{"prompt":"x","session_id":"s-one"}' | bash "$UPS" 2>/dev/null)"
+assert_contains "$OUT" "12500" "it grew past what was said: said again"
+OUT="$(printf '{"prompt":"x","session_id":"s-two"}' | bash "$UPS" 2>/dev/null)"
+assert_contains "$OUT" "12500" "another session hears it once"
+OUT="$(printf '{"prompt":"x"}' | bash "$UPS" 2>/dev/null)"
+assert_contains "$OUT" "12500" "no session id: it cannot tell, so it speaks"
+mkdir -p "$HOME/.claude/etc"
+OUT="$(printf '{"prompt":"x","session_id":"../../etc/x"}' | bash "$UPS" 2>/dev/null)"
+assert_contains "$OUT" "12500" "a session id that is not a plain token is not used as a name: it speaks"
+assert_file_absent "$HOME/.claude/etc/x" "and writes nothing outside its own folder"
+assert_eq "$(ls "$HOME/.claude/maude/budget-said" | sort | tr '\n' ' ')" "s-one s-two " "only the two sessions' notes exist"
+mk_index "$IDX" 8000
+OUT="$(printf '{"prompt":"x","session_id":"s-one"}' | bash "$UPS" 2>/dev/null)"
+mk_index "$IDX" 11000
+OUT="$(printf '{"prompt":"x","session_id":"s-one"}' | bash "$UPS" 2>/dev/null)"
+assert_contains "$OUT" "11000" "under budget, then over again in the same session: said again"
+printf '99999999999999999999\n' > "$HOME/.claude/maude/budget-said/s-two"
+OUT="$(printf '{"prompt":"x","session_id":"s-two"}' | bash "$UPS" 2>&1)"
+assert_contains "$OUT" "11000" "a note too long to compare reads as never said: it speaks"
+assert_not_contains "$OUT" "integer expression" "and makes no noise"
+unset MAUDE_MEM_DIR_OVERRIDE
+
 test_start "the post-write whisper reads the same budget"
 mk_index "$IDX" 10500
 ERR="$(make_edit_tool_input "$IDX" | bash "$HOOKS_DIR/maude-post-tool-use.sh" 2>&1 >/dev/null)"

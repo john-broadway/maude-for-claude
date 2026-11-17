@@ -317,7 +317,7 @@ class Tape:
                     return sha
         return None
 
-    def reject(self, phrase: str, *, reason: str, source: str) -> None:
+    def reject(self, phrase: str, *, reason: str, source: str, _commit: bool = True) -> None:
         """Record a phrasing the user rejected, so it can never reach the page again.
 
         Refuses a credential shape in EITHER field. This is the third store, and the one
@@ -330,7 +330,8 @@ class Tape:
             "INSERT INTO rejections (phrase, reason, source) VALUES (?, ?, ?)",
             (phrase, reason, source),
         )
-        self._conn.commit()
+        if _commit:
+            self._conn.commit()
 
     @staticmethod
     def _cosine(a: list[float], b: list[float]) -> float:
@@ -438,6 +439,7 @@ class Tape:
         supersedes: int | None = None,
         ts: float | None = None,
         voice_sha: str | None = None,
+        _commit: bool = True,
     ) -> int:
         """Encode a canon memory and return its id. `ts` is when it was said (an event's
         own time when promoted; now when remembered directly); `voice_sha` points at the
@@ -466,7 +468,8 @@ class Tape:
             self._conn.execute(
                 "UPDATE canon SET superseded_by = ? WHERE id = ?", (new_id, supersedes)
             )
-        self._conn.commit()
+        if _commit:
+            self._conn.commit()
         return new_id
 
     def consolidate_correction(
@@ -474,13 +477,19 @@ class Tape:
     ) -> int:
         """Promote a correction from the moment it happens to durable canon, one transaction:
         record the rejected phrasing, and supersede whatever the user's words are correcting."""
-        self.reject(rejected, reason=reason, source=source)
-        superseding = self.recall(topic)  # current entries, captured before the new insert
-        new_id = self.remember(corrected_to, topic=topic, source=source)
-        for entry in superseding:
-            self._conn.execute(
-                "UPDATE canon SET superseded_by = ? WHERE id = ?", (new_id, entry.id)
-            )
+        # One commit for all three writes: a cut between them used to leave the new line and
+        # the line it corrects standing side by side as current truth.
+        try:
+            self.reject(rejected, reason=reason, source=source, _commit=False)
+            superseding = self.recall(topic)  # current entries, captured before the new insert
+            new_id = self.remember(corrected_to, topic=topic, source=source, _commit=False)
+            for entry in superseding:
+                self._conn.execute(
+                    "UPDATE canon SET superseded_by = ? WHERE id = ?", (new_id, entry.id)
+                )
+        except BaseException:
+            self._conn.rollback()        # never leave a half correction open on the connection
+            raise
         self._conn.commit()
         return new_id
 
@@ -595,7 +604,11 @@ class Tape:
             and score < min_importance
         ]
         for eid in ids:
-            self._conn.execute("UPDATE events SET status = 'forgotten' WHERE id = ?", (eid,))
+            # Only a line still buffered: a rest or promote that took it meanwhile keeps it.
+            self._conn.execute(
+                "UPDATE events SET status = 'forgotten' WHERE id = ? AND status = 'buffered'",
+                (eid,),
+            )
         self._conn.commit()
         return ids
 
@@ -652,13 +665,28 @@ class Tape:
             raise ValueError(f"no such event: {event_id}")
         if e.status != "buffered":
             raise ValueError(f"event {event_id} is already {e.status}, not pending")
-        new_id = self.remember(e.text, topic=e.topic, source=e.source, authority=e.authority,
-                               ts=e.ts, voice_sha=e.voice_sha)
-        self._conn.execute(
-            "UPDATE events SET status = 'consolidated' WHERE id = ?", (event_id,)
-        )
+        # The canon row and the mark commit together, and the mark flips only a still-buffered
+        # event: a cut leaves neither, and a promote racing another writes nothing.
+        try:
+            new_id = self.remember(e.text, topic=e.topic, source=e.source,
+                                   authority=e.authority, ts=e.ts, voice_sha=e.voice_sha,
+                                   _commit=False)
+        except BaseException:
+            self._conn.rollback()
+            raise
+        if self._mark_buffered(event_id, "consolidated") != 1:
+            self._conn.rollback()
+            raise ValueError(f"event {event_id} is no longer pending")
         self._conn.commit()
         return new_id
+
+    def _mark_buffered(self, event_id: int, status: str) -> int:
+        """Move one event out of 'buffered'; returns how many rows moved (0 when another
+        writer got there first). Not committed: the caller commits it with its canon row."""
+        return self._conn.execute(
+            "UPDATE events SET status = ? WHERE id = ? AND status = 'buffered'",
+            (status, event_id),
+        ).rowcount
 
     def dismiss(self, event_id: int) -> None:
         """His 'no'. Archives one buffered or refused event (status -> forgotten).
@@ -673,9 +701,14 @@ class Tape:
             raise ValueError(f"no such event: {event_id}")
         if e.status not in ("buffered", "refused"):
             raise ValueError(f"event {event_id} is already {e.status}, not on your list")
-        self._conn.execute(
-            "UPDATE events SET status = 'forgotten' WHERE id = ?", (event_id,)
-        )
+        # Only from where his list showed it: a rest or promote that moved it meanwhile wins.
+        moved = self._conn.execute(
+            "UPDATE events SET status = 'forgotten' WHERE id = ? AND status IN ('buffered', 'refused')",
+            (event_id,),
+        ).rowcount
+        if moved != 1:
+            self._conn.rollback()
+            raise ValueError(f"event {event_id} is no longer on your list")
         self._conn.commit()
 
     def rest(self, *, consolidate_at: float = 0.6, forget_below: float = 0.3) -> RestReport:
@@ -691,23 +724,30 @@ class Tape:
         for e in self.buffered():
             if not self._auto_consolidates(e, consolidate_at):
                 continue                       # everything else is on his list — pending()
+            # The canon row and the event's mark land in ONE commit: a rest cut short (a
+            # SessionEnd hook cancelled at exit) leaves both or neither, never a canon line
+            # whose event is still buffered for the next rest to write a second time.
             try:
                 self.remember(e.text, topic=e.topic, source=e.source, authority=e.authority,
-                              ts=e.ts, voice_sha=e.voice_sha)
+                              ts=e.ts, voice_sha=e.voice_sha, _commit=False)
             except ValueError:
+                self._conn.rollback()
                 # A refusal at the canon door must not end the cycle for the whole tape —
                 # and must not vanish either. _auto_consolidates knows only the refusal the
                 # door raises TODAY, so an unexpected one gets its own durable status and
                 # stays on his list. Leaving it 'buffered' would hide it: the predicate
                 # would still call it consolidatable and pending() would not show it.
-                self._conn.execute(
-                    "UPDATE events SET status = 'refused' WHERE id = ?", (e.id,)
-                )
-                refused.append(e.id)
+                # Committed here, or the next refusal's rollback undoes this mark.
+                if self._mark_buffered(e.id, "refused") == 1:
+                    refused.append(e.id)
+                self._conn.commit()
                 continue
-            self._conn.execute(
-                "UPDATE events SET status = 'consolidated' WHERE id = ?", (e.id,)
-            )
+            # Another rest (another session's, or a wake finishing a cut one) may have
+            # consolidated this line since buffered() was read: then this canon row goes.
+            if self._mark_buffered(e.id, "consolidated") != 1:
+                self._conn.rollback()
+                continue
+            self._conn.commit()
             consolidated.append(e.id)
         self._conn.commit()
         forgotten = self.forget(min_importance=forget_below)

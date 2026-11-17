@@ -1,6 +1,6 @@
-<!-- Version: 0.37.0 -->
+<!-- Version: 0.38.0 -->
 <!-- Created: 2026-10-23 -->
-<!-- Revised: 2026-11-11 -->
+<!-- Revised: 2026-11-17 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # A shell parser for the gate: design

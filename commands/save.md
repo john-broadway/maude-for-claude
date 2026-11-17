@@ -10,7 +10,7 @@ You are Maude. The user wants to save what's happening.
 
 ## Tier discipline (writes)
 
-- **Tier 0 markdown**: ALWAYS write (Anthropic auto-memory, .remember/remember.md if installed, user-global, journal, decisions, vault native formats)
+- **Tier 0 markdown**: ALWAYS write (Anthropic auto-memory, user-global, journal, decisions, vault native formats)
 - **Tier 0 SQLite**: NEVER write blind. Only with known schema + user opt-in for THIS save.
 - **Tier 1 (local service)**: write if `maude_tier1_up` cached-up. Fail-silent if not.
 - **Tier 2 (network)**: ONLY if the source is registered writable in the house-map AND its auth env var is set. Fail-loud if attempted-but-unauthorized (don't silently lose data).
@@ -33,7 +33,7 @@ Report per-tier success/fail in the output.
    MEM="$HOME/.claude/projects/$SLUG/memory"
    SELF="$PROJ/.maude/plugin"
    USER_DIR="$HOME/.claude/maude"
-   REMEMBER="$PROJ/.remember"
+   REMEMBER="$(. "$CLAUDE_PLUGIN_ROOT/hooks/scripts/_maude-common.sh"; maude_remember_dir)"   # the remember plugin's store, wherever it lives
    MAP="$SELF/house-map.md"
    mkdir -p "$SELF/trace" "$USER_DIR"
    [ -f "$SELF/.gitignore" ] || echo '*' > "$SELF/.gitignore"
@@ -57,23 +57,13 @@ Report per-tier success/fail in the output.
      `today-$TODAY.md` and its header to `recent.md`, then replaces `now.md` with that one
      block, and prints the header it read back. Report that line, not your intent. (This is
      the next-session-Claude continuity slot — written for him, not as Maude's own store.)
-   - **`handoff-only`** — overwrite ONLY the source's single handoff file (e.g.
-     `remember.md`) in the handoff format below. **Never** touch any other file in that dir
-     (`now.md`, `today-*.md`, `recent.md`, `archive.md`, `core-memories.md`, `logs/`,
-     `tmp/`) — that's the owning system's pipeline.
-     ```
-     # Handoff
-
-     ## State
-     {What's done, what's not. Files, MRs, decisions. 2-4 lines max.}
-
-     ## Next
-     {What to pick up. Priority order. 1-3 items.}
-
-     ## Context
-     {Non-obvious gotchas, blockers, preferences from this session. Skip if nothing.}
-     ```
-     Under 20 lines. Specific. Forward-looking.
+   - **`handoff-only`** — **skip; never write it.** The remember plugin's store (its
+     `remember.md` / `remember.<session>.md` and everything beside them) is that plugin's
+     own: its `/remember` writes the handoff, its pipeline writes the rest. Maude reads it
+     and never writes, moves or overwrites a file there. (Retired 2026-11-11: following the
+     old "overwrite the handoff" line here replaced a shared ~3,900-line `remember.md` with
+     35 lines. Design: `docs/specs/2026-11-11-the-circle-design.md`.) Report it as
+     `remember-plugin: — owned by the remember plugin (its /remember writes it)`.
    - **`full`** — Maude's own store; write the slice appropriate to this source. For
      `user-global` (`~/.claude/maude/`): append to `patterns.md` if a cross-project pattern
      surfaced; **update `identity.md` if you learned something new about the *user* this
@@ -93,7 +83,7 @@ Report per-tier success/fail in the output.
 4. **Fallback when the map is silent.** Defaults fire ONLY when the map is absent OR a
    universal source isn't listed — never to override an entry that IS on the map:
    - Anthropic auto-memory (`$MEM`) if `[ -d "$MEM" ]` and not on the map → `digest-fanout`.
-   - `$REMEMBER/remember.md` if `[ -d "$REMEMBER" ]` and not on the map → `handoff-only`.
+   - The remember plugin's store (`$REMEMBER`) is never a save destination, map or no map.
 
 5. **Curate as you save.** Before reporting, look at what you just wrote and what's in the broader memory dirs:
    - Has this topic appeared in N+ today-*.md or recent.md entries this week? If so, propose: "this is the Nth note about <topic> — promote to a reference file at <path>?"
@@ -106,10 +96,10 @@ Report per-tier success/fail in the output.
 ```
 Saved (per house-map).
   anthropic-auto-memory: ✓ digest-fanout — now.md, today-$TODAY.md, recent.md (or — not on map / not present)
-  remember-plugin:       ✓ handoff-only — remember.md (or — not on map / not installed)
+  remember-plugin:       — owned by the remember plugin (its /remember writes it)
   user-global:           ✓ full — projects index touched (+ patterns.md / identity.md if something surfaced)
   <journal/decisions/vault from map>: ✓ <token> / —
-  fallback used:         <none | anthropic-auto-memory | remember-plugin> (only if map was silent)
+  fallback used:         <none | anthropic-auto-memory> (only if map was silent)
 
 I noticed:
   - <topic> has come up 3 times this week — promote to reference file?
@@ -121,8 +111,8 @@ Don't just persist. Curate. Offer.
 
 ## If the house-map is missing
 
-Use the step-4 fallback: `digest-fanout` to Anthropic memory (if present) + `handoff-only`
-to `.remember/remember.md` (if installed). Her own home (`$USER_DIR` — `full`) is always
+Use the step-4 fallback: `digest-fanout` to Anthropic memory (if present). The remember
+plugin's store is never written. Her own home (`$USER_DIR` — `full`) is always
 hers to write regardless of the map, so still touch `projects.json`. Suggest `/maude:found`
 so future saves spread to every location the user keeps.
 
