@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 400" role="img" aria-label="Maude's chore list, written on a recipe card: wrote the handoff you didn't get to, 41 seconds on the small model, checked off. Clipped three coupons out of last week's papers, checked off. A new gadget arrived in the house, told you at the door, checked off. Still to do: CLAUDE.md hasn't been touched in a month — she'll keep mentioning it. Margin note in her hand: I don't move a thing to the attic till you say so. Every chore written down with what it cost — nothing done invisibly.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 400" role="img" aria-label="Maude's chore list, written on a recipe card: named the work you didn't save, at the door, no model, checked off. Clipped three coupons out of last week's papers, checked off. A new gadget arrived in the house, told you at the door, checked off. Still to do: CLAUDE.md hasn't been touched in a month — she'll keep mentioning it. Margin note in her hand: I don't move a thing to the attic till you say so. Every chore written down with what it cost — nothing done invisibly.">
   <defs>
     <pattern id="ging2" width="20" height="20" patternUnits="userSpaceOnUse">
       <rect width="20" height="20" fill="#FDFBF4"/>
@@ -28,8 +28,8 @@
 
   <!-- her checkmarks -->
   <path d="M36,82 l6,8 l11,-16" fill="none" stroke="#B5402F" stroke-width="2.6" stroke-linecap="round"/>
-  <text x="62" y="90" font-family="Georgia,'Times New Roman',serif" font-size="16.5" font-style="italic" fill="#40352A">wrote the handoff you didn&#8217;t get to</text>
-  <text x="620" y="90" text-anchor="end" font-family="Georgia,'Times New Roman',serif" font-size="13" font-style="italic" fill="#8A7E6B">41 sec, the small model</text>
+  <text x="62" y="90" font-family="Georgia,'Times New Roman',serif" font-size="16.5" font-style="italic" fill="#40352A">named the work you didn&#8217;t save</text>
+  <text x="620" y="90" text-anchor="end" font-family="Georgia,'Times New Roman',serif" font-size="13" font-style="italic" fill="#8A7E6B">at the door, no model</text>
 
   <path d="M36,122 l6,8 l11,-16" fill="none" stroke="#B5402F" stroke-width="2.6" stroke-linecap="round"/>
   <text x="62" y="130" font-family="Georgia,'Times New Roman',serif" font-size="16.5" font-style="italic" fill="#40352A">clipped three coupons out of last week&#8217;s papers</text>
