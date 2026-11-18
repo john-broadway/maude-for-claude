@@ -796,19 +796,37 @@ rm -rf "$LIAR_SHIM"
 # does not, so mkdir makes it and the owner file cannot be created.
 test_start "a take whose claim cannot be made hands the dir back (it would hold everyone off for 30 s)"
 _PMAX="$(getconf PATH_MAX / 2>/dev/null)"; case "$_PMAX" in ''|*[!0-9]*) _PMAX=4096 ;; esac
-_DEEP="$TEST_TMP/deep"; mkdir -p "$_DEEP"
-_SEG="$(printf '%0200d' 0)"
-while [ $(( ${#_DEEP} + 201 )) -lt $(( _PMAX - 12 )) ]; do _DEEP="$_DEEP/$_SEG"; done
-( cd "$TEST_TMP/deep" && _rel="${_DEEP#"$TEST_TMP/deep"}" && _rel="${_rel#/}" && { [ -z "$_rel" ] || mkdir -p "$_rel"; } )
-_PAD=$(( _PMAX - 4 - ${#_DEEP} - 1 )); _LONGLOCK="$_DEEP/$(printf "%0${_PAD}d" 0)"
-[ -d "$_DEEP" ] && [ "${#_LONGLOCK}" -lt "$_PMAX" ] && [ $(( ${#_LONGLOCK} + 6 )) -ge "$_PMAX" ]
-assert_exit "$?" "0" "control: the lock dir's path (${#_LONGLOCK}) fits under PATH_MAX ($_PMAX) and its owner file's does not"
-mkdir "$_LONGLOCK" 2>/dev/null && rmdir "$_LONGLOCK"
-assert_exit "$?" "0" "control: mkdir can make a dir at that path"
-_maude_lockdir_take "$_LONGLOCK"
-assert_exit "$?" "1" "the take is refused: no owner file could be made"
-[ -d "$_LONGLOCK" ]
-assert_exit "$?" "1" "and the dir it made is gone again"
+# The physical path: a symlink in it (macOS: /var is one) is expanded inside the kernel and
+# counts against the limit, so lengths measured on the logical path lied by its difference
+# (the public macOS legs, 2026-11-18). And the longest path mkdir takes is FOUND, not
+# computed: the first length, counting down, at which mkdir makes the dir.
+_DEEP="$(cd "$TEST_TMP" && pwd -P)/deep"; mkdir -p "$_DEEP"
+_SEG="$(printf '%0100d' 0)"
+while [ $(( ${#_DEEP} + 101 )) -lt $(( _PMAX - 120 )) ]; do mkdir "$_DEEP/$_SEG" 2>/dev/null || break; _DEEP="$_DEEP/$_SEG"; done
+_LONGLOCK=""; _L="$_PMAX"
+while [ "$_L" -gt $(( _PMAX - 100 )) ]; do
+  _PAD=$(( _L - ${#_DEEP} - 1 ))
+  [ "$_PAD" -ge 1 ] && [ "$_PAD" -le 255 ] || break
+  _TRY="$_DEEP/$(printf "%0${_PAD}d" 0)"
+  if mkdir "$_TRY" 2>/dev/null; then rmdir "$_TRY"; _LONGLOCK="$_TRY"; break; fi
+  _L=$(( _L - 1 ))
+done
+_ORC=0
+if [ -n "$_LONGLOCK" ]; then
+  mkdir "$_LONGLOCK" 2>/dev/null; ( set -C; : > "$_LONGLOCK/owner" ) 2>/dev/null; _ORC=$?; rm -f "$_LONGLOCK/owner" 2>/dev/null; rmdir "$_LONGLOCK" 2>/dev/null
+fi
+if [ -z "$_LONGLOCK" ] || [ "$_ORC" -eq 0 ]; then
+  # The case could not be built on this box (no path found at the limit, or the owner file
+  # could be made after all). That is a fact about the box's path limit, not about the
+  # take: said out loud, never counted as a pass.
+  printf '  NOTE  the failed-claim case could NOT be built here (PATH_MAX %s, longest dir path found: %s): the hand-back was not tested on this box\n' "$_PMAX" "${#_LONGLOCK}"
+else
+  printf '  NOTE  failed-claim case built at path length %s (PATH_MAX %s)\n' "${#_LONGLOCK}" "$_PMAX"
+  _maude_lockdir_take "$_LONGLOCK"
+  assert_exit "$?" "1" "the take is refused: no owner file could be made"
+  [ -d "$_LONGLOCK" ]
+  assert_exit "$?" "1" "and the dir it made is gone again"
+fi
 
 # The wait is BOUNDED since 2026-09-25 (MAUDE_LOCK_WAIT, default 2 s): the waiter used to
 # wait forever and this test asserted it was still waiting at 3 s. What it protects is
