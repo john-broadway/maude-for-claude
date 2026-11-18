@@ -56,5 +56,26 @@ test_start "blocked dispatch doesn't update last_run (regression: stamp gate)"
 LAST_RUN_AFTER="$(jq -r '.["c2-shelves"].last_run' "$LEDGER")"
 assert_eq "$LAST_RUN_AFTER" "$LAST_RUN_BEFORE" "last_run unchanged when dispatch blocked"
 
+# The same double-fire guard with no flock, under a mkdir that is not atomic (see the
+# lock tests in test-_maude-common.sh): the shim answers 0 for a lock dir whether or not
+# it made it. Without the owner-file claim the second dispatch walks in beside the first.
+test_start "no flock, a mkdir that lets everyone in: the second dispatch still does not fire"
+sleep 3   # the doers above are done and their lock is gone
+NF_FARM="$(make_no_binary_bin flock mkdir)"
+NF_SHIM="$(mktemp -d "${TMPDIR:-/tmp}/maude-dispatch-liar.XXXXXX")"
+printf '#!/usr/bin/env bash\ncase "${@: -1}" in *.lock.d) %q "$@" 2>/dev/null; exit 0 ;; esac\nexec %q "$@"\n' "$(command -v mkdir)" "$(command -v mkdir)" > "$NF_SHIM/mkdir"; chmod +x "$NF_SHIM/mkdir"
+NF_LOG="$TEST_TMP/doer-calls-noflock.log"; : > "$NF_LOG"
+PATH="$NF_SHIM:$NF_FARM" MAUDE_CHORE_DOER_STUB="printf '%s\n' ran >> $NF_LOG; sleep 2" \
+  bash "$CH" dispatch "/tmp/fake-transcript.jsonl" >/dev/null 2>&1
+PATH="$NF_SHIM:$NF_FARM" MAUDE_CHORE_DOER_STUB="printf '%s\n' ran >> $NF_LOG; sleep 2" \
+  bash "$CH" dispatch "/tmp/fake-transcript.jsonl" >/dev/null 2>&1
+# Wait for the holder to let go by looking, not by a fixed sleep with a second to spare
+# (the lens on 62afb79, finding 5): up to 20 s for the doer's 2 s and its holder's trap.
+_w=0; while [ "$_w" -lt 100 ] && [ -n "$(find "$TEST_TMP" -name '.chore-*.lock.d')" ]; do sleep 0.2; _w=$((_w + 1)); done
+assert_eq "$(wc -l < "$NF_LOG" | tr -d ' ')" "1" "one doer ran, not two"
+test_start "and the dispatch lock dir is gone once its doer is"
+assert_eq "$(find "$TEST_TMP" -name '.chore-*.lock.d' | wc -l | tr -d ' ')" "0" "no lock dir left behind"
+rm -rf "$NF_SHIM"
+
 teardown_test_env
 exit "$FAILED"

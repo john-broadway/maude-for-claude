@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false          # a macOS-only break must not mask the Linux result
       matrix:
-        os: [ubuntu-latest, macos-latest]   # macOS = BSD userland + bash 3.2 (issue #39)
+        os: [ubuntu-latest, macos-latest]   # macOS = BSD userland (issue #39); bash from Homebrew, see the floor step
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -41,10 +41,25 @@ jobs:
       - name: Verify jq present
         run: jq --version
 
+      # Maude's floor is bash 5.0 (hooks/scripts/_maude-common.sh). A stock Mac ships 3.2 at
+      # /bin/bash, which she refuses; tests/test-bash-floor.sh runs every hook under that
+      # one for real. The suite itself runs on a current bash, as a Mac that runs her does.
+      - name: Current bash first on PATH (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: Verify bash is at the floor
+        run: bash -c 'echo "$BASH $BASH_VERSION"; [ "${BASH_VERSINFO[0]}" -ge 5 ]'
+
       - name: Run hook test suite (make test)
         run: make test
         env:
           MAUDE_SMOKE_SEPARATE: "1"   # the smoke-matrix job runs the archive's fleet once
+          # Files side by side (tests/run.sh -j; tests/serial.list still runs alone, after
+          # the pool): four on Linux, three on macOS.
+          MAUDE_TEST_JOBS: ${{ runner.os == 'macOS' && '3' || '4' }}
 
   # The prove-it-real gate on its own legs: a git-archive of HEAD must validate, pass its
   # own fleet, and greet. It re-runs the whole fleet inside the archive, so inside
@@ -62,8 +77,22 @@ jobs:
       - name: Verify jq present
         run: jq --version
 
+      # Maude's floor is bash 5.0 (hooks/scripts/_maude-common.sh). A stock Mac ships 3.2 at
+      # /bin/bash, which she refuses; tests/test-bash-floor.sh runs every hook under that
+      # one for real. The suite itself runs on a current bash, as a Mac that runs her does.
+      - name: Current bash first on PATH (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          HOMEBREW_NO_AUTO_UPDATE=1 brew install bash
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+
+      - name: Verify bash is at the floor
+        run: bash -c 'echo "$BASH $BASH_VERSION"; [ "${BASH_VERSINFO[0]}" -ge 5 ]'
+
       - name: Install smoke on the archive of HEAD (make smoke)
         run: make smoke
+        env:
+          MAUDE_TEST_JOBS: ${{ runner.os == 'macOS' && '3' || '4' }}   # the archive's own fleet, pooled the same way
 
   # Summary gate: branch protection requires a check literally named "tests".
   # A matrix job publishes per-leg names ("test-matrix (macos-latest)"), so

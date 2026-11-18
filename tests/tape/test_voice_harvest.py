@@ -190,7 +190,7 @@ def test_cmd_harvest_prints_exactly_one_summary_line(tmp_path, capsys):
     assert len(out_lines) == 1
     line = out_lines[0]
     for field in ("files", "records_seen", "kept", "dupes_skipped",
-                  "secretish_skipped", "malformed_skipped"):
+                  "refused_skipped", "malformed_skipped"):
         assert field in line, f"summary line missing {field!r}: {line!r}"
 
 
@@ -210,7 +210,7 @@ def test_cmd_harvest_skips_secretish_lines_and_counts_them(tmp_path, capsys):
     assert rows == [("a perfectly clean prompt",)]
     assert fake_pypi_token not in [r[0] for r in rows]
     out = capsys.readouterr().out
-    assert "secretish_skipped=1" in out
+    assert "refused_skipped=1" in out
 
 
 def test_cmd_harvest_tolerates_malformed_json_without_crashing_and_keeps_going(tmp_path):

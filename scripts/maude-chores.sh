@@ -44,14 +44,14 @@ chore_stamp() {
     # thief's: a reproduced lost-update). The critical section is one jq over
     # a small file; a dir older than 30s means its holder died before rmdir.
     local d="$lock.d"
-    while ! mkdir "$d" 2>/dev/null; do
+    while ! _maude_lockdir_take "$d"; do
       if [ $(( $(date +%s) - $(maude_mtime "$d" "$(date +%s)") )) -gt 30 ]; then
-        rmdir "$d" 2>/dev/null
+        _maude_lockdir_drop "$d"
       fi
       sleep 0.05
     done
     jq "$@" "$ledger" > "$tmp" 2>/dev/null && mv -f "$tmp" "$ledger" || rm -f "$tmp"
-    rmdir "$d" 2>/dev/null
+    _maude_lockdir_drop "$d"
   fi
 }
 
@@ -273,19 +273,19 @@ verb_dispatch() {
         ) 9>"$lock" &
       fi
     else
-      # macOS ships no flock(1): mkdir is the atomic probe+acquire in one step
-      # (no TOCTOU at all on this path). A dir stranded by a kill -9'd doer is
+      # macOS ships no flock(1): the lock dir's owner file is the probe+acquire in one
+      # step (_maude_lockdir_take; mkdir alone is not atomic under every coreutils). A dir stranded by a kill -9'd doer is
       # reclaimed by age — doers are minutes-bounded, so >1h means dead.
       local ld="$lock.d"
       if [ -d "$ld" ] && [ $(( $(date +%s) - $(maude_mtime "$ld") )) -gt 3600 ]; then
-        rmdir "$ld" 2>/dev/null
+        _maude_lockdir_drop "$ld"
       fi
-      if mkdir "$ld" 2>/dev/null; then
+      if _maude_lockdir_take "$ld"; then
         chore_stamp "$id" --arg t "$now" ".[\"$id\"] += {status:\"dispatched\", last_run:\$t}"
         (
           # Hold the dir until the doer exits; EXIT trap releases on any
           # normal or signaled death of this holder subshell.
-          trap 'rmdir "$ld" 2>/dev/null' EXIT
+          trap '_maude_lockdir_drop "$ld"' EXIT
           if [ -n "${MAUDE_CHORE_DOER_STUB:-}" ]; then
             nohup bash -c "$MAUDE_CHORE_DOER_STUB" >/dev/null 2>&1 &
           else

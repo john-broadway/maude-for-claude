@@ -13,6 +13,20 @@ run_gate() {
   ERR="$(make_bash_tool_input "$cmd" | bash "$GATE" 2>&1 >/dev/null)"
   RC=$?
 }
+# A gate row that fails says what the gate SAID. Until 2026-11-17 a red row gave only the
+# exit status ("expected exit=0 got=2"), and when the public macOS leg refused a control
+# on the merge of v0.38.0 nobody could tell which key had refused it, the clock's or
+# another. lib.sh's assert_exit is kept under another name and wrapped: on a mismatch the
+# label carries the first of the gate's own words from the last run_gate.
+# Once only: sourced a second time, the copy would be of the wrapper and call itself.
+declare -F _lib_assert_exit >/dev/null || eval "$(declare -f assert_exit | sed '1s/^assert_exit /_lib_assert_exit /')"
+assert_exit() {
+  if [ "$1" != "$2" ] && [ -n "${ERR:-}" ]; then
+    _lib_assert_exit "$1" "$2" "${3:-exit} [the gate said: $(printf '%s' "$ERR" | tr '\n' ' ' | cut -c1-300)]"
+  else
+    _lib_assert_exit "$@"
+  fi
+}
 # A reservation's identity is the exact CALL: the session and the cksum of its tool_input
 # bytes, computed the way the gate computes it. Seeds a reservation by hand:
 #   seed_reserved <token-file> <key> <sid> <age-seconds> <command>

@@ -9,6 +9,47 @@
 # let the hook continue half-initialized.
 [ -n "${MAUDE_EYE_BLINK:-}" ] && exit 0
 
+# The bash floor: 5.0 (John, 2026-11-17: "require current bash on mac"). Below it Maude does
+# not run. 5.0 is where EPOCHREALTIME arrived, the real clock the gate's budgets are read
+# from; on the bash 3.2 a stock Mac still ships she read at about half speed and a long
+# command was refused or passed by how busy the box was. So an older bash gets one plain
+# answer instead: a tool call she would have read is refused with the fix (PreToolUse,
+# exit 2), the session-start hook says it once (the other hooks on that event are silent),
+# and every other hook is silent and exits 0 (a Stop hook that exits 2 would hold the
+# session open). A caller with no hook envelope is one of her scripts run by a person or
+# by another script (verify, lint, the chores): it fails, out loud, because exiting 0
+# there would read as "checked, nothing found". Everything down to the last line
+# of this block must stay readable by bash 3.2, or the old shell dies on a syntax error
+# before it can say any of it.
+maude_bash_too_old() {  # <major> -> 0 when below the floor, or when it cannot be read
+  local m="${1:-}"
+  case "$m" in ''|*[!0-9]*) return 0 ;; esac
+  [ "$m" -lt 5 ]
+}
+maude_bash_floor_stop() {  # <script name>; reads the hook envelope on stdin, answers by its event; never returns
+  local who="${1:-}" msg ev=""
+  msg="Maude needs bash 5.0 or newer, and this ran under ${BASH:-bash} (${BASH_VERSION:-version unknown}). On a Mac: brew install bash, then start Claude Code from a shell where that bash comes first on the PATH."
+  if [ -t 0 ]; then   # a person ran one of her scripts by hand: say it, fail
+    printf '%s\n' "$msg" >&2; exit 1
+  fi
+  # The event is read from its own key. A mention inside a tool's text arrives escaped
+  # (\"hook_event_name\"), which this does not match.
+  ev="$(grep -Eo '"hook_event_name" *: *"[A-Za-z]+"' 2>/dev/null | head -1)"
+  case "$ev" in
+    *'"PreToolUse"')
+      printf '%s Until then she refuses every tool call she would have read, because she cannot read it.\n' "$msg" >&2
+      exit 2 ;;
+    *'"SessionStart"')
+      # Several hooks run on this event; one of them speaks.
+      [ "$who" = "maude-session-start.sh" ] && printf '%s Until then she is not watching: her gates refuse the tool calls they would have read, and the rest of her is silent.\n' "$msg"
+      exit 0 ;;
+    '')   # no envelope: not a hook. Never a silent 0 (the lens on 1a4c089, finding 1).
+      printf '%s\n' "$msg" >&2; exit 1 ;;
+  esac
+  exit 0
+}
+maude_bash_too_old "${BASH_VERSINFO[0]:-}" && maude_bash_floor_stop "${0##*/}"
+
 #
 # Layout convention:
 #
@@ -1127,6 +1168,28 @@ maude_eye_suffix() {  # <session_id>
 # a held lock waited 3 x 2 s past its 5 s budget. After one busy, every later wait in the
 # same process is a single try. Base-10 and capped: "08" was an arithmetic error on the
 # fallback, and a 20-digit value overflowed it into never timing out (the lens, m2).
+# Taking and dropping the fallback's lock dir. mkdir alone is NOT the lock: a mkdir that
+# looks, then makes, answers 0 to two callers racing on one name. The Rust coreutils mkdir
+# does (measured 2026-11-17 on Debian's 0.0.30: 1,407 of 3,000 races had two winners, GNU
+# none), and two writers then hold the lock and one write is lost. So the holder is
+# whoever CREATES the owner file inside it, and that create is bash's own: under noclobber
+# a redirect to a name that is not there is open(O_CREAT|O_EXCL), one winner by the
+# kernel's word, no tool between. A dir with no owner file (a holder that died between the
+# two steps, or one from before this) is held to everyone until its age reclaims it.
+_maude_lockdir_take() {  # <dir> -> 0 when this process now holds it
+  mkdir "$1" 2>/dev/null || return 1
+  ( set -C; : > "$1/owner" ) 2>/dev/null && return 0
+  # Not ours. If the claim failed for any reason but losing it (a full disk, a path too
+  # long), the dir this mkdir made is empty and would hold everyone off until its age
+  # reclaimed it: take it back. Where a winner's owner file is in, rmdir fails and that
+  # is the right answer (the lens on 62afb79, finding 1).
+  rmdir "$1" 2>/dev/null
+  return 1
+}
+_maude_lockdir_drop() {  # <dir>
+  rm -f "$1/owner" 2>/dev/null
+  rmdir "$1" 2>/dev/null
+}
 MAUDE_LOCK_BUSY=75
 _MAUDE_LOCK_BUSY_SEEN=""
 # The wait, in seconds, from MAUDE_LOCK_WAIT: digits only (else the default 2), base 10,
@@ -1171,7 +1234,7 @@ maude_locked() {  # <lockfile> <command> [args…]
   # builtin (bash 3.2 has it), so reading it costs no fork. It is whole seconds, so the
   # wait ends between `wait` and `wait + 1` s; the try count stays as a second ceiling.
   local d="$lock.d" tries=$((wait * 20)) t0="$SECONDS" gone=0
-  while ! mkdir "$d" 2>/dev/null; do
+  while ! _maude_lockdir_take "$d"; do
     if [ "$tries" -le 0 ] || [ $((SECONDS - t0)) -gt "$wait" ]; then
       [ "$wait" -gt 0 ] && _MAUDE_LOCK_BUSY_SEEN=1; return "$MAUDE_LOCK_BUSY"
     fi
@@ -1182,7 +1245,7 @@ maude_locked() {  # <lockfile> <command> [args…]
     # against an unwritable store hung a CI job for six hours (macOS, no flock, PR #69).
     # One retry covers a holder that released between the failure and this look.
     if [ ! -d "$d" ]; then
-      mkdir "$d" 2>/dev/null && break
+      _maude_lockdir_take "$d" && break
       # Cannot be made (a stray FILE at the lock path, no parent, no permission): the
       # store is not lockable, which to every caller is "busy", the outcome they all
       # handle; a bare 1 fell past their case arms and printed nothing (lens 5).
@@ -1200,12 +1263,12 @@ maude_locked() {  # <lockfile> <command> [args…]
     fi
     gone=0
     if [ $(( $(date +%s) - $(maude_mtime "$d" "$(date +%s)") )) -gt 30 ]; then
-      rmdir "$d" 2>/dev/null
+      _maude_lockdir_drop "$d"
     fi
     sleep 0.05
   done
   "$@"; rc=$?
-  rmdir "$d" 2>/dev/null
+  _maude_lockdir_drop "$d"
   return "$rc"
 }
 

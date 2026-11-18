@@ -751,6 +751,65 @@ wait
 assert_eq "$(jq -c '[.a, .b]' "$LOCK_CARE") a=$(cat "$TEST_TMP/rc.a") b=$(cat "$TEST_TMP/rc.b")" "[1,1] a=0 b=0" "both writes present under the fallback, each writer's status 0"
 assert_file_absent "$LOCK_CARE.lock.d" "the fallback's lock dir is released"
 
+# mkdir is not the lock everywhere. A mkdir that looks, then makes, can answer 0 to two
+# callers racing on one name. The Rust coreutils mkdir does (measured 2026-11-17 on Debian's
+# rust-coreutils 0.0.30: 1,407 of 3,000 two-way races had two winners; GNU mkdir none), and
+# with it on the PATH the test above failed 19 of 30, [1,null] a=0 b=1: both writers inside,
+# the first one's readback seeing the second's bytes. The public ubuntu leg (image
+# ubuntu-26.04) went red with exactly that reading on 2026-11-17. The NOTE below says which
+# mkdir THIS box has and how it races, so a runner states its own case instead of ours.
+_MK_WHICH="$(mkdir --version 2>/dev/null | head -1)"; [ -n "$_MK_WHICH" ] || _MK_WHICH="no --version (BSD)"
+_MK_TWO=0; _MK_N=100; _MK_I=0
+while [ "$_MK_I" -lt "$_MK_N" ]; do
+  _MK_I=$((_MK_I + 1))
+  ( mkdir "$TEST_TMP/mkrace.$_MK_I" 2>/dev/null; echo "$?" > "$TEST_TMP/mkrace.r1" ) &
+  ( mkdir "$TEST_TMP/mkrace.$_MK_I" 2>/dev/null; echo "$?" > "$TEST_TMP/mkrace.r2" ) &
+  wait
+  [ "$(cat "$TEST_TMP/mkrace.r1")$(cat "$TEST_TMP/mkrace.r2")" = "00" ] && _MK_TWO=$((_MK_TWO + 1))
+  rmdir "$TEST_TMP/mkrace.$_MK_I" 2>/dev/null
+done
+printf '  NOTE  mkdir here: %s | two-way races with two winners: %s of %s\n' "$_MK_WHICH" "$_MK_TWO" "$_MK_N"
+# The shim is such a mkdir at its worst: for a lock dir it makes the dir if it can and
+# answers 0 either way, so the holder is decided by the claim or by nothing.
+# Its jq reads at once and answers 0.3 s later, so two writers let in together both hold
+# the same snapshot: without the claim one write is lost every time, not some of the time.
+LIAR_SHIM="$(mktemp -d "${TMPDIR:-/tmp}/maude-liar.XXXXXX")"; LIAR_REAL_MKDIR="$(command -v mkdir)"
+printf '#!/usr/bin/env bash\ncase "${@: -1}" in *.lock.d) %q "$@" 2>/dev/null; exit 0 ;; esac\nexec %q "$@"\n' "$LIAR_REAL_MKDIR" "$LIAR_REAL_MKDIR" > "$LIAR_SHIM/mkdir"; chmod +x "$LIAR_SHIM/mkdir"
+printf '#!/usr/bin/env bash\nout="$(%q "$@")"; rc=$?\n%q 0.3\nprintf "%%s\\n" "$out"\nexit "$rc"\n' "$REAL_JQ" "$(command -v sleep)" > "$LIAR_SHIM/jq"; chmod +x "$LIAR_SHIM/jq"
+test_start "control: the lying mkdir answers 0 for a lock dir that already exists"
+"$LIAR_REAL_MKDIR" "$TEST_TMP/liar.lock.d"
+PATH="$LIAR_SHIM:$NOFLOCK_PATH" mkdir "$TEST_TMP/liar.lock.d" 2>/dev/null
+assert_exit "$?" "0" "the shim lies about a dir that is there"
+rmdir "$TEST_TMP/liar.lock.d"
+test_start "two concurrent care_set writers both land when mkdir itself is not atomic (the claim decides the holder)"
+printf '{}\n' > "$LOCK_CARE"
+( PATH="$LIAR_SHIM:$NOFLOCK_PATH" MAUDE_LOCK_WAIT=10 maude_care_set "$LOCK_CARE" '.a = 1'; echo "$?" > "$TEST_TMP/rc.a" ) &
+( PATH="$LIAR_SHIM:$NOFLOCK_PATH" MAUDE_LOCK_WAIT=10 maude_care_set "$LOCK_CARE" '.b = 1'; echo "$?" > "$TEST_TMP/rc.b" ) &
+wait
+assert_eq "$(jq -c '[.a, .b]' "$LOCK_CARE") a=$(cat "$TEST_TMP/rc.a") b=$(cat "$TEST_TMP/rc.b")" "[1,1] a=0 b=0" "both writes present, each writer's status 0, under a mkdir that lets both in"
+assert_file_absent "$LOCK_CARE.lock.d" "and the lock dir is released, claim and all"
+rm -rf "$LIAR_SHIM"
+
+# A claim that fails for a reason other than losing it must not leave the dir behind: an
+# empty lock dir holds every waiter off until its age reclaims it. The reason here is one
+# no privilege gets past: the dir's own path fits the system's limit and "<dir>/owner"
+# does not, so mkdir makes it and the owner file cannot be created.
+test_start "a take whose claim cannot be made hands the dir back (it would hold everyone off for 30 s)"
+_PMAX="$(getconf PATH_MAX / 2>/dev/null)"; case "$_PMAX" in ''|*[!0-9]*) _PMAX=4096 ;; esac
+_DEEP="$TEST_TMP/deep"; mkdir -p "$_DEEP"
+_SEG="$(printf '%0200d' 0)"
+while [ $(( ${#_DEEP} + 201 )) -lt $(( _PMAX - 12 )) ]; do _DEEP="$_DEEP/$_SEG"; done
+( cd "$TEST_TMP/deep" && _rel="${_DEEP#"$TEST_TMP/deep"}" && _rel="${_rel#/}" && { [ -z "$_rel" ] || mkdir -p "$_rel"; } )
+_PAD=$(( _PMAX - 4 - ${#_DEEP} - 1 )); _LONGLOCK="$_DEEP/$(printf "%0${_PAD}d" 0)"
+[ -d "$_DEEP" ] && [ "${#_LONGLOCK}" -lt "$_PMAX" ] && [ $(( ${#_LONGLOCK} + 6 )) -ge "$_PMAX" ]
+assert_exit "$?" "0" "control: the lock dir's path (${#_LONGLOCK}) fits under PATH_MAX ($_PMAX) and its owner file's does not"
+mkdir "$_LONGLOCK" 2>/dev/null && rmdir "$_LONGLOCK"
+assert_exit "$?" "0" "control: mkdir can make a dir at that path"
+_maude_lockdir_take "$_LONGLOCK"
+assert_exit "$?" "1" "the take is refused: no owner file could be made"
+[ -d "$_LONGLOCK" ]
+assert_exit "$?" "1" "and the dir it made is gone again"
+
 # The wait is BOUNDED since 2026-09-25 (MAUDE_LOCK_WAIT, default 2 s): the waiter used to
 # wait forever and this test asserted it was still waiting at 3 s. What it protects is
 # unchanged: a live holder's lock is never stolen. The waiter now gives up (75), writes

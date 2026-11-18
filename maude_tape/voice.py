@@ -267,7 +267,7 @@ def cmd_harvest(args, tape) -> int:
     records_seen = 0
     kept = 0
     dupes_skipped = 0
-    secretish_skipped = 0
+    refused_skipped = 0
     malformed_skipped = 0
 
     for jsonl_path in _walk_transcript_files(args.transcripts):
@@ -298,7 +298,7 @@ def cmd_harvest(args, tape) -> int:
                     continue  # dropped by the extraction law — not a malformed line
 
                 if looks_secretish(text):
-                    secretish_skipped += 1
+                    refused_skipped += 1
                     continue
 
                 original_ts = record.get("timestamp")
@@ -326,7 +326,7 @@ def cmd_harvest(args, tape) -> int:
                     # docstring and PRIVACY.md both promise a summary and exit 0. Count it
                     # and carry on, which is what "refused at ingest, counted in the summary"
                     # was always supposed to mean.
-                    secretish_skipped += 1
+                    refused_skipped += 1
                     continue
                 if landed:
                     kept += 1
@@ -336,7 +336,7 @@ def cmd_harvest(args, tape) -> int:
 
     print(
         f"harvest: files={files} records_seen={records_seen} kept={kept} "
-        f"dupes_skipped={dupes_skipped} secretish_skipped={secretish_skipped} "
+        f"dupes_skipped={dupes_skipped} refused_skipped={refused_skipped} "
         f"malformed_skipped={malformed_skipped}"
     )
     return 0

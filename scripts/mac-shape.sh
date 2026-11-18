@@ -12,14 +12,12 @@
 #   - awk = original-awk     (the one-true-awk macOS ships: it drops bytes after a NUL)
 #   - a slowed mkdir         (macOS forks cost far more; a loop that counts tries overshoots)
 #   - TMPDIR with a trailing slash, as macOS exports it
-#   - bash 3.2 first on PATH, when MACSHAPE_BASH names one (macOS ships 3.2: no
-#     EPOCHREALTIME, no `local -`, no ${x@Q}); without it the run says so on every line
-#     that matters and the shape is reported as PARTIAL, never as macOS-shaped
 #   - no timeout / gtimeout   (coreutils is not on a stock Mac)
 #   - wc pads its counts      (BSD wc prints "       1", and an unquoted compare fails)
-# v0.36.0 went red on the public macOS leg (PR #90, 2026-11-08) on all three while this
-# shape was green: it had no bash 3.2 to give. Build one once (GNU bash-3.2.57, CC=gcc,
-# YACC="bison -y", -fcommon -std=gnu89) and point MACSHAPE_BASH at it.
+# The bash is this box's own. Maude needs bash 5.0 or newer everywhere (the floor at the top
+# of hooks/scripts/_maude-common.sh), so a Mac that runs her has a current bash too; the
+# 3.2 a stock Mac ships is refused, and tests/test-bash-floor.sh covers that refusal. Until
+# 2026-11-17 this shape could put a bash 3.2 first on the PATH (MACSHAPE_BASH).
 # What it still cannot give: BSD sed. The public macOS leg stays the final word on it.
 #
 # Usage: scripts/mac-shape.sh            full suite (make test) under the shape
@@ -40,11 +38,6 @@ esac
 
 BSD_AWK="$(command -v original-awk)" || die "original-awk is not installed (apt install original-awk): it is the awk macOS ships, and without it this run is not macOS-shaped"
 REAL_MKDIR="$(command -v mkdir)"; REAL_SLEEP="$(command -v sleep)"; REAL_WC="$(command -v wc)"; REAL_SED="$(command -v sed)"
-BASH32="${MACSHAPE_BASH:-}"
-if [ -n "$BASH32" ]; then
-  [ -x "$BASH32" ] || die "MACSHAPE_BASH=$BASH32 is not an executable"
-  case "$("$BASH32" -c 'echo "${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}"')" in 3.2) ;; *) die "MACSHAPE_BASH=$BASH32 is not bash 3.2" ;; esac
-fi
 BASE="${TMPDIR:-/tmp}"; BASE="${BASE%/}"
 FARM="$(mktemp -d "$BASE/maude-macshape-bin.XXXXXX")" || die "cannot make the farm dir"
 TMPD="$(mktemp -d "$BASE/maude-macshape-tmp.XXXXXX")" || { rmdir "$FARM"; die "cannot make the tmp dir"; }
@@ -65,7 +58,6 @@ chmod +x "$FARM/mkdir"
 ln -s "$BSD_AWK" "$FARM/awk"
 printf '#!/bin/sh\n%s "$@" | %s -E '"'"'s/^ *([0-9]+)/       \\1/'"'"'\n' "$REAL_WC" "$REAL_SED" > "$FARM/wc"
 chmod +x "$FARM/wc"
-[ -z "$BASH32" ] || ln -s "$BASH32" "$FARM/bash"
 for d in /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin; do
   [ -d "$d" ] || continue
   for b in "$d"/*; do
@@ -88,24 +80,19 @@ if [ "$ms" -lt 40 ]; then echo "mac-shape: FAIL mkdir is not slowed (${ms} ms)";
 echo "mac-shape: ok   TMPDIR=$TMPD/ (trailing slash)"
 if PATH="$FARM" command -v timeout >/dev/null 2>&1; then echo "mac-shape: FAIL timeout is on the farm PATH"; bad=1; else echo "mac-shape: ok   no timeout"; fi   # portability-shim (proves timeout is OUT of the farm)
 case "$(printf 'x\n' | PATH="$FARM" wc -l)" in ' '*) echo "mac-shape: ok   wc pads its count" ;; *) echo "mac-shape: FAIL wc does not pad"; bad=1 ;; esac
-PARTIAL=""
-if [ -n "$BASH32" ]; then
-  v="$(PATH="$FARM" bash -c 'echo "$BASH_VERSION ${EPOCHREALTIME:-no-epoch}"')"
-  case "$v" in 3.2*no-epoch) echo "mac-shape: ok   bash on PATH is $v" ;; *) echo "mac-shape: FAIL bash on PATH is $v"; bad=1 ;; esac
-else
-  PARTIAL=1; echo "mac-shape: PARTIAL bash on PATH is $BASH_VERSION, not 3.2 (set MACSHAPE_BASH): this run is NOT macOS-shaped for bash"
-fi
+v="$(PATH="$FARM" bash -c 'echo "${BASH_VERSINFO[0]}"')"
+case "$v" in ''|*[!0-9]*|[0-4]) echo "mac-shape: FAIL bash on PATH is major ${v:-unreadable}, below Maude's floor of 5"; bad=1 ;; *) echo "mac-shape: ok   bash on PATH is $(PATH="$FARM" bash -c 'echo "$BASH_VERSION"') (the floor is 5.0)" ;; esac
 [ "$bad" -eq 0 ] || die "the shape is not macOS-shaped; refusing to report a run from it"
 
 [ "$MODE" = check ] && { echo "mac-shape: --check: shape built and proven; nothing run"; exit 0; }
 if [ "$MODE" = cmd ]; then
   ( cd "$ROOT" && TMPDIR="$TMPD/" PATH="$FARM" "$@" ); rc=$?
-  echo "mac-shape: command exit $rc${PARTIAL:+ (PARTIAL: no bash 3.2)}"; exit "$rc"
+  echo "mac-shape: command exit $rc"; exit "$rc"
 fi
 
 echo "mac-shape: running make test under the shape (this takes a while)"
 ( cd "$ROOT" && TMPDIR="$TMPD/" PATH="$FARM" make test ); rc=$?
 if [ "$rc" -eq 0 ]; then
-  if [ -n "$PARTIAL" ]; then echo "mac-shape: GREEN, PARTIAL (no bash 3.2: the public macOS leg can still go red)"; else echo "mac-shape: GREEN"; fi
+  echo "mac-shape: GREEN"
 else echo "mac-shape: RED (exit $rc)"; fi
 exit "$rc"

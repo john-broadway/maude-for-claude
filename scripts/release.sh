@@ -134,7 +134,17 @@ printf '\n== lint ==\n';   shellcheck --severity=warning hooks/scripts/*.sh scri
 # at this point, so the smoke proves the last commit's shape — run release.sh,
 # build the release commit, then `make smoke` once more before tagging.
 printf '\n== install-smoke (HEAD, pre-bump shape) ==\n'
-bash scripts/install-smoke.sh . 2>&1 | tail -1 | grep -q 'SMOKE GREEN' && printf '  smoke green\n' || { printf '  SMOKE FAILED — run: make smoke\n'; RC=1; }
+# The smoke's own words are kept and shown on a red. Until 2026-11-18 only its last line
+# was read: a red here said "run: make smoke", the rerun was green twice, and what had
+# failed (a run that crossed midnight UTC) could not be named from anything it left.
+SMOKE_OUT="$(bash scripts/install-smoke.sh . 2>&1)"
+if printf '%s\n' "$SMOKE_OUT" | tail -1 | grep -q 'SMOKE GREEN'; then
+  printf '  smoke green\n'
+else
+  printf '  SMOKE FAILED — run: make smoke\n'
+  printf '%s\n' "$SMOKE_OUT" | grep -vE '^[[:space:]]*(PASS|ok)[[:space:]]' | tail -40 | sed 's/^/    | /'
+  RC=1
+fi
 
 printf '\n----------------------------------------\n'
 if [ "$RC" -eq 0 ]; then
