@@ -113,9 +113,9 @@ And on demand, when you ask:
 
 **v0.37.0 (2026-11-11) - her Rolodex, and every python she starts runs isolated.** Her Rolodex is a short card file: for a kind of work, who in our house handles it, and the one line she says when you ask for it. Claude drafts a page per trade, you approve it with your own line, and she says that line once a session when your words carry a phrase you approved. Every python she starts now runs isolated, so a package of the same name in the project is never the one that runs. Also in this release: a push to the internal forge passes the gate with no clear, built from allowlists only; a public push keeps its block.
 
-<div align="center"><img src="press-kit/art/chore-record.svg" alt="Maude's chore list on a recipe card — from the kitchen of Maude: wrote the handoff you didn't get to (41 sec, the small model), checked; clipped three coupons out of last week's papers, checked; a new gadget arrived, told you at the door, checked; still open — that CLAUDE.md hasn't been touched in a month, she'll keep mentioning it. Her margin note: I don't move a thing to the attic till you say so. —M." width="660"/></div>
+<div align="center"><img src="press-kit/art/chore-record.svg" alt="Maude's chore list on a recipe card — from the kitchen of Maude: named the work you didn't save (at the door, no model), checked; clipped three coupons out of last week's papers, checked; a new gadget arrived, told you at the door, checked; still open — that CLAUDE.md hasn't been touched in a month, she'll keep mentioning it. Her margin note: I don't move a thing to the attic till you say so. —M." width="660"/></div>
 
-**Earlier.** v0.30.0 taught the vault to re-check its own live claims (`/maude:freshen`); v0.29.x made promotion John's, stated the Windows floor, and archived the letter before any rewrite; v0.26.0 grew UNDO and PROVE; v0.15.0 opened the eye; v0.14.0 laid the vault floor. Every version, in full, is in the [CHANGELOG](CHANGELOG.md).
+**Earlier.** v0.36.0 gave the gate a written threat model and a shell reader, so it judges from the words bash will run and every refusal says what it read; v0.30.0 taught the vault to re-check its own live claims (`/maude:freshen`); v0.29.x made promotion John's, stated the Windows floor, and archived the letter before any rewrite; v0.26.0 grew UNDO and PROVE; v0.15.0 opened the eye; v0.14.0 laid the vault floor. Every version, in full, is in the [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -130,6 +130,9 @@ And on demand, when you ask:
 | `~/.claude/maude/identity.md` | Who the *user* is — Maude's living profile of them, shaped over time. |
 | `~/.claude/maude/patterns.md` | Cross-project things she's noticed about Claude. |
 | `~/.claude/maude/projects.json` | Light index of which workspaces she's walked. |
+| `<project>/.maude/plugin/tape/tape.db` | The tape: your own words, verbatim, with what was rejected and what replaced what. Durable, local SQLite, deletable. |
+| `~/.claude/maude/rolodex/rolodex.db` | The Rolodex: the pages you approved, the ledger of approve and revoke, and which trades are on call in which project. Written only by your own approve and revoke lines and the session-start rebuild. |
+| `~/.claude/maude/rolodex/pending/` | Rolodex pages Claude drafted, waiting for your read. |
 | `~/.claude/maude/letter-from-maude.md` | Her letter to her next self — what she caught, what she missed, what to do differently. At `/maude:rest` the prior letter is archived to a dated copy, then this one is rewritten; read on wake. |
 
 Her **hooks** only read `~/.claude/projects/<slug>/memory/` (Anthropic auto-memory) and the companion `remember` plugin's store (`<project>/.remember/`, or wherever its own `data_dir` puts it), so the hot path stays fast and side-effect-free. Two labeled writes, both her own: the **SessionEnd** hook keeps one copy of each lane file under `~/.claude/maude/pile/lanes/`, and her own `~/.claude/maude/` files. She never writes the `remember` plugin's store; its `/remember` writes its handoff. Her **`/maude:save` and `/maude:rest` commands** write the session digest to `now.md` / `today-*.md` / `recent.md` in the auto-memory dir. `/maude:rest` also archives the prior letter to a dated copy, then rewrites her letter to her next self.
