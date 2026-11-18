@@ -106,7 +106,14 @@ if [ "$JOBS" -gt 1 ]; then
   # status kept for judging in file order afterwards.
   start() {
     mkdir -p "$SUITE_TMP/f.$2"
-    ( TMPDIR="$SUITE_TMP/f.$2" bash "$1" < /dev/null > "$OUTS/$2.out" 2>&1; echo "$?" > "$OUTS/$2.rc"
+    # `trap - INT` first: bash 5.3 starts a background subshell of a script with SIGINT
+    # ignored and hands that to the file, which cannot undo it; a test that delivers an
+    # interrupt (test-ship.sh's preflight row) then waited out its 30 s and read 0. Every
+    # hosted leg went red on it the day the pool was turned on (2026-11-18). bash 5.2 does
+    # not hand it down, so this box and the internal runner never saw it. One at a time,
+    # a file runs in the foreground with the default; this gives the pool the same.
+    ( trap - INT
+      TMPDIR="$SUITE_TMP/f.$2" bash "$1" < /dev/null > "$OUTS/$2.out" 2>&1; echo "$?" > "$OUTS/$2.rc"
       find "$SUITE_TMP/f.$2" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ' > "$OUTS/$2.left" ) &
   }
   n=0

@@ -45,5 +45,28 @@ test_start "10 parallel chore_stamp calls on distinct keys all land"
 N="$(jq '[to_entries[] | select(.key | startswith("race-")) | select(.value.status=="done")] | length' "$LEDGER" 2>/dev/null)"
 assert_eq "$N" "10" "all 10 concurrent chore_stamp calls landed"
 
+# The same claim on a box with no flock, under a mkdir that is not atomic (the Rust
+# coreutils mkdir: two racing calls on one name can both exit 0; see the lock tests in
+# test-_maude-common.sh). The shim mkdir answers 0 for a lock dir whether or not it made
+# it, and its jq reads at once and answers 0.2 s later, so stamps let in together all
+# hold one snapshot: without the owner-file claim only the last rename survives.
+test_start "10 parallel chore_stamp calls all land with no flock and a mkdir that lets everyone in"
+NF_FARM="$(make_no_binary_bin flock jq mkdir)"
+NF_SHIM="$(mktemp -d "${TMPDIR:-/tmp}/maude-chores-liar.XXXXXX")"
+printf '#!/usr/bin/env bash\ncase "${@: -1}" in *.lock.d) %q "$@" 2>/dev/null; exit 0 ;; esac\nexec %q "$@"\n' "$(command -v mkdir)" "$(command -v mkdir)" > "$NF_SHIM/mkdir"; chmod +x "$NF_SHIM/mkdir"
+printf '#!/usr/bin/env bash\nout="$(%q "$@")"; rc=$?\n%q 0.2\nprintf "%%s\\n" "$out"\nexit "$rc"\n' "$(command -v jq)" "$(command -v sleep)" > "$NF_SHIM/jq"; chmod +x "$NF_SHIM/jq"
+(
+  # shellcheck source=/dev/null
+  MAUDE_CHORES_LIB=1 . "$CH"
+  PATH="$NF_SHIM:$NF_FARM"
+  for i in 1 2 3 4 5 6 7 8 9 10; do   # spelled out: the farm has no seq, and an empty loop would stamp nothing
+    chore_stamp "liar-$i" --arg s "done" ".[\"liar-$i\"] += {status:\$s}" &
+  done
+  wait
+)
+assert_eq "$(jq -r '[to_entries[] | select(.key | startswith("liar-")) | select(.value.status == "done")] | length' "$LEDGER")" "10" "all ten stamps present"
+assert_file_absent "$LEDGER.lock.d" "and the lock dir is released"
+rm -rf "$NF_SHIM"
+
 teardown_test_env
 exit "$FAILED"

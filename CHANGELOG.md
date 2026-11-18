@@ -1,6 +1,6 @@
-<!-- Version: 0.38.0 -->
+<!-- Version: 0.39.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-11-17 -->
+<!-- Revised: 2026-11-18 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 # Changelog
@@ -8,6 +8,40 @@
 The Maude Claude Code plugin.
 
 ---
+
+## v0.39.0 - she needs a current bash, and her lock no longer trusts mkdir
+
+- **Maude needs bash 5.0 or newer.** This changes what she does on a stock Mac, whose
+  `/bin/bash` is 3.2: install a current one (`brew install bash`) and start Claude Code from
+  a shell where it comes first on the PATH. On an older bash she no longer runs slowly and
+  half-blind. A tool call she would have read is refused, with this fix in the refusal;
+  the session start says it once; every other hook is silent. 5.0 is the bash that brought
+  the real clock her gate's time budgets are read from. On 3.2 the gate read at about half
+  speed, and a long command passed or was refused by how busy the machine was: the public
+  macOS leg refused a 200-line control on the merge of v0.38.0, on a tree its PR had
+  passed. Linux and Git for Windows already ship a newer bash. The macOS CI legs install
+  one and still run every hook under the stock 3.2 to check the refusal.
+- **A failed gate test says what the gate said.** A red row used to give the exit status
+  alone. It now carries the gate's own words, so a refusal on a runner names its key.
+- **The macOS-shaped local run no longer offers a bash 3.2.** It runs on the box's own bash
+  and fails if that is below the floor.
+- **The tape's harvest summary counts `refused_skipped`.** The counter was named
+  `secretish_skipped`, and a code scanner read a count with that name as a secret being
+  logged. It is a count of lines refused at ingest; no value was ever printed.
+- **CI runs the test files side by side.** Both workflows turn on the suite's own pool
+  (four files at a time on Linux, three on macOS); the files that time themselves still
+  run alone afterwards. One at a time, the suite had reached 47 minutes of a 60-minute
+  limit on the internal runner. Lint now runs before the tests there.
+- **The lock no longer trusts `mkdir` to pick one winner.** Where there is no `flock` (macOS),
+  Maude locks her state files with a directory. A `mkdir` that looks and then makes can
+  answer "made it" to two callers racing on one name. The Rust coreutils `mkdir` does:
+  on Debian's 0.0.30 build, 1,407 of 3,000 races had two winners, and GNU `mkdir` had none.
+  Two writers then held the lock together and one write was lost. The public ubuntu test
+  leg (image ubuntu-26.04) went red on some runs with exactly that reading; the lock test
+  now prints which `mkdir` a box has and how it races. The holder is now whoever creates
+  the owner file inside the directory, an exclusive create bash does itself. The same fix
+  covers the chore ledger and the chore dispatch lock. On a box with `flock`, or with a
+  `mkdir` that picks one winner, nothing changes.
 
 ## v0.38.0 - a rest cut short never doubles his words, and the ship rail proves what it ships
 

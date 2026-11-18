@@ -27,6 +27,9 @@ set +e
 # from the ARCHIVE: the working-tree run had masked it behind the
 # dev-checkout short-circuit (ROOT == SRC → silent for the wrong reason).
 [ -n "${MAUDE_EYE_BLINK:-}" ] && exit 0
+# The bash floor (see _maude-common.sh): below bash 5.0 Maude does not run. This hook never
+# blocks, so on an older bash it is silent; the session start and the gates say why.
+[ "${BASH_VERSINFO[0]:-0}" -lt 5 ] && exit 0
 
 [ "${MAUDE_SELF_CHECK:-on}" = "off" ] && exit 0
 command -v jq >/dev/null 2>&1 || exit 0

@@ -1,6 +1,6 @@
-<!-- Version: 0.38.0 -->
+<!-- Version: 0.39.0 -->
 <!-- Created: 2026-03-28 MST -->
-<!-- Revised: 2026-11-17 -->
+<!-- Revised: 2026-11-18 -->
 <!-- Authors: John Broadway, Claude (Anthropic) -->
 
 <div align="center">
@@ -33,8 +33,9 @@ She's the half I don't have.
 
 **What she needs from the house first.** Her hooks are bash scripts; her memory organs are python3 stdlib.
 
-- **Linux / macOS** — usually nothing to install; bash and python3 are already there. (One macOS trap: without the Command Line Tools, `python3` is a shim that fails at execution — she probes for that and names it at session start rather than erroring.)
-- **Windows** — **[Git for Windows](https://git-scm.com/downloads/win) is required.** Claude Code runs bash hooks through Git Bash; without it, every one of her hooks dies on every event (see [Windows](#windows) below for what that looks like). `jq` and a real python3 make her stronger everywhere but she degrades honestly without them — she'll tell you at session start what's off.
+- **Linux**: usually nothing to install; bash and python3 are already there.
+- **macOS**: **bash 5.0 or newer is required**, and a Mac ships 3.2: `brew install bash`, then start Claude Code from a shell where that bash comes first on the PATH. On an older bash she refuses the tool calls she would have read and says why at session start. python3 is already there. (One macOS trap: without the Command Line Tools, `python3` is a shim that fails at execution — she probes for that and names it at session start rather than erroring.)
+- **Windows**: **[Git for Windows](https://git-scm.com/downloads/win) is required.** Claude Code runs bash hooks through Git Bash; without it, every one of her hooks dies on every event (see [Windows](#windows) below for what that looks like). `jq` and a real python3 make her stronger everywhere but she degrades honestly without them — she'll tell you at session start what's off.
 
 ```bash
 # 1. Register the marketplace
@@ -106,11 +107,11 @@ And on demand, when you ask:
 
 <!-- Each entry's date is the UTC day of the version's release commit on canon (the day
      scripts/release.sh stamped it), never the day it reached the public repository. -->
+**v0.39.0 (2026-11-18) - she needs a current bash, and her lock no longer trusts mkdir.** Maude now needs bash 5.0 or newer. A Mac ships 3.2, so on a Mac run `brew install bash` and start Claude Code from a shell where it comes first on the PATH. On an older bash she refuses the tool calls she would have read and says why at session start; before, she ran slowly there and a long command passed or was refused by how busy the machine was. Where there is no `flock`, her lock was a `mkdir`, and some `mkdir`s tell two racers they both won, so two writers held it and one write was lost; the holder is now whoever creates the owner file inside. Her CI runs the test files side by side, and a failed gate test says what the gate said.
+
 **v0.38.0 (2026-11-17) - a rest cut short never doubles his words, and the ship rail proves what it ships.** When a session exits under her, Claude Code can cancel the rest that files your words into her tape; a cut there could write a line twice, and the next wake would replay it twice forever. Each line now lands whole or not at all, and the next wake finishes a rest that was cut and says so once. Her release rail runs its cheap gates first, proves the exact files it ships (it had been testing the copy already public), refuses this house's own private names, and runs her tests side by side. Also in this release: she stops writing into the remember plugin's store, a lane note that shrank is named at wake, and the memory budget line speaks once a session.
 
 **v0.37.0 (2026-11-11) - her Rolodex, and every python she starts runs isolated.** Her Rolodex is a short card file: for a kind of work, who in our house handles it, and the one line she says when you ask for it. Claude drafts a page per trade, you approve it with your own line, and she says that line once a session when your words carry a phrase you approved. Every python she starts now runs isolated, so a package of the same name in the project is never the one that runs. Also in this release: a push to the internal forge passes the gate with no clear, built from allowlists only; a public push keeps its block.
-
-**v0.36.0 (2026-11-09) - the gate judges from the words bash will run, and every refusal says what it read.** The gate has a written threat model and a shell reader beside its patterns: it reads a command the way bash will run it, through wrappers, quotes, substitutions, heredocs and the words known only at run time (`$x git push`, `timeout $x 5 nice $y -n 5 git push`), keys every reading, and refuses what it could not read whole rather than pass it. A fuzzer runs the reader every night on the internal forge, the walk finishes inside the harness's kill for every padded shape the suite pins, under GNU awk and the BSD awk macOS ships, and a command that names the red-clear token file may only read it, with the refusal saying which word or redirect it read. Also in this release: she recalls by meaning when the house has an embedder and by her own word table when it does not, the tape holds only your words, the auto-memory index has a budget, and the license moves from Apache-2.0 to AGPL-3.0-or-later. Lens after lens shaped the gate work; every fold is pinned, and every pin was red first.
 
 <div align="center"><img src="press-kit/art/chore-record.svg" alt="Maude's chore list on a recipe card — from the kitchen of Maude: wrote the handoff you didn't get to (41 sec, the small model), checked; clipped three coupons out of last week's papers, checked; a new gadget arrived, told you at the door, checked; still open — that CLAUDE.md hasn't been touched in a month, she'll keep mentioning it. Her margin note: I don't move a thing to the attic till you say so. —M." width="660"/></div>
 

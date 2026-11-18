@@ -25,6 +25,9 @@ set +e
 # standalone), so it can't inherit that file's guard — this inline copy is
 # the surgical fix rather than pulling in the whole shared file.
 [ -n "${MAUDE_EYE_BLINK:-}" ] && exit 0
+# The bash floor (see _maude-common.sh): below bash 5.0 Maude does not run. This hook never
+# blocks, so on an older bash it is silent; the session start and the gates say why.
+[ "${BASH_VERSINFO[0]:-0}" -lt 5 ] && exit 0
 
 # --- mode: which surface are we scanning? ---
 # "prompt" (default, UserPromptSubmit) = what John typed.

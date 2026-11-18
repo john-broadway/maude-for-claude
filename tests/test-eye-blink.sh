@@ -53,8 +53,13 @@ assert_eq "$?" "0" "no whisper on signal:false"
 
 # 3) no runner anywhere → silent exit 0
 rm -f "$WHISPER"
+# These rows strip the PATH to hide every runner. `bash` is then looked up on the stripped
+# PATH too, and on a Mac /bin/bash is 3.2, which Maude refuses (the floor): the row read 1
+# for a reason that had nothing to do with the eye (the public macOS legs, 2026-11-18). So
+# the stripped PATH carries the bash this suite runs on, and nothing else.
+mkdir -p "$WORK/sh"; ln -s "$BASH" "$WORK/sh/bash"
 test_start "dark eye exits 0"
-PATH="/usr/bin:/bin" MAUDE_EYE_RUNNER_OVERRIDE="" \
+PATH="$WORK/sh:/usr/bin:/bin" MAUDE_EYE_RUNNER_OVERRIDE="" \
   bash "$ROOT/hooks/scripts/maude-eye-blink.sh" "$WORK/t.jsonl" >/dev/null 2>&1
 assert_eq "$?" "0" "dark eye exits 0"
 
@@ -114,13 +119,13 @@ chmod +x "$WORK/bin/claude"
 
 test_start "eye model defaults to haiku"
 rm -f "$WORK/args"
-FAKE_CLAUDE_ARGS="$WORK/args" PATH="$WORK/bin:/usr/bin:/bin" MAUDE_EYE_RUNNER_OVERRIDE="" \
+FAKE_CLAUDE_ARGS="$WORK/args" PATH="$WORK/bin:$WORK/sh:/usr/bin:/bin" MAUDE_EYE_RUNNER_OVERRIDE="" \
   bash "$ROOT/hooks/scripts/maude-eye-blink.sh" "$WORK/t.jsonl" >/dev/null 2>&1
 assert_contains "$(cat "$WORK/args" 2>/dev/null)" "--model haiku" "eye model defaults to haiku"
 
 test_start "MAUDE_EYE_MODEL unpins the model"
 rm -f "$WORK/args"
-FAKE_CLAUDE_ARGS="$WORK/args" PATH="$WORK/bin:/usr/bin:/bin" MAUDE_EYE_RUNNER_OVERRIDE="" \
+FAKE_CLAUDE_ARGS="$WORK/args" PATH="$WORK/bin:$WORK/sh:/usr/bin:/bin" MAUDE_EYE_RUNNER_OVERRIDE="" \
   MAUDE_EYE_MODEL="sonnet" \
   bash "$ROOT/hooks/scripts/maude-eye-blink.sh" "$WORK/t.jsonl" >/dev/null 2>&1
 assert_contains "$(cat "$WORK/args" 2>/dev/null)" "--model sonnet" "MAUDE_EYE_MODEL unpins the model"

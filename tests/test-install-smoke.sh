@@ -9,6 +9,10 @@ set -u
 [ "${MAUDE_INSTALL_SMOKE:-}" = "1" ] && { echo "  ok    (self-skip inside install-smoke)"; exit 0; }
 # Read before setup_test_env: its hermetic guard unsets every MAUDE_* variable.
 SMOKE_SEPARATE="${MAUDE_SMOKE_SEPARATE:-}"
+# The pool too: without this the archive's own fleet ran one file at a time inside a
+# pooled `make test` (the internal CI turned the pool on 2026-11-17 and the longest part
+# of its step, this one, never saw it: the review of that change, 2026-11-18).
+SMOKE_JOBS="${MAUDE_TEST_JOBS:-1}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 . "$DIR/lib.sh"
 setup_test_env
@@ -23,7 +27,8 @@ if [ "$SMOKE_SEPARATE" = "1" ]; then
   printf '  skip  smoke on HEAD: MAUDE_SMOKE_SEPARATE=1, CI runs it as its own job\n'
 else
 test_start "smoke gate passes on the current HEAD"
-OUT="$(bash "$SMOKE" "$ROOT" 2>&1)"; RC=$?
+printf '  NOTE  the archive'"'"'s fleet runs %s file(s) side by side\n' "$SMOKE_JOBS"
+OUT="$(MAUDE_TEST_JOBS="$SMOKE_JOBS" bash "$SMOKE" "$ROOT" 2>&1)"; RC=$?
 assert_exit "$RC" "0" "smoke green on HEAD"
 assert_contains "$OUT" "SMOKE GREEN" "verdict line printed"
 
